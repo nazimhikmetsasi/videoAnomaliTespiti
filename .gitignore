@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Sanal ortam
+venv/
+.venv/
+
+# Ortam degiskenleri ve sirlar
+.env
+config/*-service-account.json
+
+# Model agirliklari (indirilir, depoya girmez)
+*.pt
+*.onnx
+*.engine
+
+# Egitim ciktilari
+runs/
+
+# Uretilen veri ve kanit dosyalari
+storage/
+data/
+logs/
+results/
+
+# Docker kalici birimleri
+postgres_data/
+mongo_data/
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# IDE ve isletim sistemi
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

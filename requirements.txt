@@ -1,0 +1,7 @@
+# torch/torchvision AYRI kurulur (CUDA wheel deposu farkli):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# Varsayilan PyPI'dan gelen torch CPU derlemesidir — GPU calismaz.
+
+ultralytics>=8.4.0
+opencv-python>=4.10.0
+numpy>=2.0

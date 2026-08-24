@@ -1,0 +1,46 @@
+# Video Tabanlı Anomali Tespiti ve Davranış Analizi Platformu
+
+Gözetim kameralarından gelen canlı video akışında normal dışı hareketleri
+(düşme, koşma, yasaklı alan ihlali, kavga, şüpheli dolaşma) otonom olarak
+saptayan; olayları web kontrol panelinde yöneten; operatöre Türkçe doğal dil
+raporu sunan ve güvenlik personeline anlık bildirim ileten platform.
+
+## Belgeler
+
+- **[docs/PLAN.md](docs/PLAN.md)** — dondurulmuş mimari, veritabanı şeması,
+  aşama planı, ölçülebilir hedefler
+- **[docs/DURUM.md](docs/DURUM.md)** — güncel ilerleme, karar günlüğü,
+  bir sonraki adım
+
+## Mimari özeti
+
+| Katman | Teknoloji |
+|---|---|
+| Görü ve çıkarım | Python 3.11, OpenCV, YOLOv8s-pose (CUDA/FP16), BoT-SORT, NumPy |
+| Karar | Kural motoru + TCN sınıflandırıcı (hibrit) |
+| Dağıtık akış | Apache Kafka + Zookeeper, Spark Structured Streaming |
+| Depolama | PostgreSQL (SQLAlchemy), MongoDB (PyMongo) |
+| Backend | FastAPI + Uvicorn, WebSocket |
+| Raporlama | Google Gemini Flash + Türkçe şablon yedeği |
+| Bildirim | Telegram Bot API |
+| Panel | React, Tailwind CSS, Canvas API, Recharts |
+| Dağıtım | Docker Compose |
+
+`vision/` servisi GPU erişimi için host üzerinde native venv'de çalışır.
+Diğer tüm servisler Docker'da yaşar.
+
+## Kurulum
+
+Ayrıntılar `docs/PLAN.md` bölüm 7, Aşama 0 ve Aşama 1'de.
+
+```bash
+py -3.11 -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python scripts/check_gpu.py
+```
+
+## Durum
+
+Geliştirme aşamalı ilerliyor. Hangi aşamada olunduğu ve sonraki adım için
+`docs/DURUM.md` dosyasına bakınız.
