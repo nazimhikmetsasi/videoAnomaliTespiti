@@ -18,7 +18,7 @@ raporu sunan ve güvenlik personeline anlık bildirim ileten platform.
 |---|---|
 | Görü ve çıkarım | Python 3.11, OpenCV, YOLOv8s-pose (CUDA/FP16), BoT-SORT, NumPy |
 | Karar | Kural motoru + TCN sınıflandırıcı (hibrit) |
-| Dağıtık akış | Apache Kafka + Zookeeper, Spark Structured Streaming |
+| Dağıtık akış | Apache Kafka (KRaft), Spark Structured Streaming |
 | Depolama | PostgreSQL (SQLAlchemy), MongoDB (PyMongo) |
 | Backend | FastAPI + Uvicorn, WebSocket |
 | Raporlama | Google Gemini Flash + Türkçe şablon yedeği |
@@ -38,6 +38,14 @@ py -3.11 -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 python scripts/check_gpu.py
+```
+
+Altyapı (Aşama 1) — Docker Desktop çalışır durumdayken:
+
+```bash
+cp .env.example .env      # şifreleri doldur
+docker compose up -d
+bash scripts/check_infra.sh
 ```
 
 ## Durum
