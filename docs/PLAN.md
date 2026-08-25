@@ -35,7 +35,7 @@ Tespit edilen 13 zayıf nokta ve v2 karşılıkları:
 
 | # | v1 sorunu | v1 kanıtı | v2 çözümü |
 |---|---|---|---|
-| 1 | Aynı kareye iki ayrı model çıkarımı | `pipeline.py:147` YOLOv8n detect, `pipeline.py:159` YOLOv8n-pose | Tek `yolov8s-pose` geçişi; pose modeli kutuyu zaten üretir |
+| 1 | Aynı kareye iki ayrı model çıkarımı | `pipeline.py:147` YOLOv8n detect, `pipeline.py:159` YOLOv8n-pose | Tek `yolo26s-pose` geçişi; pose modeli kutuyu zaten üretir |
 | 2 | Düşük eşik + heuristik yama yığını | `YOLO_CONF_THRESHOLD=0.10`, `detector.py` merge/alan/en-boy filtreleri, `tracker.py` `_is_sane_bbox`/`_merge_overlaps`/`_soft_reacquire` (~250 satır) | Makul eşik + BoT-SORT; yamalar hiç doğmaz |
 | 3 | Zayıf ReID (DeepSORT `embedder='mobilenet'`) | `tracker.py` DeepSort init | BoT-SORT: güçlü ReID + GMC (kamera hareketi telafisi) |
 | 4 | Hız ham pikselde | `kinematics.py` `vx = dx/dt` | Hız ÷ bbox yüksekliği — derinlik ve kamera bağımsız |
@@ -69,12 +69,12 @@ ayrı test edilebilir.
 
 | Bileşen | Değer | Sonuç |
 |---|---|---|
-| GPU | NVIDIA RTX 3050 Laptop, 4096 MiB VRAM | `yolov8s-pose` FP16 tek kamera; çoklu kamerada `yolov8n-pose` |
+| GPU | NVIDIA RTX 3050 Laptop, 4096 MiB VRAM | `yolo26s-pose` FP16 tek kamera; çoklu kamerada `yolo26n-pose` |
 | CUDA | Toolkit 12.1, sürücü 610.74 | cu121 wheel uyumlu |
 | Kurulu torch | `2.13.0+cpu` — CUDA yok | cu121 derlemesiyle değiştirilecek |
 | Python | 3.13.5 varsayılan, 3.11 de kurulu | venv **3.11** ile açılacak |
 | Docker | 29.5.3, WSL `docker-desktop` durdurulmuş | Aşama 1'de başlatılacak |
-| mediapipe | 1.0.1 mevcut | Kullanılmayacak (YOLOv8-pose tercih edildi) |
+| mediapipe | 1.0.1 mevcut | Kullanılmayacak (YOLO26-pose tercih edildi) |
 
 **Dağıtım kararı:** Windows'ta Docker'a GPU geçirmek (WSL2 +
 nvidia-container-toolkit) zaman kaybıdır. `vision/` servisi host üzerinde
@@ -84,8 +84,9 @@ Docker'da yaşar. Sunucuya taşınırken `vision/` de container'a alınır.
 
 ## 3. Seçilen Teknoloji Yığını
 
-**Görü ve çıkarım:** Python 3.11, OpenCV, Ultralytics YOLOv8s-pose (CUDA/FP16),
-BoT-SORT (ReID + GMC), NumPy, One-Euro filtresi, PyTorch TCN
+**Görü ve çıkarım:** Python 3.11, OpenCV, Ultralytics YOLO26s-pose (CUDA/FP16,
+uçtan uca / NMS'siz), BoT-SORT + `yolo26s-reid.onnx` görünüm ağı, NumPy,
+One-Euro filtresi, PyTorch TCN
 
 **Dağıtık akış:** Apache Kafka + Zookeeper (`anomaly-candidates`,
 `anomaly-events`), Apache Spark Structured Streaming
@@ -116,7 +117,7 @@ KAYNAK
         v
 INFERENCE WORKER (tek process, GPU)
   1. Preprocess     CLAHE (bir kez kurulur) + letterbox 960x540
-  2. PoseDetector   YOLOv8s-pose FP16, BATCH=N -> kutu + 17 keypoint
+  2. PoseDetector   YOLO26s-pose FP16, BATCH=N -> kutu + 17 keypoint (NMS yok)
   3. Tracker        BoT-SORT + ReID + GMC     -> kalıcı track_id
   4. Smoother       One-Euro filtresi / keypoint
   5. FeatureEngine  ölçek-normalize kinematik + poz öznitelikleri
@@ -181,7 +182,7 @@ videoAnomaliTespiti/
 │   ├── source.py              # mp4/webcam/RTSP + RingBuffer + yeniden bağlanma
 │   ├── stages/
 │   │   ├── preprocess.py      # CLAHE bir kez, letterbox
-│   │   ├── pose_detector.py   # YOLOv8s-pose, batch, FP16
+│   │   ├── pose_detector.py   # YOLO26s-pose, batch, FP16
 │   │   ├── tracker.py         # BoT-SORT sarmalayıcı
 │   │   ├── smoother.py        # One-Euro
 │   │   ├── features.py        # ölçek-normalize kinematik
@@ -267,7 +268,7 @@ koordinat bozulmaz.
 |---|---|---|---|
 | id | SERIAL PK | | |
 | camera_id | INT FK UNIQUE NULL | | |
-| pose_conf | NUMERIC(3,2) | 0.35 | YOLOv8-pose güven eşiği |
+| pose_conf | NUMERIC(3,2) | 0.25 | YOLO26-pose güven eşiği (end2end kafa v8'den düşük skor verir) |
 | track_conf | NUMERIC(3,2) | 0.30 | BoT-SORT eşiği |
 | fall_spine_deg | NUMERIC(5,2) | 45.0 | omurga-dikey açı |
 | fall_norm_vy | NUMERIC(6,3) | 1.20 | dikey hız / bbox yüksekliği (1/sn) |
@@ -386,9 +387,10 @@ Kullanıcı commit atar, `/clear` çeker, sonraki aşamadan devam edilir.
 - Python 3.11 venv
 - `torch` cu121 kurulumu (mevcut `+cpu` derlemesi değiştirilecek)
 - `ultralytics`, `opencv-python`, `numpy` kurulumu
-- `yolov8s-pose.pt` indirimi
+- `yolo26s-pose.pt`, `yolo26n-pose.pt`, `yolo26s-reid.onnx` indirimi
+  (`scripts/fetch_models.py`)
 - GPU doğrulama betiği: `torch.cuda.is_available()` ve tek kare çıkarım süresi
-- **Onay kriteri:** GPU'da `yolov8s-pose` çalışıyor, kare başı ms ölçülmüş
+- **Onay kriteri:** GPU'da `yolo26s-pose` çalışıyor, kare başı ms ölçülmüş
 
 ### Aşama 1 — Altyapı
 - `docker-compose.yml`: postgres, mongo, zookeeper, kafka, spark, api
@@ -403,7 +405,7 @@ Kullanıcı commit atar, `/clear` çeker, sonraki aşamadan devam edilir.
 - `source.py`: mp4 / webcam / RTSP tek arayüz, halka tampon (en eskiyi at),
   üstel geri çekilmeli yeniden bağlanma
 - `stages/preprocess.py`: CLAHE bir kez kurulur, letterbox
-- `stages/pose_detector.py`: YOLOv8s-pose, FP16, toplu çıkarım
+- `stages/pose_detector.py`: YOLO26s-pose, FP16, toplu çıkarım
 - `stages/tracker.py`: BoT-SORT sarmalayıcı (ReID + GMC)
 - **Onay kriteri:** test videosu ve webcam'de kutu + iskelet + kalıcı ID;
   FPS raporu alınmış
@@ -488,8 +490,8 @@ Kullanıcı commit atar, `/clear` çeker, sonraki aşamadan devam edilir.
 
 ## 9. Bilinen Riskler
 
-1. **4 GB VRAM sınırı.** `yolov8s-pose` FP16 yaklaşık 1.5 GB kullanır. BoT-SORT
-   ReID modeli ek yük getirir. Çoklu kamerada `yolov8n-pose`'a düşülür. Aşama 2
+1. **4 GB VRAM sınırı.** `yolo26s-pose` FP16 yaklaşık 1.5 GB kullanır. BoT-SORT
+   ReID modeli ek yük getirir. Çoklu kamerada `yolo26n-pose`'a düşülür. Aşama 2
    sonunda ölçülüp karar verilir.
 2. **BoT-SORT ReID kalitesi ölçülmeli.** Ultralytics varsayılanı v1'in
    mobilenet'inden iyi olmalı ama doğrulanmadan kabul edilmeyecek; Aşama 2'de

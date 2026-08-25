@@ -27,7 +27,7 @@ import numpy as np
 from vision.source import VideoSource
 from vision.stages.pose_detector import DEFAULT_WEIGHTS, PoseDetector
 from vision.stages.preprocess import FRAME_H, FRAME_W, Preprocessor
-from vision.stages.tracker import OVERRIDES, Track, Tracker
+from vision.stages.tracker import DEFAULT_REID, OVERRIDES, Track, Tracker
 
 WARMUP_FRAMES = 30
 # Webcam acilisi bu makinede ~5 sn suruyor, RTSP yeniden baglanmasi daha da
@@ -86,16 +86,38 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="mp4 yolu, webcam indeksi (0) veya rtsp://...")
     parser.add_argument("--model", default=DEFAULT_WEIGHTS)
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--conf", type=float, default=0.35)
+    # YOLO26 end2end kafasi ayni tespite YOLOv8'den daha dusuk skor verir:
+    # police_run klibinde v8@0.35 = 193 izli kare, yolo26@0.35 = 132,
+    # yolo26@0.25 = 191. Esik modelle birlikte kalibre edildi.
+    parser.add_argument("--conf", type=float, default=0.25)
     parser.add_argument("--imgsz", type=int, default=FRAME_W)
     parser.add_argument("--max-frames", type=int, default=0, help="0 = sinirsiz")
     parser.add_argument("--no-clahe", action="store_true")
     parser.add_argument("--gmc", default=OVERRIDES["gmc_method"],
                         help="kamera hareketi telafisi: none|sparseOptFlow|orb|sift|ecc")
-    parser.add_argument("--no-reid", action="store_true")
+    parser.add_argument("--no-reid", action="store_true",
+                        help="gorunum eslesmesini tamamen kapat (ablation)")
+    parser.add_argument("--reid-model", default="auto",
+                        help=f"auto = dedektor bedava oznitelik veriyorsa onu "
+                             f"kullan, vermiyorsa {DEFAULT_REID}; ya da acik yol")
     parser.add_argument("--show", action="store_true", help="pencerede goster, q ile cik")
     parser.add_argument("--save", default="", help="isaretlenmis videoyu bu yola yaz")
     return parser.parse_args(argv)
+
+
+def choose_reid(requested: str, disabled: bool, native_feats: bool) -> tuple[str, str]:
+    """ReID yolunu sec ve rapora yazilacak tek satirlik aciklamayi dondur.
+
+    `auto`: dedektor bedava govde oznitelikleri veriyorsa (end2end olmayan
+    model) onlar kullanilir; vermiyorsa (YOLO26) ayri ReID agina dusulur.
+    """
+    if disabled:
+        return "auto", "kapali (--no-reid), takip yalnizca hareket tabanli"
+    if requested != "auto":
+        return requested, f"ayri ag: {requested} (elle secildi)"
+    if native_feats:
+        return "auto", "dedektorun kendi oznitelikleri (bedava, ek cikarim yok)"
+    return DEFAULT_REID, f"ayri ag: {DEFAULT_REID} (dedektor end2end, bedava oznitelik yok)"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -104,10 +126,11 @@ def main(argv: list[str] | None = None) -> int:
     preprocess = Preprocessor(clahe=not args.no_clahe)
     detector = PoseDetector(args.model, device=args.device, conf=args.conf,
                             imgsz=args.imgsz, reid_feats=not args.no_reid)
-    tracker = Tracker(device=args.device, gmc_method=args.gmc)
-
-    if not args.no_reid and not detector.has_reid_feats:
-        print("  UYARI: ReID oznitelik kancasi takilamadi, takip yalnizca hareket tabanli.")
+    reid_model, reid_note = choose_reid(args.reid_model, args.no_reid,
+                                        detector.has_reid_feats)
+    tracker = Tracker(device=args.device, gmc_method=args.gmc,
+                      with_reid=not args.no_reid, model=reid_model)
+    print(f"  ReID: {reid_note}")
 
     writer = None
     pre_ms, infer_ms, track_ms, loop_ms = [], [], [], []

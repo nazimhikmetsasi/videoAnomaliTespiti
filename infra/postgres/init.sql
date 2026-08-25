@@ -63,7 +63,7 @@ CREATE INDEX idx_zones_camera ON zones (camera_id, is_active);
 CREATE TABLE detection_settings (
     id               SERIAL PRIMARY KEY,
     camera_id        INT UNIQUE REFERENCES cameras(id) ON DELETE CASCADE,
-    pose_conf        NUMERIC(3,2) NOT NULL DEFAULT 0.35,
+    pose_conf        NUMERIC(3,2) NOT NULL DEFAULT 0.25,
     track_conf       NUMERIC(3,2) NOT NULL DEFAULT 0.30,
     fall_spine_deg   NUMERIC(5,2) NOT NULL DEFAULT 45.0,
     fall_norm_vy     NUMERIC(6,3) NOT NULL DEFAULT 1.20,
