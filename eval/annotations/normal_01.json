@@ -1,0 +1,8 @@
+{
+  "video": "normal_01.mp4",
+  "camera_id": "cam_01",
+  "description": "Normal yuruyus — yanlis alarm olmamali",
+  "events": [
+    {"type": "NORMAL", "start_sec": 0.0, "end_sec": 15.0}
+  ]
+}

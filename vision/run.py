@@ -7,6 +7,7 @@ Calistirma:
     venv\\Scripts\\python.exe -m vision.run --source data/test.mp4
     venv\\Scripts\\python.exe -m vision.run --source 0 --show
     venv\\Scripts\\python.exe -m vision.run --source rtsp://... --save out.mp4
+    venv\\Scripts\\python.exe -m vision.run --source data/pilot/zone_01.mp4 --rules --zones eval/zones.json
 
 ID degisimi olcumu: etiketli gercek referans olmadan tam sayilamaz. Burada
 pratik gosterge, isinma sonrasi (varsayilan 30 kare) yaratilan YENI ID
@@ -16,6 +17,8 @@ sayisidir. Kadro degismeyen bir sahnede bu sayi dogrudan ID degisimidir.
 from __future__ import annotations
 
 import argparse
+import datetime
+import json
 import statistics
 import sys
 import time
@@ -24,9 +27,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from vision.rules.engine import Candidate, RuleEngine, Zone
 from vision.source import VideoSource
+from vision.stages.features import FeatureEngine
 from vision.stages.pose_detector import DEFAULT_WEIGHTS, PoseDetector
 from vision.stages.preprocess import FRAME_H, FRAME_W, Preprocessor
+from vision.stages.smoother import Smoother
 from vision.stages.tracker import DEFAULT_REID, OVERRIDES, Track, Tracker
 
 WARMUP_FRAMES = 30
@@ -49,12 +55,15 @@ def color_for(track_id: int) -> tuple[int, int, int]:
     return tuple(int(c) for c in rng.integers(64, 256, 3))
 
 
-def draw(image: np.ndarray, tracks: list[Track]) -> np.ndarray:
+def draw(image: np.ndarray, tracks: list[Track],
+         labels: dict[int, str] | None = None) -> np.ndarray:
     """Yalnizca hata ayiklama icindir.
 
     Uretimde overlay istemcide cizilir (PLAN.md zayif nokta 11). Bu fonksiyon
     ayni zamanda metadata yeterliligini kanitlar: cizim icin Track disinda
     hicbir sey kullanilmiyor.
+
+    `labels`: track_id -> aktif aday tipi (--rules ile doldurulur, Asama 3).
     """
     out = image.copy()
     for track in tracks:
@@ -63,6 +72,9 @@ def draw(image: np.ndarray, tracks: list[Track]) -> np.ndarray:
         cv2.rectangle(out, (x1, y1), (x2, y2), color, 2)
         cv2.putText(out, f"ID {track.track_id} {track.conf:.2f}", (x1, max(14, y1 - 6)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        if labels and track.track_id in labels:
+            cv2.putText(out, labels[track.track_id], (x1, y2 + 34),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
         if track.keypoints is None:
             cv2.putText(out, "poz yok", (x1, y2 + 16),
@@ -102,7 +114,33 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                              f"kullan, vermiyorsa {DEFAULT_REID}; ya da acik yol")
     parser.add_argument("--show", action="store_true", help="pencerede goster, q ile cik")
     parser.add_argument("--save", default="", help="isaretlenmis videoyu bu yola yaz")
+    parser.add_argument("--rules", action="store_true",
+                        help="duzleme+oznitelik+kural zincirini calistir (Asama 3)")
+    parser.add_argument("--zones", default="",
+                        help="bolge JSON yolu (SS7 formati); verilmezse bos bolge listesi")
     return parser.parse_args(argv)
+
+
+def load_zones(path: str, clip_stem: str) -> list[Zone]:
+    """Bolge JSON'u yukler (Asama 3 SS7 formati): {klip_adi: [bolge, ...], "_...": not}.
+
+    "_" ile baslayan anahtarlar not/yorumdur; `clip_stem` anahtar olarak
+    aranmadigi icin kendiliginden atlanir. Klip icin bolge yoksa (cogu pilot
+    klip icin durum budur) sessizce bos liste doner.
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    zones = []
+    for entry in data.get(clip_stem, []):
+        zones.append(Zone(
+            name=entry["name"],
+            zone_type=entry["zone_type"],
+            polygon=np.array(entry["polygon"], dtype=np.float32),
+            active_from=datetime.time.fromisoformat(entry["active_from"])
+                if entry.get("active_from") else None,
+            active_to=datetime.time.fromisoformat(entry["active_to"])
+                if entry.get("active_to") else None,
+        ))
+    return zones
 
 
 def choose_reid(requested: str, disabled: bool, native_feats: bool) -> tuple[str, str]:
@@ -132,8 +170,16 @@ def main(argv: list[str] | None = None) -> int:
                       with_reid=not args.no_reid, model=reid_model)
     print(f"  ReID: {reid_note}")
 
+    smoother = Smoother() if args.rules else None
+    feature_engine = FeatureEngine() if args.rules else None
+    rule_engine = None
+    all_candidates: list[Candidate] = []
+    if args.rules:
+        zones = load_zones(args.zones, Path(str(args.source)).stem) if args.zones else []
+        rule_engine = RuleEngine(zones=zones)
+
     writer = None
-    pre_ms, infer_ms, track_ms, loop_ms = [], [], [], []
+    pre_ms, infer_ms, track_ms, smooth_ms, rules_ms, loop_ms = [], [], [], [], [], []
     per_frame_counts = []
     late_new_ids = pose_missing = track_total = frames = 0
     started = time.perf_counter()
@@ -173,6 +219,24 @@ def main(argv: list[str] | None = None) -> int:
             infer_ms.append((t2 - t1) * 1000)
             track_ms.append((t3 - t2) * 1000)
 
+            active_labels: dict[int, str] = {}
+            if args.rules:
+                # Video zamani: dosya kaynaginda kare indeksi/FPS, canlida duvar
+                # saati. Smoother ve FeatureEngine'in tek zaman kaynagi budur.
+                ts = frame.idx / source.fps if not source.is_live else frame.ts
+                t4 = time.perf_counter()
+                tracks = smoother(tracks, ts)
+                t5 = time.perf_counter()
+                windows = feature_engine(tracks, frame.idx, ts, image.shape[:2])
+                candidates = rule_engine(windows)
+                t6 = time.perf_counter()
+                smooth_ms.append((t5 - t4) * 1000)
+                rules_ms.append((t6 - t5) * 1000)
+                all_candidates.extend(candidates)
+                for cand in candidates:
+                    for tid in cand.track_ids:
+                        active_labels[tid] = cand.anomaly_type
+
             frames += 1
             per_frame_counts.append(len(tracks))
             track_total += len(tracks)
@@ -181,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
                 late_new_ids += len(tracker.seen_ids - known)
 
             if args.show or args.save:
-                annotated = draw(image, tracks)
+                annotated = draw(image, tracks, active_labels)
                 if args.save:
                     if writer is None:
                         Path(args.save).parent.mkdir(parents=True, exist_ok=True)
@@ -226,8 +290,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  yeniden baglanma     : {reconnects}")
     print(f"  CLAHE uygulandi      : {preprocess.clahe_applied} / {frames}")
     print(f"\n  {'asama':<20} {'medyan ms':>10} {'p95 ms':>10}")
-    for name, samples in (("on isleme", pre_ms), ("cikarim", infer_ms),
-                          ("takip", track_ms), ("dongu toplam", loop_ms)):
+    stage_rows = [("on isleme", pre_ms), ("cikarim", infer_ms), ("takip", track_ms)]
+    if args.rules:
+        stage_rows += [("duzleme", smooth_ms), ("oznitelik+kural", rules_ms)]
+    stage_rows.append(("dongu toplam", loop_ms))
+    for name, samples in stage_rows:
         p95 = sorted(samples)[min(len(samples) - 1, int(len(samples) * 0.95))]
         print(f"  {name:<20} {statistics.median(samples):>10.1f} {p95:>10.1f}")
 
@@ -239,6 +306,22 @@ def main(argv: list[str] | None = None) -> int:
               "   (1.00 = hic ID degisimi yok)")
     print(f"  isinma sonrasi yeni ID: {late_new_ids}  (ilk {WARMUP_FRAMES} kare haric)")
     print(f"  pozsuz iz            : {pose_missing} / {track_total}")
+
+    if args.rules:
+        print("\n  aday olay ozeti (--rules):")
+        if all_candidates:
+            by_type: dict[str, list[Candidate]] = {}
+            for cand in all_candidates:
+                by_type.setdefault(cand.anomaly_type, []).append(cand)
+            for anomaly_type in sorted(by_type):
+                cands = by_type[anomaly_type]
+                track_ids = {tid for c in cands for tid in c.track_ids}
+                first_ts = min(c.ts for c in cands)
+                print(f"    {anomaly_type:<16} aday {len(cands):>5}  "
+                      f"iz {len(track_ids):>3}  ilk tetik {first_ts:>6.1f} sn")
+        else:
+            print("    aday yok")
+
     if args.save:
         print(f"\n  video yazildi        : {args.save}")
     return 0

@@ -68,6 +68,16 @@ class VideoSource:
         self.source_type = classify_source(source)
         self.is_live = self.source_type != "file"
         self.reconnect_max_sec = reconnect_max_sec
+        # Ozniteliklerin zaman kaynagi budur (PLAN.md Asama 3): klip 25 FPS
+        # kayitken hat 37 FPS calisirsa duvar saati hizlari 1.5 kat sisirir.
+        # Canlida gercek FPS onemsiz, duvar saati (frame.ts) kullanilacak.
+        self.fps = 25.0
+        if not self.is_live:
+            probe = cv2.VideoCapture(str(source))
+            fps = probe.get(cv2.CAP_PROP_FPS) if probe.isOpened() else 0.0
+            probe.release()
+            if fps and fps > 0:
+                self.fps = float(fps)
 
         # Kanit tamponu: hicbir zaman tuketilmez, sadece en eskisi dusurulur.
         self._buffer: deque[Frame] = deque(maxlen=buffer_frames)

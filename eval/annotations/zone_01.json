@@ -1,0 +1,12 @@
+{
+  "video": "zone_01.mp4",
+  "camera_id": "cam_zone_01",
+  "description": "Restricted zone — bina girisine yuruyerek giris (~12-25 sn)",
+  "eval_end_sec": 28.0,
+  "_not": "28. saniyede goruntu tamamen degisiyor (koridor -> otopark), 54. sn koridora donuyor. Bolge poligonu kameraya baglidir; sahne degisince ayni 0-1 koordinatlar otoparktaki yayanin ustune duser. eval_end_sec sonrasi hem gercek referans hem adaylar degerlendirmeye alinmaz (SS10.4).",
+  "events": [
+    {"type": "NORMAL", "start_sec": 0.0, "end_sec": 11.5},
+    {"type": "ZONE_VIOLATION", "start_sec": 12.0, "end_sec": 26.0},
+    {"type": "NORMAL", "start_sec": 28.0, "end_sec": 60.0}
+  ]
+}

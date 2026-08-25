@@ -1,0 +1,16 @@
+{
+  "_not": "Poligonlar 0-1 normalize ve letterbox'lanmis 960x540 kare uzayindadir. zone_01 kaynagi 640x360 (16:9) oldugu icin dolgu yoktur, koordinatlar dogrudan eslesir. zone_01 poligonu klibin uzerine gomulu olan (ihlalde kirmiziya donen) dortgenden okundu.",
+  "zone_01": [
+    {
+      "name": "bina girisi",
+      "zone_type": "forbidden",
+      "polygon": [
+        [0.30, 0.260],
+        [0.52, 0.235],
+        [0.94, 0.325],
+        [0.93, 0.905],
+        [0.30, 0.910]
+      ]
+    }
+  ]
+}

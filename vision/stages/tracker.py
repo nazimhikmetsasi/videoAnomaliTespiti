@@ -87,6 +87,7 @@ class Track:
     bbox: np.ndarray                 # xyxy, letterbox kare uzayinda
     conf: float
     keypoints: np.ndarray | None     # (17, 3) -> x, y, guven; pose yoksa None
+    keypoints_smoothed: np.ndarray | None = None   # Smoother doldurur (Asama 3)
 
     @property
     def height(self) -> float:
