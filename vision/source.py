@@ -1,0 +1,208 @@
+"""Video kaynagi: mp4 dosyasi, webcam ve RTSP icin tek arayuz.
+
+Tasarim kararlari:
+
+- Yakalama ayri bir is parcaciginda doner. Cikarim dongusu disk/ag I/O'su
+  icin beklemez; GPU bosta kalmaz.
+- Halka tampon son N kareyi tutar. Asama 6'daki +-5 sn kanit klibi buradan
+  uretilir, kare yeniden okunmaz.
+- Canli kaynakta (webcam/RTSP) tuketici yavas kalirsa en eski kare atilir;
+  gecikme birikmez. Dosya kaynaginda atilmaz, uretici bekler — kayitli
+  videodan tek kare bile kaybolmamalidir (degerlendirme tekrar edilebilir
+  olmali).
+- RTSP kopmasi kacinilmazdir (PLAN.md risk 5). Ustel geri cekilmeli yeniden
+  baglanma bastan zorunlu, sonraya birakilmaz.
+"""
+
+from __future__ import annotations
+
+import queue
+import threading
+import time
+from collections import deque
+from dataclasses import dataclass
+
+import cv2
+import numpy as np
+
+BUFFER_FRAMES = 300          # 25 FPS'te 12 sn — +-5 sn klip icin fazlasiyla yeter
+RECONNECT_START_SEC = 0.5
+RECONNECT_MAX_SEC = 30.0
+
+
+@dataclass
+class Frame:
+    """Tek kare ve kimligi. `idx` kaynak acilisindan beri artan sayacdir."""
+
+    idx: int
+    ts: float
+    image: np.ndarray
+
+
+def classify_source(source: str | int) -> str:
+    """Kaynagi webcam / rtsp / file olarak siniflandirir."""
+    if isinstance(source, int) or (isinstance(source, str) and source.isdigit()):
+        return "webcam"
+    if str(source).lower().startswith(("rtsp://", "rtmp://", "http://", "https://")):
+        return "rtsp"
+    return "file"
+
+
+class VideoSource:
+    """Arka planda kare okuyan kaynak.
+
+    Kullanim:
+        with VideoSource("data/test.mp4") as src:
+            while (frame := src.read()) is not None:
+                ...
+    """
+
+    def __init__(
+        self,
+        source: str | int,
+        *,
+        buffer_frames: int = BUFFER_FRAMES,
+        reconnect_max_sec: float = RECONNECT_MAX_SEC,
+    ) -> None:
+        self.source = source
+        self.source_type = classify_source(source)
+        self.is_live = self.source_type != "file"
+        self.reconnect_max_sec = reconnect_max_sec
+
+        # Kanit tamponu: hicbir zaman tuketilmez, sadece en eskisi dusurulur.
+        self._buffer: deque[Frame] = deque(maxlen=buffer_frames)
+        self._buffer_lock = threading.Lock()
+
+        # Devir teslim: canlida tek yuva (en yenisi kazanir), dosyada kuyruk
+        # dolunca uretici bekler.
+        self._queue: queue.Queue[Frame] = queue.Queue(maxsize=1 if self.is_live else 64)
+
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.eof = threading.Event()
+
+        self.frames_read = 0
+        self.frames_dropped = 0
+        self.reconnects = 0
+        self.last_error: str | None = None
+
+    # --- yasam dongusu ---------------------------------------------------
+
+    def start(self) -> "VideoSource":
+        if self._thread is not None:
+            return self
+        self._thread = threading.Thread(target=self._run, name="capture", daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=3.0)
+            self._thread = None
+
+    def __enter__(self) -> "VideoSource":
+        return self.start()
+
+    def __exit__(self, *_exc) -> None:
+        self.stop()
+
+    # --- tuketici tarafi -------------------------------------------------
+
+    def read(self, timeout: float = 2.0) -> Frame | None:
+        """Siradaki kareyi verir. Kaynak bittiyse veya sure dolduysa None."""
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                return self._queue.get(timeout=0.1)
+            except queue.Empty:
+                if self.eof.is_set() or self._stop.is_set():
+                    return None
+                if time.monotonic() >= deadline:
+                    return None
+
+    def snapshot(self) -> list[Frame]:
+        """Tampondaki kareleri kopyalar (kanit klibi icin)."""
+        with self._buffer_lock:
+            return list(self._buffer)
+
+    # --- uretici tarafi --------------------------------------------------
+
+    def _open(self) -> cv2.VideoCapture | None:
+        target = int(self.source) if self.source_type == "webcam" else str(self.source)
+        cap = cv2.VideoCapture(target)
+        if not cap.isOpened():
+            cap.release()
+            return None
+        if self.is_live:
+            # Surucu tarafinda kare birikmesin; gecikme yerine tazelik istiyoruz.
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        return cap
+
+    def _publish(self, frame: Frame) -> None:
+        with self._buffer_lock:
+            self._buffer.append(frame)
+
+        if self.is_live:
+            try:
+                self._queue.put_nowait(frame)
+            except queue.Full:
+                try:
+                    self._queue.get_nowait()
+                    self.frames_dropped += 1
+                except queue.Empty:
+                    pass
+                try:
+                    self._queue.put_nowait(frame)
+                except queue.Full:
+                    self.frames_dropped += 1
+            return
+
+        # Dosya: kare atmak yok, tuketici hizina uy.
+        while not self._stop.is_set():
+            try:
+                self._queue.put(frame, timeout=0.2)
+                return
+            except queue.Full:
+                continue
+
+    def _run(self) -> None:
+        cap: cv2.VideoCapture | None = None
+        backoff = RECONNECT_START_SEC
+        idx = 0
+
+        while not self._stop.is_set():
+            if cap is None:
+                cap = self._open()
+                if cap is None:
+                    self.last_error = f"kaynak acilamadi: {self.source}"
+                    if not self.is_live:
+                        self.eof.set()
+                        return
+                    self.reconnects += 1
+                    if self._stop.wait(backoff):
+                        return
+                    backoff = min(backoff * 2, self.reconnect_max_sec)
+                    continue
+                backoff = RECONNECT_START_SEC
+
+            ok, image = cap.read()
+            if not ok:
+                cap.release()
+                cap = None
+                if not self.is_live:
+                    self.eof.set()   # dosya bitti, normal son
+                    return
+                self.last_error = "akis koptu, yeniden baglaniliyor"
+                self.reconnects += 1
+                if self._stop.wait(backoff):
+                    return
+                backoff = min(backoff * 2, self.reconnect_max_sec)
+                continue
+
+            self.frames_read += 1
+            self._publish(Frame(idx=idx, ts=time.time(), image=image))
+            idx += 1
+
+        if cap is not None:
+            cap.release()
