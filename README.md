@@ -48,6 +48,27 @@ docker compose up -d
 bash scripts/check_infra.sh
 ```
 
+## Görü çekirdeğini çalıştırma (Aşama 2)
+
+```bash
+venv/Scripts/python.exe -m vision.run --source data/pilot/zone_01.mp4
+```
+
+```bash
+venv/Scripts/python.exe -m vision.run --source 0 --show
+```
+
+Kaynak mp4 yolu, webcam indeksi (`0`) veya `rtsp://...` olabilir. `--save
+cikti.mp4` işaretlenmiş videoyu yazar, `--gmc sparseOptFlow` hareketli kamera
+için telafiyi açar. Çıktı gerçek döngü FPS'ini, aşama sürelerini ve ID
+kararlılık göstergelerini raporlar.
+
+Öz kontroller (GPU gerekmez):
+
+```bash
+venv/Scripts/python.exe tests/test_vision_core.py
+```
+
 ## Durum
 
 Geliştirme aşamalı ilerliyor. Hangi aşamada olunduğu ve sonraki adım için
