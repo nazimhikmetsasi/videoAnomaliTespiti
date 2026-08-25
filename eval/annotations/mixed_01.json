@@ -1,0 +1,9 @@
+{
+  "video": "mixed_01.mp4",
+  "camera_id": "cam_01",
+  "description": "Kosma sonra yavaslama/dinlenme (zone yok)",
+  "events": [
+    {"type": "RUN", "start_sec": 0.5, "end_sec": 8.0},
+    {"type": "NORMAL", "start_sec": 8.5, "end_sec": 27.0}
+  ]
+}

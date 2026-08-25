@@ -9,11 +9,16 @@ Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 
 ## Şu an neredeyiz
 
-**Aşama 2 — Görü çekirdeği tamamlandı, dedektör YOLO26'ya taşındı.** Kaynak
-(mp4/webcam/RTSP), ön işleme, YOLO26s-pose çıkarımı ve BoT-SORT takibi
-çalışıyor. Altı pilot klipte ve webcam'de kutu + iskelet + kalıcı ID
-doğrulandı; gerçek döngü FPS'i ve ID kararlılığı iki modelde de ölçüldü.
-Sıradaki iş Aşama 3 (öznitelik ve kural motoru).
+**Aşama 3 — Öznitelik ve kural motoru tamamlandı.** One-Euro düzleştirme,
+ölçek-normalize kinematik ve beş kural (FALL, RUN, ZONE_VIOLATION,
+LOITERING, FIGHT) çalışıyor. Pilot kliplerde ilk precision/recall ölçümü
+alındı: FALL 1.00/1.00, ZONE_VIOLATION 0.50/1.00, RUN 0.20/0.50.
+
+Bu aşamanın esas kazancı tablo değil, tablonun **neden** o şekilde çıktığının
+ölçülmüş olmasıdır: ilk uygulama plana birebir sadıktı ve FALL ile RUN hiç
+tetiklemedi. Sebep kural kodu değil, plandaki iki öznitelik tanımının
+görüntü geometrisiyle uyuşmamasıydı (§ Aşama 3 sonucu). Sıradaki iş Aşama 4
+(Kafka ve Spark).
 
 ---
 
@@ -26,8 +31,8 @@ Sıradaki iş Aşama 3 (öznitelik ve kural motoru).
 | 1 | Altyapı (Docker, veritabanı şeması) | Tamamlandı |
 | 2 | Kaynak ve görü çekirdeği | Tamamlandı |
 | 2.1 | YOLOv8 → YOLO26 geçişi | Tamamlandı |
-| 3 | Öznitelik ve kural motoru | Sırada |
-| 4 | Kafka ve Spark | Bekliyor |
+| 3 | Öznitelik ve kural motoru | Tamamlandı |
+| 4 | Kafka ve Spark | Sırada |
 | 5 | Veri katmanı ve API | Bekliyor |
 | 6 | Canlı görüntü (WebSocket) | Bekliyor |
 | 7 | LLM ve Telegram | Bekliyor |
@@ -370,23 +375,231 @@ karede tetiklendi ve ön işleme payı büyüdü.
 
 ---
 
+## Aşama 3 sonucu (2026-08-25)
+
+Yazılan kod:
+
+| dosya | satır | görevi |
+|---|---|---|
+| `vision/stages/smoother.py` | 106 | One-Euro filtresi, iz başına vektörleştirilmiş durum |
+| `vision/stages/features.py` | 166 | ölçek-normalize kinematik, 50 kare kayan pencere |
+| `vision/rules/engine.py` | 112 | `Thresholds`, `Zone`, `Candidate`, `RuleEngine` |
+| `vision/rules/fall.py` | 38 | gövde eğimi + aşağı hız zirvesi |
+| `vision/rules/run.py` | 58 | yer değiştirme **veya** adım ritmi |
+| `vision/rules/zone.py` | 48 | ayak noktası poligon testi |
+| `vision/rules/loiter.py` | 93 | bölgede kalış / sabit dolaşma, kendi durumu |
+| `vision/rules/fight.py` | 68 | ikili yakınlık + karşılıklı uzuv hızı |
+| `eval/pilot_eval.py` | 184 | saniye bazlı precision/recall, markdown tablo |
+| `eval/feature_stats.py` | 191 | öznitelik dağılımı ve eşik kalibrasyon ölçümü |
+| `tests/test_features_rules.py` | 304 | 13 assert tabanlı öz kontrol, GPU gerektirmez |
+
+`tests/test_features_rules.py` 13/13, `tests/test_vision_core.py` 8/8 geçiyor.
+
+Uygulama sözleşmesi `docs/ASAMA3_PLAN.md`'dedir; §10 ölçüm sonrası
+düzeltmelerin gerekçesini kanıtlarıyla tutar.
+
+### İlk koşu: plana sadık uygulama sıfır sonuç verdi
+
+| tip | TP | FP | FN | precision | recall |
+|---|---|---|---|---|---|
+| FALL | 0 | 0 | 1 | 0.00 | 0.00 |
+| RUN | 0 | 2 | 2 | 0.00 | 0.00 |
+| ZONE_VIOLATION | 1 | 20 | 0 | 0.05 | 1.00 |
+
+Kural kodu doğruydu. Plandaki **öznitelik tanımları** yanlıştı. Dört kök neden
+ayrı ayrı ölçülerek bulundu.
+
+### Kök neden 1 — omurga açısı düşmeyi göremiyor
+
+`fall_01`, düşme 5.2-6.8 sn:
+
+```
+    sn  nspeed     nvy  spine  aspect
+  5.21    0.57    0.31    1.2    0.61
+  5.34    0.44    0.75    5.1    1.01   <- kisi yatmis, spine hala 5 derece
+  5.47    0.38    0.33   16.7    0.98
+  5.61    2.46   -2.79    0.0    1.08   <- kalca kaybolunca spine 0.0
+```
+
+Klip boyunca `spine_angle` tepesi **20.2 derece**, eşik 45. İki ayrı kusur:
+kamera eksenine doğru düşen kişide kalça→omuz vektörü görüntü düzleminde dik
+kalır; ayrıca kalça veya omuz keypoint'i güveni geçemeyince fonksiyon `0.0`
+döndürüyordu — `0.0` "dimdik" demektir, doğrusu "bilinmiyor"dur.
+
+**Çözüm:** `body_tilt = max(iskelet açısı, bbox eğimi)`, bbox eğimi =
+`atan2(genişlik, yükseklik)`. bbox her karede vardır ve `aspect 1.0` tam 45
+dereceye düşer — yani mevcut eşik birimi değişmez. `spine_angle` ayrı alan
+olarak kalır (bilinmiyorsa `-1.0`) ve teze girer: iskeletin tek başına neden
+yetmediği tabloda görünsün.
+
+Yakın plan riski ölçüldü: `mixed_01` 8-14 sn arası kadına yakın plandır,
+`aspect` 1.21'e çıkar (`body_tilt` 50 derece). Aynı aralıkta `norm_vy` 0.26'yı
+geçmez. FALL kuralı **iki koşulu birlikte** aradığı için yanlış pozitif
+üretmez.
+
+### Kök neden 2 — yatay hız iki RUN klibinde gözlemlenemiyor
+
+| klip | kamera | norm_speed tepe | eşik |
+|---|---|---|---|
+| run_01 | koşucuyu takip ediyor | 0.41 | 1.80 |
+| mixed_01 | kişi kameraya doğru koşuyor | 1.04 | 1.80 |
+| police_run | sabit, kişi kadrajı kesiyor | 1.77 | 1.80 |
+
+Görüntü düzlemindeki yatay hız, özne kamera ekseni boyunca hareket ettiğinde
+veya kamera özneyi takip ettiğinde **ölçülemez**. Sabit kamerada bile eşiğin
+kıl payı altında kalıyor.
+
+**Çözüm:** RUN iki kanıttan herhangi biriyle tetikler — yer değiştirme
+(mevcut yol) **veya** adım ritmi (`limb_speed` kayan medyanı). Adım döngüsü
+kamera geometrisinden bağımsızdır.
+
+### Kök neden 3 — `zone_01` tek kamera değil, kurgu
+
+28. saniyede görüntü tamamen değişiyor (koridor → otopark), 54. saniyede geri
+dönüyor. Bölge poligonu 0-1 normalize ve **kameraya bağlıdır**; sahne
+değişince aynı koordinatlar otoparktaki yayanın üstüne düşüyor. İlk koşudaki
+20 yanlış pozitif saniyenin tamamı buradan geliyordu.
+
+**Çözüm:** `eval/annotations/zone_01.json` içine `eval_end_sec: 28.0`. Bu bir
+eşik ayarı değil, ölçüm alanının düzeltilmesidir — kamera değiştikten sonra
+o bölge yoktur.
+
+### Kök neden 4 — türev, tampon dolmadan hesaplanıyordu
+
+İz doğduğu ilk karelerde pencere kısa olduğu için `dt` tek kareye kadar
+düşüyor, kutunun oturma titremesi hız gibi okunuyordu. `normal_01` bu yüzden
+0.4 sn'de 25 RUN adayı üretiyordu. Pencere `velocity_lookback` kareye
+ulaşana kadar hız artık 0'dır; bedeli iz başına 0.2 sn sessizlik.
+
+### Ölçüm — öznitelik tepe tablosu (gerçek referans aralıklarına göre)
+
+`eval/feature_stats.py`, altı klip, YOLO26s-pose.
+
+| klip | aralık | body_tilt tepe | norm_vy tepe | norm_speed tepe | limb_speed medyan | kare |
+|---|---|---|---|---|---|---|
+| fall_01 | NORMAL | 27.0 | 0.07 | 0.78 | 0.39 | 82 |
+| fall_01 | **FALL** | **66.1** | **3.16** | 2.97 | 1.73 | 19 |
+| mixed_01 | NORMAL | 51.7 | 0.26 | 0.53 | 0.29 | 463 |
+| mixed_01 | **RUN** | 44.7 | 0.35 | 0.55 | 0.69 | 188 |
+| normal_01 | NORMAL | 35.7 | 0.19 | 0.91 | 0.35 | 324 |
+| run_01 | **RUN** | 31.9 | 0.61 | 0.64 | **1.40** | 436 |
+| zone_01 | NORMAL | 29.7 | 1.27 | 1.72 | 0.66 | 520 |
+| zone_01 | **ZONE_VIOLATION** | 33.0 | 1.02 | 1.49 | 0.50 | 343 |
+| police_run | (etiketsiz) | 45.4 | 0.70 | 2.45 | 0.52 | 191 |
+
+`body_tilt` FALL'ı (66.1) her NORMAL satırdan (27.0-51.7) ayırıyor — kök
+neden 1'in düzeldiğinin kanıtı budur.
+
+### Ölçüm — adım penceresi süpürmesi
+
+Adım kanıtının kaç karelik medyanla alınacağı ölçülerek seçildi. Havuzlanmış
+kayan medyan dağılımları:
+
+| pencere | NORMAL p95 | NORMAL p99 | gerçek koşu (run_01) medyan |
+|---|---|---|---|
+| 10 kare | 1.28 | 2.22 | 1.45 |
+| 25 kare | 1.19 | 1.67 | 1.45 |
+| **50 kare** | **1.00** | **1.44** | **1.46** |
+| 75 kare | 0.92 | 1.28 | 1.45 |
+
+10 karelik pencerede yürüyüşün tek adımlık sıçraması medyanı koşu bandına
+taşıyor, ayrım yok. 50 karede (2 sn) yürüyüş 1.00'a inerken koşu 1.46'da
+kalıyor. `run_gait_speed = 1.20` ikisinin arasındadır; `window_frames` 30'dan
+50'ye çıkarıldı (`init.sql` varsayılanları da). Bedeli: koşu 2 saniye
+gecikmeyle bildirilir.
+
+### Eşik kalibrasyonunda plandaki kuralın kendisi yanlıştı
+
+`docs/ASAMA3_PLAN.md` §10.5, eşiği "NORMAL aralıklarının 90. yüzdeliği ile
+olay aralıklarının 10. yüzdeliği arası" diye tanımlıyordu. Bu ölçüt kare
+bazında uygulandığında neredeyse kusursuz ayrışma talep eder ve iki
+öznitelikte de örtüşme raporladı (`run_norm_speed`: NORMAL p90 0.632, olay
+p10 0.037). Ölçüt fazla katıydı; gerçek kalibrasyon yukarıdaki kayan medyan
+süpürmesinden geldi. `eval/feature_stats.py` yüzdelik raporunu üretmeye devam
+ediyor ama eşiği kendisi koymuyor.
+
+### Ölçüm — pilot değerlendirme (son hâli)
+
+| tip | TP | FP | FN | precision | recall | F1 |
+|---|---|---|---|---|---|---|
+| FALL | 1 | 0 | 0 | 1.00 | 1.00 | 1.00 |
+| RUN | 1 | 4 | 1 | 0.20 | 0.50 | 0.29 |
+| ZONE_VIOLATION | 1 | 1 | 0 | 0.50 | 1.00 | 0.67 |
+| **TOPLAM** | 3 | 5 | 1 | 0.38 | 0.75 | 0.50 |
+
+Ham aday sayısı (saniyeye indirgenmemiş) — **Aşama 4'te Spark'ın süzeceği
+gürültü tabanı budur, öncesi/sonrası karşılaştırması bu satırlardan
+yapılacak**:
+
+| klip | ham aday | dağılım |
+|---|---|---|
+| fall_01 | 2 | FALL |
+| mixed_01 | 0 | — |
+| normal_01 | 11 | RUN (2.0 sn'de kısa tempolu yürüyüş) |
+| police_run | 0 | — |
+| run_01 | 333 | RUN (1.6 sn'den itibaren kesintisiz) |
+| zone_01 | 739 | ZONE_VIOLATION 703 + RUN 35 |
+
+Aşama süreleri (`normal_01`, medyan ms): düzleme 0.1, öznitelik+kural 0.2.
+Aşama 3 zinciri FPS bütçesinde ölçülebilir yer kaplamıyor.
+
+### Bilinen sınırlar (kapatılmadı, ölçüldü)
+
+1. **RUN recall 0.50.** `mixed_01`'in koşusu hem yer değiştirme hem adım
+   kanıtında normal yürüyüşle örtüşüyor (RUN limb medyanı 0.69, `zone_01`
+   normal yürüyüşü 0.66). Bu klipte ayrım yapacak eşik yok; koyulsaydı
+   `zone_01`'in normal yürüyüşü de RUN olurdu. Eşiği beş klibe uydurmak test
+   kümesini ezberlemektir, yapılmadı.
+2. **`police_run` artık hiç aday üretmiyor.** Sabit kameralı tek gerçek koşu
+   klibi bu ve 15 FPS'tir; `norm_speed` tepesi 1.77 (eşik 1.80), adım medyanı
+   0.52. Düşük kare hızı uzuv hızını da bastırıyor. Etiketi olmadığı için
+   tabloya girmiyor ama gerçek bir kaçırmadır.
+3. **ZONE ilk tetik 10.8 sn, gerçek referans 12.0 sn.** Kişi işaretli
+   aralıktan önce bölgeye giriyor; 1 saniyelik tolerans yetmiyor. Etiket
+   sınırı gevşek, kural erken değil.
+4. **FIGHT ve LOITERING pilot kliplerde hiç tetiklemedi.** Bu kliplerde kavga
+   ve dolaşma yok, yani yanlış pozitif üretmemeleri doğru davranıştır; gerçek
+   doğrulukları ölçülmedi.
+
+### Plandan sapmalar
+
+1. **`vision/stages/features.py` 166 satır**, "aşama başına 150 satır"
+   sınırının üstünde. İçinde iki hesap ailesi var (kinematik ve poz açıları)
+   ve ölçümden gelen sabitlerin gerekçe yorumları. Bölmek, iki dosyanın aynı
+   `FrameFeatures`'ı doldurması demek olurdu.
+2. **`RuleEngine.__init__` kural sınıflarını gövde içinde import ediyor.**
+   `Candidate`/`Thresholds`/`Zone` `engine.py`'de yaşıyor ve her kural onlara
+   bakıyor; modül başında import döngüsel olurdu.
+3. **`vision/run.py` 331 satır.** Aşama 2'de zaten 225'ti; `--rules`,
+   `--zones`, iki ölçüm satırı ve aday özeti eklendi. Bu bir aşama değil
+   giriş noktasıdır.
+4. **`detection_settings` değişti:** `fall_spine_deg` → `fall_tilt_deg`,
+   yeni `run_gait_speed` sütunu, `window_frames` 30 → 50. Aşama 5 henüz ORM
+   yazmadığı için isim düzeltmesi bedava.
+
+---
+
 ## Bir sonraki adım
 
-Aşama 3 — Öznitelik ve Kural Motoru:
+Aşama 4 — Kafka ve Spark:
 
-1. `vision/stages/smoother.py`: One-Euro filtresi (keypoint titremesi)
-2. `vision/stages/features.py`: hız ÷ bbox yüksekliği, omurga açısı, diz açısı,
-   en-boy oranı, 30 kare kayan pencere
-3. `vision/rules/`: `fall.py`, `run.py`, `zone.py`, `loiter.py`, `fight.py`
-4. Pose yoksa anomali üretilmez kuralı
-5. Eşikler şimdilik sabit; veritabanından okuma Aşama 5'te
+1. `vision/publish.py`: Kafka producer, `anomaly-candidates` topic'ine aday
+   olay JSON'u. `Candidate` alanları hazır (`thresholds_used` dahil).
+2. `stream/spark_job.py`: Structured Streaming, 3 sn pencere / 1 sn kayma,
+   `(camera, track, type)` başına `hits >= spark_min_hits` → `anomaly-events`
+3. `docker-compose.yml`: `spark` servisi (Aşama 1'de bilinçli ertelenmişti)
 
-Girdi hazır: `Track` sınıfı `track_id`, `bbox`, `conf`, `keypoints (17,3)` ve
-`height` (normalizasyon birimi) taşıyor. YOLO26 geçişi bu arayüzü değiştirmedi;
-Aşama 3 kodu dedektörden bağımsızdır.
+**Onay kriteri:** tek kare gürültüsü eleniyor, gerçek olay geçiyor;
+öncesi/sonrası alarm sayısı karşılaştırma tablosunda.
 
-**Onay kriteri:** pilot kliplerde doğru aday olay; ilk precision/recall
-ölçümü tabloda.
+Gürültü tabanı ölçülmüş durumda — Spark'ın süzeceği ham aday sayıları
+"Aşama 3 sonucu" bölümündeki tabloda. Karşılaştırma doğrudan o satırlara
+karşı yapılacak. Beklenti: `normal_01`'in 11 adayı (2.0 sn'de kısa tempolu
+yürüyüş) elenmeli, `run_01`'in 333 kesintisiz adayı geçmeli. Bu iki klip
+Spark filtresinin doğru çalıştığının en temiz sınavıdır.
+
+Ayrıca Aşama 4'te doğrulanacak açık soru: host'ta çalışan `vision/` gerçekten
+`localhost:9092`'ye yazabiliyor mu.
 
 ---
 
@@ -429,6 +642,15 @@ Aşama 3 kodu dedektörden bağımsızdır.
 | 2026-08-25 | ReID batch 2'nin katına yuvarlanır | ONNX şekil değişiminde ~50 ms yeniden ayarlama var ve ısıtma çözmüyor. Yuvarlama p95'i 50.4 → 13.4 ms indiriyor |
 | 2026-08-25 | `yolo26m-pose` reddedildi | Çıkarım `s`'nin iki katı (60.9 ms); `n`/`s` eşitliği `m` ölçeğinde tutmuyor |
 | 2026-08-25 | YOLO12 ve RTMPose/ViTPose reddedildi | YOLO12 dikkat tabanlı, FlashAttention'sız GPU'da riskli; RTMPose/ViTPose top-down iki aşamalı, v1 zayıf nokta 1'e geri dönüş olurdu |
+| 2026-08-25 | Düşme ölçütü `body_tilt = max(iskelet açısı, bbox eğimi)` | İskelet omurga açısı tepesi `fall_01`'de 20.2 derece, eşik 45 — kamera eksenine doğru düşende kalça→omuz vektörü görüntüde dik kalıyor. bbox eğimi her karede var ve `aspect 1.0` tam 45 dereceye düşüyor, yani eşik birimi değişmiyor |
+| 2026-08-25 | Eksik keypoint'te `spine_angle = -1.0` | Önceki `0.0` "dimdik" demekti; kalça kaybolunca düşme sessizce yanlış negatife dönüyordu |
+| 2026-08-25 | `centroid` her zaman bbox merkezi, mid_hip değil | Kalça kaybolunca merkez kaynağı değişiyor ve iki nokta arası sabit fark tek karede hız gibi okunuyordu (`fall_01` 5.61 sn: 2.46 / -2.79) |
+| 2026-08-25 | RUN'a ikinci kanıt: adım ritmi | Yatay görüntü hızı kamera ekseni boyunca harekette veya kamera özneyi takip ederken ölçülemiyor (run_01 tepe 0.41, mixed_01 1.04, sabit kamerada police_run 1.77 — eşik 1.80). Adım döngüsü kamera geometrisinden bağımsız |
+| 2026-08-25 | Adım medyanı 50 kare, `run_gait_speed` 1.20 | 10 karelik pencerede ayrım yok (yürüyüş p95 1.28, koşu 1.45); 50 karede yürüyüş 1.00'a inerken koşu 1.46'da kalıyor. Bedeli 2 sn tespit gecikmesi |
+| 2026-08-25 | `window_frames` 30 → 50 | Adım medyanı 2 saniyelik pencere istiyor; bedeli iz başına 50 `FrameFeatures` |
+| 2026-08-25 | Türev, tampon dolmadan hesaplanmaz | Kısa pencerede `dt` tek kareye düşüp kutunun oturma titremesini hız yapıyordu: `normal_01` 0.4 sn'de 25 sahte RUN. Bedeli iz başına 0.2 sn sessizlik |
+| 2026-08-25 | `zone_01` değerlendirmesi 28. saniyede kesiliyor | Klip kurgu: 28. sn'de kamera değişiyor, bölge poligonu kameraya bağlı olduğu için otopark sahnesindeki yayaların üstüne düşüyordu. 20 yanlış pozitif saniyenin tamamı buradandı |
+| 2026-08-25 | Eşikler pilot kliplere uydurulmadı | `mixed_01`'in koşusu adım kanıtında normal yürüyüşle örtüşüyor (0.69 vs 0.66). Ayıracak eşik yok; zorlanırsa `zone_01`'in normal yürüyüşü de RUN olurdu. Beş klibe uydurmak test kümesini ezberlemektir |
 
 ---
 
@@ -447,6 +669,19 @@ Aşama 3 kodu dedektörden bağımsızdır.
 - Frontend Tailwind şablonu henüz sağlanmadı (Aşama 8'e kadar gerekmiyor)
 - Host'ta çalışan `vision/` gerçekten `localhost:9092`'ye yazabiliyor mu —
   port açık, ama uçtan uca producer denemesi Aşama 4'te yapılacak
+- **Pilot küme RUN için yetersiz.** Etiketli iki koşu klibi de stok
+  görüntüdür: birinde kamera koşucuyu takip ediyor, diğerinde kişi kameraya
+  doğru koşuyor. Sabit kameralı, kadrajı kesen, etiketli bir koşu klibi yok.
+  Aşama 10 değerlendirme kümesine böyle bir kayıt eklenmeli
+- `police_run` (sabit kamera, gerçek koşu) hiç aday üretmiyor: 15 FPS, hız
+  tepesi 1.77 (eşik 1.80), adım medyanı 0.52. Düşük kare hızı adım kanıtını
+  da bastırıyor mu, yoksa klip mi tempolu yürüyüş — ayrı ölçülmeli
+- FIGHT ve LOITERING kurallarının gerçek doğruluğu ölçülmedi; pilot kliplerde
+  bu olaylar yok. Yalnızca yanlış pozitif üretmedikleri doğrulandı
+- Bölge poligonu kameraya bağlıdır. Kurgu, PTZ veya kadraj değişen kayıtta
+  aynı normalize koordinat başka bir yere düşer. Aşama 5'te `zones` tablosu
+  `camera_id` FK'siyle bunu yapısal olarak çözüyor; kurgu klip yine de
+  değerlendirme dışıdır
 
 Kapanan sorular:
 

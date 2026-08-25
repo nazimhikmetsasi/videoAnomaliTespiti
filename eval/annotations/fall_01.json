@@ -1,0 +1,10 @@
+{
+  "video": "fall_01.mp4",
+  "camera_id": "cam_01",
+  "description": "Ofiste yururken takilip dusme (~5.5 sn)",
+  "events": [
+    {"type": "NORMAL", "start_sec": 0.0, "end_sec": 5.0},
+    {"type": "FALL", "start_sec": 5.2, "end_sec": 6.8},
+    {"type": "NORMAL", "start_sec": 7.0, "end_sec": 7.8}
+  ]
+}

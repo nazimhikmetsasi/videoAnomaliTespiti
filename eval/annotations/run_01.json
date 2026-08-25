@@ -1,0 +1,8 @@
+{
+  "video": "run_01.mp4",
+  "camera_id": "cam_01",
+  "description": "Gercek kisi kosu (dikey video, ~15 sn)",
+  "events": [
+    {"type": "RUN", "start_sec": 0.5, "end_sec": 15.0}
+  ]
+}
