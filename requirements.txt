@@ -6,3 +6,7 @@ ultralytics>=8.4.0
 opencv-python>=4.10.0
 numpy>=2.0
 lap>=0.5.12          # BoT-SORT/ByteTrack esleme cozucusu (ultralytics calisma anida ister)
+# yolo26s-reid.onnx gorunum agi (YOLO26 end2end oldugu icin dedektorun bedava
+# oznitelikleri ReID'e baglanamiyor). SURUM SABIT: 1.23+ CUDA 13 ister, bizde
+# torch cu121 var. 1.22 CUDA 12.x + cuDNN 9 ister; ikisini de torch/lib saglar.
+onnxruntime-gpu==1.22.0

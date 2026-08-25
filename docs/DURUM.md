@@ -3,16 +3,17 @@
 Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 `docs/PLAN.md` sonra bu dosya okunur ve kaldığı yerden devam edilir.
 
-**Son güncelleme:** 2026-08-24
+**Son güncelleme:** 2026-08-25
 
 ---
 
 ## Şu an neredeyiz
 
-**Aşama 2 — Görü çekirdeği tamamlandı.** Kaynak (mp4/webcam/RTSP), ön işleme,
-YOLOv8s-pose çıkarımı ve BoT-SORT takibi çalışıyor. Altı pilot klipte ve
-webcam'de kutu + iskelet + kalıcı ID doğrulandı; gerçek döngü FPS'i ve ID
-kararlılığı ölçüldü. Sıradaki iş Aşama 3 (öznitelik ve kural motoru).
+**Aşama 2 — Görü çekirdeği tamamlandı, dedektör YOLO26'ya taşındı.** Kaynak
+(mp4/webcam/RTSP), ön işleme, YOLO26s-pose çıkarımı ve BoT-SORT takibi
+çalışıyor. Altı pilot klipte ve webcam'de kutu + iskelet + kalıcı ID
+doğrulandı; gerçek döngü FPS'i ve ID kararlılığı iki modelde de ölçüldü.
+Sıradaki iş Aşama 3 (öznitelik ve kural motoru).
 
 ---
 
@@ -24,6 +25,7 @@ kararlılığı ölçüldü. Sıradaki iş Aşama 3 (öznitelik ve kural motoru)
 | 0 | Ortam hazırlığı | Tamamlandı |
 | 1 | Altyapı (Docker, veritabanı şeması) | Tamamlandı |
 | 2 | Kaynak ve görü çekirdeği | Tamamlandı |
+| 2.1 | YOLOv8 → YOLO26 geçişi | Tamamlandı |
 | 3 | Öznitelik ve kural motoru | Sırada |
 | 4 | Kafka ve Spark | Bekliyor |
 | 5 | Veri katmanı ve API | Bekliyor |
@@ -212,6 +214,162 @@ kural Aşama 3'te yine de yazılacak.
 
 ---
 
+## Aşama 2.1 sonucu — YOLOv8 → YOLO26 geçişi (2026-08-25)
+
+Dedektör `yolov8s-pose`'dan `yolo26s-pose`'a taşındı. Gerekçe: YOLO26 uçtan uca
+(end2end) çalışır, yani NMS yoktur. Bu bir hız kararı değil mimari karardır —
+çift tespit ve kutu birleştirme sorunu (v1 zayıf nokta 2, `detector.py`
+merge/alan filtreleri) artık doğamaz ve ayarlanacak bir `iou` eşiği kalmaz.
+
+### Değişen dosyalar
+
+| dosya | değişiklik |
+|---|---|
+| `vision/stages/pose_detector.py` | varsayılan ağırlık `models/yolo26s-pose.pt`, varsayılan `conf` 0.25 |
+| `vision/stages/tracker.py` | `DEFAULT_REID`, `_FixedBatchReID` sarmalayıcı, `cuda` → `cuda:0` normalizasyonu |
+| `vision/run.py` | `choose_reid()`, `--reid-model` bayrağı, raporda aktif ReID yolu |
+| `scripts/fetch_models.py` | **yeni** — dört ağırlığı tek komutla indirir |
+| `infra/postgres/init.sql` | `pose_conf` varsayılanı 0.35 → 0.25 |
+| `requirements.txt` | `onnxruntime-gpu==1.22.0` (sürüm sabit, aşağıda gerekçe) |
+| `tests/test_vision_core.py` | `test_choose_reid`, `test_fixed_batch_reid` → 8/8 geçiyor |
+
+### ReID: bedava öznitelik yolu kapandı, amaca özel ağ geldi
+
+BoT-SORT'un `model: auto` yolu dedektörün kendi gövde özniteliklerini görünüm
+vektörü olarak kullanır — bedavadır ama yalnızca end2end **olmayan** modellerde
+çalışır. Ultralytics bunu açıkça dışlar (`trackers/track.py`, `not
+...model[-1].end2end` koşulu); nedeni teknik: end2end çıktısı zaten seçilmiş
+top-k satırlardır, dönen indeksler artık çapa (anchor) ızgarasına karşılık
+gelmez, dolayısıyla eşlenen öznitelik yanlış olurdu.
+
+Karşılığında Ultralytics YOLO26 için **eğitilmiş ReID ağları** yayınlıyor
+(`yolo26{n,s,m,l,x}-reid.onnx`, `trackers/utils/reid.py`).
+`models/yolo26s-reid.onnx` kullanılıyor. Net sonuç kayıp değil değişim: genel
+amaçlı dedektör öznitelikleri yerine ReID için eğitilmiş bir ağ, ölçülen bedeli
+kare başına yaklaşık 7 ms.
+
+`vision/run.py` hangi yolun aktif olduğunu her koşuda raporun başına yazar.
+`--reid-model` ile elle ağ verilebilir, `--no-reid` ablation için tamamen
+kapatır.
+
+### Ölçüm 1 — aynı koşullarda v8 / YOLO26 karşılaştırması
+
+Altı pilot klip, RTX 3050 Laptop, FP16, masaüstü GPU yükü kapalı, her ikisi de
+`conf=0.35`. Süreler medyan ms.
+
+| klip | v8s FPS | v8s çıkarım | YOLO26s FPS | YOLO26s çıkarım |
+|---|---|---|---|---|
+| fall_01 | 60.7 | 13.8 | 38.4 | 18.7 |
+| mixed_01 | 29.2 | 19.0 | 29.0 | 17.9 |
+| normal_01 | 48.4 | 14.2 | 33.0 | 18.2 |
+| zone_01 | 40.1 | 14.7 | 31.2 | 17.8 |
+| police_run | 46.5 | 14.1 | 31.5 | 18.4 |
+| run_01 (4K) | 19.0 | 25.4 | 16.0 | 23.5 |
+
+Çıkarım 14 → 18 ms (+4 ms). ReID ağı +5–7 ms. Geçişin toplam bedeli yaklaşık
+%25–35 FPS.
+
+### Ölçüm 2 — güven eşiği kalibrasyonu
+
+İlk koşuda YOLO26 `police_run` klibinde v8'in gördüğü kişilerin bir kısmını
+kaçırıyor göründü. Sebep kaçırma değil kalibrasyon: end2end kafa aynı tespite
+daha düşük skor verir.
+
+| ölçüt (police_run) | v8 @0.35 | YOLO26 @0.35 | YOLO26 @0.25 |
+|---|---|---|---|
+| izli kare | 193 | 132 | 191 |
+| benzersiz ID | 7 | 8 | 7 |
+| kare başına kişi | 1.31 | 1.06 | 1.24 |
+
+`conf=0.25`'te YOLO26 v8'in `conf=0.35`'teki davranışını yakalıyor. Varsayılan
+eşik hem kodda hem `detection_settings.pose_conf` sütununda 0.25 yapıldı.
+
+`fall_01`'de v8'in ürettiği ikinci ID YOLO26'da `conf=0.15`'te bile yok. O ID
+110 karenin yalnızca dört kadarında beliriyor — v8'in NMS artığı geçici yanlış
+pozitifi. YOLO26 lehine bir fark.
+
+### Ölçüm 3 — p95 sıçraması ve çözümü
+
+İlk YOLO26 + ReID koşularında takip aşaması medyan 0.5 ms, **p95 50.4 ms**
+verdi. 40 ms'lik 25 FPS bütçesini tek başına aşan bir sıçrama.
+
+Sebep ölçülerek bulundu: ONNX Runtime CUDA sağlayıcısı girdi şekli her
+değiştiğinde yeniden ayarlama yapıyor. Kişi sayısı değiştikçe batch boyutu
+değişiyor, her değişim yaklaşık 50 ms. **Isıtma bunu çözmüyor** — 1→2→1
+dizisinde daha önce görülmüş şekle dönüşte de aynı bedel ödeniyor (ölçülen:
+49.1 / 57.1 / 57.4 ms).
+
+Çözüm `vision/stages/tracker.py` içindeki `_FixedBatchReID`: batch sabit bir
+sayının katına yuvarlanır, eksik yerler son tespitin kopyasıyla doldurulur,
+fazla vektörler atılır. Şekil sabit kaldığı için yeniden ayarlama hiç
+tetiklenmez.
+
+Adım ölçülerek seçildi (`police_run`, takip aşaması):
+
+| yuvarlama | medyan | p95 |
+|---|---|---|
+| yok | 0.5 ms | 50.4 ms |
+| adım 4 | 10.1 ms | 18.9 ms |
+| **adım 2** | **7.1 ms** | **13.4 ms** |
+
+Sabit maliyet batch ile büyüdüğü için küçük adım daha ucuz. Üç ve daha fazla
+kişili karelerde 4'e çıkılır, şekil yine sabit kalır.
+
+### Ölçüm 4 — son yapılandırma
+
+`yolo26s-pose` + `yolo26s-reid.onnx`, `conf=0.25`, GMC kapalı, CLAHE koşullu.
+Süreler medyan ms.
+
+| klip | çözünürlük | FPS | ön işleme | çıkarım | takip | döngü | döngü p95 | CLAHE | ID | eş zamanlı |
+|---|---|---|---|---|---|---|---|---|---|---|
+| fall_01 | 768x432 | 37.2 | 1.2 | 18.2 | 0.4 | 22.7 | 44.6 | 0/236 | 1 | 1 |
+| run_01 | 2160x3840 | 17.5 | 23.9 | 21.0 | 9.0 | 54.0 | 75.7 | 0/467 | 1 | 1 |
+| mixed_01 | 898x506 | 27.1 | 9.9 | 18.1 | 8.0 | 35.7 | 43.8 | 570/686 | 1 | 1 |
+| normal_01 | 1280x720 | 31.8 | 4.6 | 18.2 | 7.0 | 30.0 | 37.1 | 0/362 | 1 | 1 |
+| zone_01 | 640x360 | 30.1 | 9.3 | 18.1 | 6.8 | 32.8 | 42.3 | 1417/1515 | 6 | 3 |
+| police_run | 1276x720 | 31.7 | 5.4 | 18.5 | 7.0 | 30.4 | 39.5 | 0/300 | 7 | 2 |
+
+Webcam (`--source 0`, 120 kare): **24.3 FPS**, döngü 37.3 ms, ReID aktif,
+120/120 karede kişi bulundu, pozsuz iz 0.
+
+25 FPS hedefi run_01 dışında her klipte aşılıyor. run_01 2160x3840 dikey 4K'dır
+ve darboğazı çözme + letterbox'tır (ön işleme 23.9 ms), model değil. Webcam
+24.3 FPS ile hedefin hemen altında: oda karanlık olduğu için CLAHE 119/120
+karede tetiklendi ve ön işleme payı büyüdü.
+
+**Pozsuz iz altı klipte de 0** — YOLO26 da kutu ürettiği her yerde 17 keypoint
+üretiyor.
+
+### Ortam tuzakları
+
+1. **`onnxruntime-gpu` sürümü CUDA sürümüne bağlıdır.** PyPI'daki güncel sürüm
+   (1.29) CUDA **13** ister; bizde torch cu121 var. Kurulunca hata vermiyor,
+   sessizce CPU'ya düşüyor — `zone_01` FPS'i 19.5'ten 9.8'e indi. Tanı satırı:
+   `Error loading onnxruntime_providers_cuda.dll which depends on
+   "cublasLt64_13.dll" which is missing`. `==1.22.0` sabitlendi; CUDA 12.x +
+   cuDNN 9 ister, ikisini de `venv/Lib/site-packages/torch/lib` sağlıyor
+   (`cublasLt64_12.dll`, `cudnn64_9.dll`). Doğrulama satırı: `Using ONNX
+   Runtime 1.22.0 with CUDAExecutionProvider`.
+2. **Çıplak `"cuda"` cihaz adı ONNX için yetmiyor.** `torch.device("cuda").index`
+   `None` olur, ONNX Runtime da `device_id=None` gelen CUDA sağlayıcısını
+   reddedip CPU'ya düşer. `Tracker` artık `"cuda"` gördüğünde `"cuda:0"`
+   kullanıyor.
+3. Ağırlıklar `.gitignore`'da (`*.pt`, `*.onnx`). Depo klonlandıktan sonra
+   `venv/Scripts/python.exe scripts/fetch_models.py` bir kez çalıştırılır.
+
+### Elenen seçenekler
+
+- **`yolo26m-pose`** — çıkarımı `s`'nin yaklaşık iki katı (60.9 ms). Aşama
+  0'daki "`n` ile `s` aynı süreyi veriyor, demek ki büyük model de bedava"
+  beklentisi `m` ölçeğinde tutmuyor.
+- **YOLO12** — dikkat (attention) tabanlı. FlashAttention olmayan bu GPU'da
+  yavaşlama riski var, kazancı belirsiz.
+- **RTMPose / ViTPose** — keypoint doğruluğu daha yüksek ama top-down iki
+  aşamalı: önce dedektör, sonra kişi başına ayrı pose ağı. Bu tam olarak v1'in
+  1 numaralı zayıf noktası; mimari karara ters.
+
+---
+
 ## Bir sonraki adım
 
 Aşama 3 — Öznitelik ve Kural Motoru:
@@ -224,7 +382,8 @@ Aşama 3 — Öznitelik ve Kural Motoru:
 5. Eşikler şimdilik sabit; veritabanından okuma Aşama 5'te
 
 Girdi hazır: `Track` sınıfı `track_id`, `bbox`, `conf`, `keypoints (17,3)` ve
-`height` (normalizasyon birimi) taşıyor.
+`height` (normalizasyon birimi) taşıyor. YOLO26 geçişi bu arayüzü değiştirmedi;
+Aşama 3 kodu dedektörden bağımsızdır.
 
 **Onay kriteri:** pilot kliplerde doğru aday olay; ilk precision/recall
 ölçümü tabloda.
@@ -262,13 +421,24 @@ Girdi hazır: `Track` sınıfı `track_id`, `bbox`, `conf`, `keypoints (17,3)` v
 | 2026-08-24 | Canlı kaynakta okuma zaman aşımı akış sonu sayılmaz | Webcam açılışı bu makinede ~5 sn; ilk sürüm 2 sn'de pes edip "hiç kare okunamadı" diyordu |
 | 2026-08-24 | FPS sayacı ilk karede başlar | Webcam/RTSP açılış süresi FPS'i yanlış düşük gösteriyordu |
 | 2026-08-24 | `--cv-threads` ayarı eklendi ve kaldırıldı | 0/4/8/16 arasında ölçülebilir fark çıkmadı (~2 FPS gürültü) |
+| 2026-08-25 | Dedektör `yolo26s-pose` | End2end (NMS yok): çift tespit ve kutu birleştirme sorunu mimari olarak doğamaz, ayarlanacak `iou` eşiği kalmaz. Bedeli çıkarımda +4 ms |
+| 2026-08-25 | ReID: `yolo26s-reid.onnx` | YOLO26 end2end olduğu için dedektörün bedava öznitelikleri ReID'e bağlanamıyor (ultralytics bunu açıkça dışlıyor). Karşılığı amaca özel eğitilmiş ağ, kare başına ~7 ms |
+| 2026-08-25 | `onnxruntime-gpu==1.22.0` sabit | 1.23+ CUDA 13 ister; bizde cu121 var. Sabitlenmezse hata vermeden CPU'ya düşüp FPS'i yarıya indiriyor |
+| 2026-08-25 | Tracker cihazı `cuda:0` | Çıplak `"cuda"` ONNX Runtime'a `device_id=None` gidiyor, CUDA sağlayıcısı reddedilip CPU'ya düşülüyor |
+| 2026-08-25 | Varsayılan `conf` 0.35 → 0.25 | End2end kafa aynı tespite daha düşük skor veriyor; `police_run` izli kare 132 → 191 (v8 @0.35: 193) |
+| 2026-08-25 | ReID batch 2'nin katına yuvarlanır | ONNX şekil değişiminde ~50 ms yeniden ayarlama var ve ısıtma çözmüyor. Yuvarlama p95'i 50.4 → 13.4 ms indiriyor |
+| 2026-08-25 | `yolo26m-pose` reddedildi | Çıkarım `s`'nin iki katı (60.9 ms); `n`/`s` eşitliği `m` ölçeğinde tutmuyor |
+| 2026-08-25 | YOLO12 ve RTMPose/ViTPose reddedildi | YOLO12 dikkat tabanlı, FlashAttention'sız GPU'da riskli; RTMPose/ViTPose top-down iki aşamalı, v1 zayıf nokta 1'e geri dönüş olurdu |
 
 ---
 
 ## Açık sorular
 
 - ReID kalitesi kalabalık/kesişmeli sahnede ölçülmedi — pilot klipler yeterince
-  zor değil, `--no-reid` ile ID sayıları hiç değişmedi
+  zor değil, `--no-reid` ile ID sayıları hiç değişmedi. YOLO26 geçişinden sonra
+  amaca özel ReID ağıyla tekrar denendi, sonuç aynı: bu kliplerde fark yok
+- ReID'in kare başına ~7 ms sabit maliyeti çoklu kamerada N katına çıkar mı,
+  yoksa kroplar tek batch'te birleştirilebilir mi (Aşama 10)
 - Kadrajdan çıkıp geri giren kişi yeni ID alıyor. Olay bazlı ReID galerisi
   (aynı kişiyi tekrar bağlama) Aşama 9'a bırakıldı
 - Çoklu kamera toplu çıkarımı gerçek FPS'te ölçülmedi (Aşama 10). Temiz
@@ -281,9 +451,12 @@ Girdi hazır: `Track` sınıfı `track_id`, `bbox`, `conf`, `keypoints (17,3)` v
 Kapanan sorular:
 
 - 4 GB VRAM'de `yolov8s-pose` sığıyor mu — evet, 49 MiB tepe kullanım
-- Gerçek döngüde FPS ne olacak — 37–54 FPS (4K olmayan kliplerde), webcam 29.5
-- BoT-SORT ReID çalışıyor mu — evet, 128 boyutlu görünüm vektörü üretiliyor;
-  kalitesi ise henüz kanıtlanmadı (yukarıdaki açık soru)
+- Gerçek döngüde FPS ne olacak — YOLO26 + ReID ile 27–37 FPS (4K olmayan
+  kliplerde), webcam 24.3
+- BoT-SORT ReID çalışıyor mu — evet; YOLO26'da `yolo26s-reid.onnx` üzerinden,
+  kalitesi ise hâlâ kanıtlanmadı (yukarıdaki açık soru)
+- YOLO26'nın daha az kişi bulması gerçek kaçırma mı — hayır, güven eşiği
+  kalibrasyonuydu; `conf=0.25` v8 davranışını yakalıyor
 
 ---
 

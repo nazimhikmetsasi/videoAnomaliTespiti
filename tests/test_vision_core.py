@@ -144,6 +144,53 @@ def test_tracker_keeps_id_across_frames() -> None:
     assert tracker.seen_ids == set() and tracker.frames == 0
 
 
+def test_fixed_batch_reid() -> None:
+    """ReID batch'i sabit kalmali, dondurulen vektor sayisi tespit sayisi kadar."""
+    from vision.stages.tracker import REID_BATCH_STEP, _FixedBatchReID
+
+    seen = []
+
+    def fake_encoder(_img, dets):
+        seen.append(len(dets))
+        return [np.full(4, i, dtype=np.float32) for i in range(len(dets))]
+
+    enc = _FixedBatchReID(fake_encoder)
+    img = np.zeros((10, 10, 3), dtype=np.uint8)
+
+    for n in (1, 2, 3, 4, 5):
+        feats = enc(img, np.zeros((n, 4), dtype=np.float32))
+        assert len(feats) == n, f"{n} tespit icin {len(feats)} vektor dondu"
+
+    assert all(b % REID_BATCH_STEP == 0 for b in seen), f"batch sabit degil: {seen}"
+    expected = [-(-n // REID_BATCH_STEP) * REID_BATCH_STEP for n in (1, 2, 3, 4, 5)]
+    assert seen == expected, f"yuvarlama yanlis: {seen} != {expected}"
+    assert enc(img, np.zeros((0, 4), dtype=np.float32)) == []
+    assert len(seen) == 5, "bos tespitte aga gidilmemeli"
+
+
+def test_choose_reid() -> None:
+    """ReID yolu secimi: bedava oznitelik yoksa ayri aga dusulmeli."""
+    from vision.run import choose_reid
+    from vision.stages.tracker import DEFAULT_REID
+
+    # End2end dedektor (YOLO26): bedava oznitelik yok -> ayri ag
+    model, note = choose_reid("auto", disabled=False, native_feats=False)
+    assert model == DEFAULT_REID, f"ayri aga dusulmedi: {model}"
+    assert "end2end" in note
+
+    # End2end olmayan dedektor (YOLOv8/11): bedava oznitelik kullanilir
+    model, _ = choose_reid("auto", disabled=False, native_feats=True)
+    assert model == "auto", f"bedava oznitelik yolu secilmedi: {model}"
+
+    # --no-reid her durumda kapatir, ayri ag yuklenmez
+    model, note = choose_reid("auto", disabled=True, native_feats=False)
+    assert model == "auto" and "kapali" in note
+
+    # Elle verilen yol her seyi ezer
+    model, _ = choose_reid("models/ozel.onnx", disabled=False, native_feats=True)
+    assert model == "models/ozel.onnx"
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

@@ -1,4 +1,4 @@
-"""YOLOv8s-pose ile tek gecisli kutu + iskelet cikarimi.
+"""YOLO26s-pose ile tek gecisli kutu + iskelet cikarimi.
 
 v1 ayni kareye once detect sonra pose modeli kosuyordu (PLAN.md zayif nokta 1).
 Pose modeli kutuyu zaten uretir; tek gecis yeter.
@@ -7,11 +7,18 @@ Toplu (batch) cikarim bastan destekleniyor: `__call__` kare listesi alir.
 Coklu kamera Asama 10'da ayni cagriya N kare vererek olceklenir, kamera basina
 ayri process ve model kopyasi acilmaz.
 
-ReID ozellikleri: `botsort.yaml` icinde `model: auto` secildiginde BoT-SORT,
-dedektorun kendi govde ozniteliklerini gorunum vektoru olarak kullanir — ek
-model, ek VRAM ve ek cikarim maliyeti olmadan ReID. Ultralytics bu ozellikleri
-yalnizca `model.track()` yolunda toplar; biz toplu cikarimi kendimiz
-surdugumuz icin ayni on-kancayi burada kuruyoruz.
+ReID ozellikleri iki yoldan gelebilir:
+
+1. `model: auto` — dedektorun kendi govde oznitelikleri gorunum vektoru olur.
+   Bedava ama YALNIZCA end2end OLMAYAN modellerde (YOLOv8/11/12) calisir.
+   Ultralytics bunlari yalnizca `model.track()` yolunda toplar; biz toplu
+   cikarimi kendimiz surdugumuz icin ayni on-kancayi burada kuruyoruz.
+2. Ayri ReID agi (`models/yolo26s-reid.onnx`) — YOLO26 end2end oldugu icin
+   1. yol kapali (bkz. `trackers/track.py` icindeki `not ...end2end` kosulu ve
+   asagidaki ayni kosul). Bu durumda `Tracker` amaca ozel egitilmis ReID agini
+   kullanir; maliyeti `vision/run.py` raporunda "takip" suresinde gorulur.
+
+`has_reid_feats` hangi yolun acik oldugunu soyler; secimi `run.py` yapar.
 """
 
 from __future__ import annotations
@@ -23,7 +30,7 @@ import torch
 from ultralytics import YOLO
 from ultralytics.nn.modules.head import Detect
 
-DEFAULT_WEIGHTS = "models/yolov8s-pose.pt"
+DEFAULT_WEIGHTS = "models/yolo26s-pose.pt"
 QUANTIZE_FP16 = 16       # ultralytics 8.4'te half=True kullanimdan kalkti
 PERSON_CLASS = 0
 
@@ -36,7 +43,7 @@ class PoseDetector:
         weights: str | Path = DEFAULT_WEIGHTS,
         *,
         device: str = "cuda",
-        conf: float = 0.35,
+        conf: float = 0.25,
         imgsz: int = 960,
         fp16: bool = True,
         reid_feats: bool = True,
