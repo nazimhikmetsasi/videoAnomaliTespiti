@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="tr"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Olaylar Geçmiş Listesi - VADAP</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-background": "#d8e3fb",
+                      "secondary-fixed-dim": "#adc6ff",
+                      "on-surface-variant": "#c6c6cd",
+                      "primary-fixed": "#dae2fd",
+                      "secondary-fixed": "#d8e2ff",
+                      "on-tertiary": "#213145",
+                      "surface-container": "#152031",
+                      "on-primary-fixed-variant": "#3f465c",
+                      "inverse-primary": "#565e74",
+                      "tertiary-fixed-dim": "#b7c8e1",
+                      "primary": "#bec6e0",
+                      "surface-container-low": "#111c2d",
+                      "inverse-surface": "#d8e3fb",
+                      "on-tertiary-fixed-variant": "#38485d",
+                      "tertiary-fixed": "#d3e4fe",
+                      "secondary": "#adc6ff",
+                      "surface-container-highest": "#2a3548",
+                      "tertiary-container": "#06182b",
+                      "secondary-container": "#0566d9",
+                      "on-primary-fixed": "#131b2e",
+                      "outline-variant": "#45464d",
+                      "on-tertiary-container": "#728299",
+                      "inverse-on-surface": "#263143",
+                      "surface-bright": "#2f3a4c",
+                      "on-error": "#690005",
+                      "surface-tint": "#bec6e0",
+                      "primary-container": "#0f172a",
+                      "on-secondary-container": "#e6ecff",
+                      "on-primary-container": "#798098",
+                      "on-secondary-fixed-variant": "#004395",
+                      "error-container": "#93000a",
+                      "surface": "#081425",
+                      "on-tertiary-fixed": "#0b1c30",
+                      "on-surface": "#d8e3fb",
+                      "error": "#ffb4ab",
+                      "on-error-container": "#ffdad6",
+                      "on-primary": "#283044",
+                      "surface-container-high": "#1f2a3c",
+                      "tertiary": "#b7c8e1",
+                      "surface-container-lowest": "#040e1f",
+                      "on-secondary-fixed": "#001a42",
+                      "surface-dim": "#081425",
+                      "outline": "#909097",
+                      "background": "#081425",
+                      "on-secondary": "#002e6a",
+                      "surface-variant": "#2a3548",
+                      "primary-fixed-dim": "#bec6e0"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "unit": "4px",
+                      "stack-md": "16px",
+                      "sidebar-width": "280px",
+                      "event-stream-width": "320px",
+                      "grid-gutter": "12px",
+                      "stack-sm": "8px",
+                      "container-padding": "24px"
+              },
+              "fontFamily": {
+                      "display-lg": [
+                              "Inter"
+                      ],
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Inter"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "data-mono": [
+                              "JetBrains Mono"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "title-sm": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "display-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "data-mono": [
+                              "13px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "title-sm": [
+                              "18px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #0F172A; color: #d8e3fb; }
+        .data-mono { font-family: 'JetBrains Mono', monospace; }
+        /* Custom scrollbar for dark theme */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #081425; }
+        ::-webkit-scrollbar-thumb { background: #2a3548; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #45464d; }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex">
+<!-- SideNavBar -->
+<nav class="flex flex-col h-screen fixed left-0 top-0 z-40 bg-surface-container w-sidebar-width border-r border-outline-variant font-body-md text-body-md text-secondary">
+<div class="p-container-padding flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center shrink-0 border border-outline-variant">
+<span class="material-symbols-outlined text-primary" data-icon="security">security</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface">VADAP</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Anomali Tespit Sistemi</p>
+</div>
+</div>
+<div class="flex flex-col gap-1 mt-4 px-2 overflow-y-auto pb-4">
+<a class="flex items-center gap-3 text-on-surface-variant px-4 py-3 rounded hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="videocam">videocam</span>
+<span>Canlı İzleme</span>
+</a>
+<a class="flex items-center gap-3 text-secondary font-bold border-l-2 border-secondary bg-surface-container-high px-4 py-3 rounded hover:bg-surface-container-highest transition-colors active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="notifications_active">notifications_active</span>
+<span>Olaylar</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant px-4 py-3 rounded hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="videocam_off">videocam_off</span>
+<span>Kameralar</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant px-4 py-3 rounded hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="map">map</span>
+<span>Bölgeler</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant px-4 py-3 rounded hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span>Analitik</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant px-4 py-3 rounded hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="health_and_safety">health_and_safety</span>
+<span>Sistem Sağlığı</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant px-4 py-3 rounded hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span>Kullanıcılar</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant px-4 py-3 rounded hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span>Denetim Kaydı</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant px-4 py-3 rounded hover:bg-surface-container-highest transition-colors mt-auto" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Ayarlar</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="flex-1 ml-sidebar-width flex flex-col min-h-screen relative">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-container-padding h-16 sticky top-0 z-30 bg-surface border-b border-outline-variant text-primary font-title-sm text-title-sm">
+<div class="flex items-center gap-4">
+<h2 class="font-headline-md text-headline-md font-black text-on-surface">VADAP Kontrol Paneli</h2>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-4 py-2 bg-secondary-container text-on-secondary-container rounded font-body-md hover:bg-secondary transition-colors text-sm">
+                    Canlı İzle
+                </button>
+<button class="px-4 py-2 border border-outline-variant text-on-surface rounded font-body-md hover:bg-surface-variant transition-colors text-sm">
+                    Alarm Geçmişi
+                </button>
+<div class="flex items-center gap-1 ml-4 border-l border-outline-variant pl-4">
+<button class="p-2 text-on-surface-variant hover:bg-surface-variant rounded-full transition-colors active:opacity-80">
+<span class="material-symbols-outlined" data-icon="rss_feed">rss_feed</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-variant rounded-full transition-colors active:opacity-80">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-variant rounded-full transition-colors active:opacity-80">
+<span class="material-symbols-outlined" data-icon="dark_mode">dark_mode</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-variant rounded-full transition-colors active:opacity-80">
+<img alt="Kullanıcı Profili" class="w-8 h-8 rounded-full border border-outline-variant object-cover" data-alt="A small, circular avatar portrait of a security operator in a dimly lit control room. The lighting is moody and professional, typical of high-end corporate or military surveillance environments. Dark mode color palette." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC8FGQh8ciu2eDxPo0QLc52r00uLrbhbrH63_DLQHpZ80nk6IjROJp-6Tp6BQlrFxDvmBTFjgaEP5GigAAtJPMi3fRHUBbYKhvvggPvBz9XwuAYjMowfaFlmMvkkZlHFCFzUHcfCM7JbiA3KBg1IivKG5PwgzMCiuenYsZO2tjOIEEWuiE5on1sp8sbKvyQc_LDMERTVWPeKIB1F17YCYvJtv93vOCmhQ368LYc0tZc_nB5Hs6Gdqcd"/>
+</button>
+</div>
+</div>
+</header>
+<!-- Canvas -->
+<main class="flex-1 p-container-padding flex flex-col gap-stack-md overflow-x-hidden">
+<!-- Page Header & Global Actions -->
+<div class="flex justify-between items-end">
+<div>
+<h2 class="font-headline-md text-headline-md font-semibold text-on-surface">Olaylar Geçmiş Listesi</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Son 24 saat içindeki tüm tespit edilen anomaliler.</p>
+</div>
+<div>
+<button class="px-4 py-2 bg-surface-container-high border border-outline-variant text-on-surface rounded hover:bg-surface-variant transition-colors text-sm flex items-center gap-2 shadow-sm">
+<span class="material-symbols-outlined text-sm" data-icon="done_all">done_all</span>
+                        Seçilenleri Görüldü Yap
+                    </button>
+</div>
+</div>
+<!-- Filter Bar -->
+<div class="bg-surface-container border border-outline-variant rounded p-4 flex flex-wrap gap-4 items-end">
+<!-- Date Range -->
+<div class="flex flex-col gap-1 w-full md:w-auto flex-1 min-w-[200px]">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase">Tarih Aralığı</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm pointer-events-none" data-icon="calendar_today">calendar_today</span>
+<input class="w-full bg-surface-container-low border border-outline-variant text-on-surface rounded pl-9 pr-3 py-2 font-body-sm text-body-sm focus:border-secondary focus:ring-1 focus:ring-secondary outline-none transition-colors" readonly="" type="text" value="Bugün (Son 24 Saat)"/>
+</div>
+</div>
+<!-- Camera -->
+<div class="flex flex-col gap-1 w-full md:w-auto flex-1 min-w-[150px]">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase">Kamera</label>
+<div class="relative">
+<select class="w-full bg-surface-container-low border border-outline-variant text-on-surface rounded pl-3 pr-8 py-2 font-body-sm text-body-sm focus:border-secondary focus:ring-1 focus:ring-secondary outline-none transition-colors appearance-none">
+<option>Tüm Kameralar</option>
+<option>CAM-01 (Ana Giriş)</option>
+<option>CAM-04 (Depo Arkası)</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" data-icon="arrow_drop_down">arrow_drop_down</span>
+</div>
+</div>
+<!-- Type -->
+<div class="flex flex-col gap-1 w-full md:w-auto flex-1 min-w-[150px]">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase">Tip</label>
+<div class="relative">
+<select class="w-full bg-surface-container-low border border-outline-variant text-on-surface rounded pl-3 pr-8 py-2 font-body-sm text-body-sm focus:border-secondary focus:ring-1 focus:ring-secondary outline-none transition-colors appearance-none">
+<option>Tüm Tipler</option>
+<option>Düşme Tespiti</option>
+<option>Kavga/Arbede</option>
+<option>Sınır İhlali</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" data-icon="arrow_drop_down">arrow_drop_down</span>
+</div>
+</div>
+<!-- Severity -->
+<div class="flex flex-col gap-1 w-full md:w-auto flex-1 min-w-[150px]">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase">Önem</label>
+<div class="relative">
+<select class="w-full bg-surface-container-low border border-outline-variant text-on-surface rounded pl-3 pr-8 py-2 font-body-sm text-body-sm focus:border-secondary focus:ring-1 focus:ring-secondary outline-none transition-colors appearance-none">
+<option>Tüm Seviyeler</option>
+<option>Kritik</option>
+<option>Yüksek</option>
+<option>Orta</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" data-icon="arrow_drop_down">arrow_drop_down</span>
+</div>
+</div>
+<!-- Status -->
+<div class="flex flex-col gap-1 w-full md:w-auto flex-1 min-w-[150px]">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase">Durum</label>
+<div class="relative">
+<select class="w-full bg-surface-container-low border border-outline-variant text-on-surface rounded pl-3 pr-8 py-2 font-body-sm text-body-sm focus:border-secondary focus:ring-1 focus:ring-secondary outline-none transition-colors appearance-none">
+<option>Yeni (İncelenmedi)</option>
+<option>Görüldü</option>
+<option>Yanlış Alarm</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" data-icon="arrow_drop_down">arrow_drop_down</span>
+</div>
+</div>
+<button class="px-4 py-2 bg-secondary-container text-on-secondary-container rounded hover:bg-secondary transition-colors font-body-sm h-[38px] flex items-center justify-center">
+                    Filtrele
+                </button>
+</div>
+<!-- Data Table -->
+<div class="bg-surface-container border border-outline-variant rounded overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-outline-variant bg-surface-container-low font-label-caps text-label-caps text-on-surface-variant uppercase">
+<th class="p-3 w-10 text-center"><input class="rounded bg-surface border-outline-variant text-secondary-container focus:ring-secondary" type="checkbox"/></th>
+<th class="p-3">Kanıt</th>
+<th class="p-3">Saat</th>
+<th class="p-3">Kamera</th>
+<th class="p-3">Anomali</th>
+<th class="p-3">Önem</th>
+<th class="p-3">Güven</th>
+<th class="p-3">Durum</th>
+<th class="p-3 text-right">İşlem</th>
+</tr>
+</thead>
+<tbody class="font-body-sm text-body-sm text-on-surface divide-y divide-outline-variant">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-highest transition-colors group">
+<td class="p-3 text-center border-l-2 border-error border-l-transparent group-hover:border-l-secondary"><input class="rounded bg-surface border-outline-variant text-secondary-container focus:ring-secondary" type="checkbox"/></td>
+<td class="p-3">
+<div class="w-20 h-12 bg-surface-container-low rounded border border-outline-variant overflow-hidden relative">
+<img alt="Kanıt" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" data-alt="A highly detailed low-resolution security camera snapshot showing a blurred figure falling in an industrial warehouse. Dark mode UI styling, stark contrast, high-tech surveillance aesthetic. Red bounding box over the figure." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDxFZxDpUNctqh1nv31oLliIIu8W-1m-xdfipCPvZs_7eO3VPOGHW7EFNbX-Th7SpDvmbJRm9r8-CK8teYclM_BzTrQnDMwWltTyvDDAftCb-Io2pHLydYlvme1qCQjmx-BFGdb0f-84Byu_jo_yVetUe5TVLqNWTj9NNWQWA_BSOwhvSGXw3HDEhphNGpeSrzeT87-H_uqS2jBndwensWFIX7_rB2E7uwWgpIhqbejSjbMLk9sgbWh"/>
+<div class="absolute inset-0 border border-error opacity-50"></div>
+</div>
+</td>
+<td class="p-3 font-data-mono text-data-mono text-on-surface-variant">14:23:45</td>
+<td class="p-3">CAM-04<br/><span class="text-on-surface-variant text-[10px]">Depo Arkası</span></td>
+<td class="p-3">
+<span class="inline-flex items-center gap-1 bg-surface-variant px-2 py-1 rounded text-on-surface">
+<span class="material-symbols-outlined text-[14px]" data-icon="personal_injury">personal_injury</span> Düşme
+                                </span>
+</td>
+<td class="p-3">
+<span class="inline-flex items-center gap-1 text-error">
+<span class="material-symbols-outlined text-[14px] animate-pulse" data-icon="error">error</span> Kritik
+                                </span>
+</td>
+<td class="p-3">
+<div class="flex items-center gap-2">
+<span class="font-data-mono">%92</span>
+<div class="w-12 h-1 bg-surface-variant rounded-full overflow-hidden"><div class="h-full bg-error" style="width: 92%"></div></div>
+</div>
+</td>
+<td class="p-3">
+<span class="inline-flex items-center gap-1 text-on-surface-variant">
+<span class="w-2 h-2 rounded-full bg-secondary-fixed"></span> Yeni
+                                </span>
+</td>
+<td class="p-3 text-right">
+<button class="text-secondary hover:text-secondary-fixed-dim transition-colors text-xs font-semibold px-2 py-1 rounded hover:bg-surface-variant">İncele</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-highest transition-colors group">
+<td class="p-3 text-center border-l-2 border-l-transparent group-hover:border-l-secondary"><input class="rounded bg-surface border-outline-variant text-secondary-container focus:ring-secondary" type="checkbox"/></td>
+<td class="p-3">
+<div class="w-20 h-12 bg-surface-container-low rounded border border-outline-variant overflow-hidden relative">
+<img alt="Kanıt" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" data-alt="A highly detailed low-resolution security camera snapshot showing two blurry figures interacting aggressively in a parking lot at night. Dark mode UI styling, stark contrast, high-tech surveillance aesthetic. Yellow bounding box over the figures." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAPC5MxHf06Hhqi_31WpWLEad0CPFTjT2hiFGfgsH2uFSbBUfrtMODCHjPFkJYBoFlzTr6J_M_bgYTL9qjZaJDr8yC8nRU6f0I6jNG4FkFl5mDBNlIQ0IHY8SlMGtXnETkqIPtqI-Ylv8t0LqGqZVUeMGCDeosmh0nn_dss7mUKcANOkj_jeEKjEemt_as0CbETXU3yoNlMowYxRGAUxeegqmRgrMZXIRv2FAChNsnS-m4L02Td61-O"/>
+</div>
+</td>
+<td class="p-3 font-data-mono text-data-mono text-on-surface-variant">12:10:05</td>
+<td class="p-3">CAM-01<br/><span class="text-on-surface-variant text-[10px]">Ana Giriş</span></td>
+<td class="p-3">
+<span class="inline-flex items-center gap-1 bg-surface-variant px-2 py-1 rounded text-on-surface">
+<span class="material-symbols-outlined text-[14px]" data-icon="sports_martial_arts">sports_martial_arts</span> Kavga
+                                </span>
+</td>
+<td class="p-3">
+<span class="inline-flex items-center gap-1 text-[#f59e0b]"> <!-- Custom warning color for 'Yüksek' -->
+<span class="material-symbols-outlined text-[14px]" data-icon="warning">warning</span> Yüksek
+                                </span>
+</td>
+<td class="p-3">
+<div class="flex items-center gap-2">
+<span class="font-data-mono">%85</span>
+<div class="w-12 h-1 bg-surface-variant rounded-full overflow-hidden"><div class="h-full bg-[#f59e0b]" style="width: 85%"></div></div>
+</div>
+</td>
+<td class="p-3">
+<span class="inline-flex items-center gap-1 text-on-surface-variant">
+<span class="w-2 h-2 rounded-full bg-outline"></span> Görüldü
+                                </span>
+</td>
+<td class="p-3 text-right">
+<button class="text-secondary hover:text-secondary-fixed-dim transition-colors text-xs font-semibold px-2 py-1 rounded hover:bg-surface-variant">İncele</button>
+</td>
+</tr>
+</tbody>
+</table>
+<!-- Pagination -->
+<div class="p-3 border-t border-outline-variant flex items-center justify-between bg-surface-container-low">
+<span class="text-on-surface-variant text-xs font-body-sm">Toplam 42 kayıttan 1-10 arası gösteriliyor</span>
+<div class="flex gap-1">
+<button class="p-1 rounded hover:bg-surface-variant text-on-surface-variant disabled:opacity-50" disabled=""><span class="material-symbols-outlined text-sm" data-icon="chevron_left">chevron_left</span></button>
+<button class="w-6 h-6 rounded bg-secondary-container text-on-secondary-container text-xs font-semibold flex items-center justify-center">1</button>
+<button class="w-6 h-6 rounded hover:bg-surface-variant text-on-surface text-xs font-semibold flex items-center justify-center">2</button>
+<button class="w-6 h-6 rounded hover:bg-surface-variant text-on-surface text-xs font-semibold flex items-center justify-center">3</button>
+<span class="w-6 h-6 flex items-center justify-center text-on-surface-variant text-xs">...</span>
+<button class="w-6 h-6 rounded hover:bg-surface-variant text-on-surface text-xs font-semibold flex items-center justify-center">5</button>
+<button class="p-1 rounded hover:bg-surface-variant text-on-surface"><span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span></button>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

@@ -1,7 +1,6 @@
 # Altyapi servisleri. GPU gerektiren vision/ servisi host'ta native venv'de
 # calisir ve Kafka'ya localhost:9092 uzerinden baglanir (bkz. docs/PLAN.md 2).
 #
-# spark  -> Asama 4'te eklenecek (stream/spark_job.py henuz yok)
 # api    -> Asama 5'te eklenecek (api/ henuz yok)
 
 services:
@@ -89,9 +88,39 @@ services:
       - ./infra/kafka/topics.sh:/topics.sh:ro
     restart: "no"
 
+  spark:
+    image: apache/spark:3.5.4-scala2.12-java17-python3-ubuntu
+    container_name: anomaly-spark
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    # ponytail: root olarak calisiyor. apache/spark imaji uid 185'tir, adlandirilmis
+    # volume'lar root'a aittir; yerel gelistirmede sahiplik ayari yerine root ucuz.
+    # Uretimde: volume'lari 185:185 yap, user satirini kaldir.
+    user: root
+    entrypoint: ["/opt/spark/bin/spark-submit"]
+    command:
+      - "--master"
+      - "local[2]"
+      - "--packages"
+      - "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.4"
+      - "--conf"
+      - "spark.jars.ivy=/ivy"
+      - "/app/spark_job.py"
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+      CHECKPOINT_DIR: /checkpoints
+    volumes:
+      - ./stream:/app:ro
+      - spark_checkpoints:/checkpoints
+      - spark_ivy:/ivy
+
 volumes:
   postgres_data:
   mongo_data:
   # ponytail: Kafka log'u kalici degil. Olaylar zaten PostgreSQL/MongoDB'ye
   # yaziliyor; restart'ta kaybolan sey yalnizca consumer offset'i.
   # Kalici gerekirse: KAFKA_LOG_DIRS + named volume + uid 1000 sahiplik ayari.
+  spark_checkpoints:
+  spark_ivy:   # ilk indirmeden sonra --packages'i cevrimdisi baslatir

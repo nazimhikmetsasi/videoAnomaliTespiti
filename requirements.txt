@@ -10,3 +10,4 @@ lap>=0.5.12          # BoT-SORT/ByteTrack esleme cozucusu (ultralytics calisma a
 # oznitelikleri ReID'e baglanamiyor). SURUM SABIT: 1.23+ CUDA 13 ister, bizde
 # torch cu121 var. 1.22 CUDA 12.x + cuDNN 9 ister; ikisini de torch/lib saglar.
 onnxruntime-gpu==1.22.0
+confluent-kafka>=2.5.0   # librdkafka; produce() kuyruga atip doner, GPU dongusunu bloklamaz
