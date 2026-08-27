@@ -3,22 +3,24 @@
 Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 `docs/PLAN.md` sonra bu dosya okunur ve kaldığı yerden devam edilir.
 
-**Son güncelleme:** 2026-08-25
+**Son güncelleme:** 2026-08-27
 
 ---
 
 ## Şu an neredeyiz
 
-**Aşama 3 — Öznitelik ve kural motoru tamamlandı.** One-Euro düzleştirme,
-ölçek-normalize kinematik ve beş kural (FALL, RUN, ZONE_VIOLATION,
-LOITERING, FIGHT) çalışıyor. Pilot kliplerde ilk precision/recall ölçümü
-alındı: FALL 1.00/1.00, ZONE_VIOLATION 0.50/1.00, RUN 0.20/0.50.
+**Aşama 4 — Kafka ve Spark tamamlandı.** Görü hattı aday olayları
+`anomaly-candidates` topic'ine basıyor, Spark Structured Streaming bunları
+oturum penceresiyle süzüp `anomaly-events`'e yazıyor. Pilot kliplerde
+**1085 ham aday 5 doğrulanmış olaya** indi; yanlış pozitif 5'ten 3'e düştü,
+recall hiç düşmedi (0.75). ZONE_VIOLATION precision'ı 0.50'den 1.00'a çıktı.
 
-Bu aşamanın esas kazancı tablo değil, tablonun **neden** o şekilde çıktığının
-ölçülmüş olmasıdır: ilk uygulama plana birebir sadıktı ve FALL ile RUN hiç
-tetiklemedi. Sebep kural kodu değil, plandaki iki öznitelik tanımının
-görüntü geometrisiyle uyuşmamasıydı (§ Aşama 3 sonucu). Sıradaki iş Aşama 4
-(Kafka ve Spark).
+Bu aşamanın esas kazancı süzgecin çalışması değil, **süzgecin tek eşikle
+çalışamayacağının ölçülmüş olmasıdır.** Gerçek düşme olayı yalnızca 2 aday
+üretiyor, `normal_01`'in sahte koşusu 11 aday üretiyor; tipten bağımsız bir
+"kaç vuruş" ölçütü gerçek FALL'ı eleyip sahte RUN'ı geçirirdi. Süzgeç bu
+yüzden vuruş sayısı + tipe göre minimum süre olarak kuruldu (§ Aşama 4
+sonucu). Sıradaki iş Aşama 5 (veri katmanı ve API).
 
 ---
 
@@ -32,8 +34,8 @@ görüntü geometrisiyle uyuşmamasıydı (§ Aşama 3 sonucu). Sıradaki iş A�
 | 2 | Kaynak ve görü çekirdeği | Tamamlandı |
 | 2.1 | YOLOv8 → YOLO26 geçişi | Tamamlandı |
 | 3 | Öznitelik ve kural motoru | Tamamlandı |
-| 4 | Kafka ve Spark | Sırada |
-| 5 | Veri katmanı ve API | Bekliyor |
+| 4 | Kafka ve Spark | Tamamlandı |
+| 5 | Veri katmanı ve API | Sırada |
 | 6 | Canlı görüntü (WebSocket) | Bekliyor |
 | 7 | LLM ve Telegram | Bekliyor |
 | 8 | Panel (kullanıcı şablonu) | Bekliyor |
@@ -579,27 +581,246 @@ Aşama 3 zinciri FPS bütçesinde ölçülebilir yer kaplamıyor.
 
 ---
 
+## Aşama 4 sonucu (2026-08-27)
+
+Uygulama sözleşmesi `docs/ASAMA4_PLAN.md`'de; burada yalnızca sonuç ve
+ölçümler var.
+
+### Yazılan dosyalar
+
+| dosya | satır | iş |
+|---|---|---|
+| `vision/publish.py` | 132 | Kafka producer, `candidate_to_dict`, `CandidatePublisher` |
+| `stream/spark_job.py` | 140 | Structured Streaming, oturum penceresi |
+| `stream/filters.py` | 30 | `session_passes` — eşik mantığının tek referans kopyası |
+| `eval/spark_eval.py` | 367 | uçtan uca ölçüm: aday üret, bas, tüket, tablo çıkar |
+| `scripts/check_kafka.py` | 82 | host → broker gidiş-dönüş öz kontrolü |
+| `tests/test_publish.py` | 76 | broker'sız üç öz kontrol |
+| `vision/run.py` | 363 (+32) | `--kafka`, `--camera-id`, yayın süresi ölçümü |
+| `docker-compose.yml` | +28 | `spark` servisi + iki volume |
+| `infra/postgres/init.sql` | +7 | `spark_min_hits` 5→2, yeni `spark_min_sec` JSONB |
+
+Spark imajı: `apache/spark:3.5.4-scala2.12-java17-python3-ubuntu`, paket
+`org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.4` (sürüm imajla birebir).
+
+### Ölçüm 1 — host → Kafka (açık soru kapandı)
+
+`scripts/check_kafka.py`: **781 ms** gidiş-dönüş. Host'ta native çalışan
+`vision/` gerçekten `localhost:9092`'ye yazıp geri okuyabiliyor. Aşama 1'den
+beri açık olan soru kapandı.
+
+### Kayan pencere yerine oturum penceresi
+
+`docs/PLAN.md` "3 sn pencere / 1 sn kayma HAVING hits >= N" diyordu. Bu,
+`run_01`'in kesintisiz 11 saniyelik koşusu için **11 ayrı doğrulanmış olay**
+yazardı; Aşama 5'in tüketicisi 11 veritabanı satırı, 11 Gemini çağrısı ve 11
+Telegram mesajı üretirdi. Tekrarı Aşama 5'te ayıklamak, `PLAN.md`'nin v1'de
+eleştirdiği yama yığınının aynısı olurdu.
+
+`session_window(event_time, "3 seconds")` aynı işi tek API ile yapıyor:
+kesintisiz bir episod tek satır, `hits` ve süre bedava. Ölçülen sonuç:
+`run_01`'in 333 adayı **1 olay**. `spark_window_sec = 3` ayarının anlamı
+korundu, artık "3 saniyeden uzun sessizlik yeni olaydır" demek.
+
+### Süzgeç neden tek eşik olamıyor
+
+| kanıt | vuruş | süre |
+|---|---|---|
+| `fall_01` gerçek düşme | 2 | 0.03 sn |
+| `normal_01` sahte koşu | 11 | 0.42 sn |
+
+Tipten bağımsız `hits >= N` ölçütünde N'in 11'den büyük olması gerekirdi;
+o da 2 adaylık gerçek FALL'ı elerdi. FALL bir **darbedir**, RUN/ZONE/
+LOITERING bir **durumdur**. Süzgeç bu yüzden iki ölçütlü: global
+`hits >= 2` (gerçek tek kare gürültüsünü eler, FALL'ın 2 adayını geçirir) +
+tipe göre `min_sec` (FALL 0.0, RUN 1.0, ZONE_VIOLATION 1.0, LOITERING 2.0,
+FIGHT 0.5).
+
+Süre ölçütü ayrıca kare hızından bağımsızdır. `police_run` 15 FPS, diğer
+pilotlar 25–30 FPS; yalnızca vuruş sayılsaydı aynı eşik 15 FPS'lik kamerada
+iki katı süre talep ederdi.
+
+### Ölçüm 2 — oturum dökümü (izin verici koşu)
+
+Spark `MIN_HITS=0`, `SPARK_MIN_SEC={}` ile koşuldu; **tüm** oturumlar
+`eval/out/events_sweep.jsonl`'a yazıldı.
+
+| klip | tip | vuruş | süre | varsayılan eşikte |
+|---|---|---|---|---|
+| fall_01 | FALL | 2 | 0.03 | geçti |
+| normal_01 | RUN | 11 | 0.42 | **elendi** |
+| run_01 | RUN | 333 | 11.07 | geçti |
+| zone_01 | ZONE_VIOLATION | 13 | 0.48 | **elendi** |
+| zone_01 | RUN | 35 | 1.80 | geçti (yanlış pozitif) |
+| zone_01 | ZONE_VIOLATION | 643 | 27.64 | geçti |
+| zone_01 | ZONE_VIOLATION (iz 3) | 26 | 1.00 | geçti |
+| zone_01 | ZONE_VIOLATION (iz 4) | 22 | 0.84 | **elendi** |
+
+Aday muhasebesi tam: 2 + 11 + 333 + 35 + (13+643+26+22 = 704) = **1085**,
+Aşama 3'ün ham aday toplamının birebir aynısı. Kayıp aday yok, yani
+publisher → Kafka → Spark zinciri veri düşürmüyor.
+
+Aşama 3'te "ZONE ilk tetik 10.8 sn, gerçek referans 12.0" diye kaydedilen
+yanlış pozitif, 13 vuruşluk 0.48 saniyelik bir oturum olduğu için elendi.
+Doğrulanmış ZONE olayı 14.44'te başlıyor ve referans aralığın içinde.
+
+### Ölçüm 3 — öncesi/sonrası
+
+| klip | tip | ham aday | oturum | doğrulanmış olay |
+|---|---|---|---|---|
+| fall_01 | FALL | 2 | 1 | 1 |
+| normal_01 | RUN | 11 | 1 | **0** |
+| run_01 | RUN | 333 | 1 | 1 |
+| zone_01 | RUN | 35 | 1 | 1 |
+| zone_01 | ZONE_VIOLATION | 704 | 4 | 2 |
+
+`mixed_01` ve `police_run` sıfır aday üretmeye devam ediyor (Aşama 3 ile
+aynı), Spark bunu düzeltemez — ortada süzülecek aday yok.
+
+| tip | Aşama 3 P/R/F1 | Aşama 4 P/R/F1 |
+|---|---|---|
+| FALL | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
+| RUN | 0.20 / 0.50 / 0.29 | 0.25 / 0.50 / 0.33 |
+| ZONE_VIOLATION | 0.50 / 1.00 / 0.67 | **1.00 / 1.00 / 1.00** |
+| **TOPLAM** | 0.38 / 0.75 / 0.50 | **0.50 / 0.75 / 0.60** |
+
+Yanlış pozitif 5 → 3, recall değişmedi. Kalan üç yanlış pozitifin tamamı
+`zone_01`'deki tek bir sahte RUN oturumundan geliyor (11.52–13.32 sn, saniye
+bazında üç yanlış pozitif sayılıyor).
+
+### Ölçüm 4 — RUN `min_sec` 2.0 varyantı: ölçüldü, alınmadı
+
+| yapılandırma | TP | FP | FN | precision | recall | F1 |
+|---|---|---|---|---|---|---|
+| RUN `min_sec` 1.0 (varsayılan) | 3 | 3 | 1 | 0.50 | 0.75 | 0.60 |
+| RUN `min_sec` 2.0 | 3 | 0 | 1 | **1.00** | 0.75 | **0.86** |
+
+2.0 eşiği `zone_01`'in 1.80 saniyelik sahte RUN oturumunu eler ve tabloyu
+kusursuz precision'a çıkarır. **Alınmadı.** İki gerekçe:
+
+1. Altı klipte tek bir yanlış pozitif episoduna göre eşik koymak, Aşama
+   3'te bilinçle reddedilen "eşiği pilot kliplere uydurma" davranışının
+   aynısıdır. Eşiği o oturumun süresine göre seçmek, test kümesini
+   ezberlemektir.
+2. Bedeli gerçek: RUN'da zaten 50 karelik adım medyanından gelen 2 saniyelik
+   gecikme var; `min_sec` 2.0 bunu 4 saniyeye çıkarır. Koşan birinin 4 saniye
+   sonra bildirilmesi güvenlik açısından anlamlı bir kayıptır.
+
+Karar Aşama 10'daki genişletilmiş değerlendirme kümesine bırakıldı. Sabit
+kameralı, kadrajı kesen etiketli koşu kayıtları geldiğinde bu eşik gerçek
+veriyle seçilebilir.
+
+### Ölçüm 5 — yayının görü döngüsüne maliyeti
+
+`normal_01.mp4 --rules`, ikişer koşu:
+
+| koşu | gerçek FPS |
+|---|---|
+| `--kafka` yok | 36.4 – 36.6 |
+| `--kafka` var | 31.0 – 32.6 |
+
+`kafka publish` aşamasının kendisi medyan ve p95'te **0.0 ms** — yani
+`produce()` gerçekten bloklamıyor, tasarım tuttuğu gibi çalışıyor. Yaklaşık
+%13'lük FPS kaybı ölçülen aşamanın içinde değil; librdkafka'nın arka plan
+I/O iş parçacığının CPU'yu paylaşmasından geliyor. `PLAN.md` hedefi
+(panel canlı FPS >= 20) hâlâ fazlasıyla karşılanıyor.
+
+### Ölçüm 6 — gecikme (kısmi)
+
+Yayın bitişinden `anomaly-events`'e düşene kadar: medyan **11.1 sn**, p95
+**12.6 sn** (n = 5).
+
+**Bu sayı canlı kırmızı alarm gecikmesi DEĞİLDİR.** Değerlendirme betiği
+klipleri toplu basıp akış sonu işaretçisiyle (`_EOS`) pencereleri kapatıyor;
+ölçülen süre büyük ölçüde bu kapanış mekaniğidir. Canlı akışta beklenen
+gecikme oturum boşluğu (3 sn) + damga (2 sn) + mikro-toplu tetiklemesidir,
+ama **ölçülmedi**. Aşama 6'da uçtan uca gecikmeyle birlikte ölçülecek.
+
+### Akış sonu işaretçisi (`_EOS`)
+
+Dosya klibi bitince veri akışı durur, Spark'ın damgası ilerlemez ve klibin
+son oturumu hiç yazılmaz. `CandidatePublisher.close()` bu yüzden damgayı 15
+saniye ileri iten tek bir `_EOS` mesajı basıyor. `_EOS` toplamadan **önce**
+elenmez — elenirse damga da ilerlemez; vuruş sayısı 1 olduğu için
+`spark_min_hits >= 2` ile kendiliğinden düşer.
+
+### Bilinen sınırlar (kapatılmadı, ölçüldü)
+
+1. **`zone_01`'in sahte RUN'ı Spark'tan geçiyor.** 35 vuruş, 1.80 sn — süre
+   ölçütünü aşıyor. Kalan üç yanlış pozitifin tamamı bu. Süzgeç gürültüyü
+   eler, **yanlış kuralı düzeltmez**; bu bir kural/öznitelik sorunudur.
+2. **`mixed_01` RUN kaçırması sürüyor.** Aşama 3'ten devam; aday
+   üretilmediği için Spark'ın yapabileceği bir şey yok.
+3. **FIGHT ve LOITERING hâlâ ölçülmedi.** Pilot kliplerde bu olaylar yok;
+   `min_sec` değerleri (0.5 / 2.0) ölçüme değil akıl yürütmeye dayanıyor.
+4. **Canlı gecikme ölçülmedi** (bkz. Ölçüm 6).
+5. **Çalışan `postgres` volume'u `init.sql`'in gerisinde.** İçindeki şema
+   Aşama 2.1 öncesinden kalma (`fall_spine_deg`, `pose_conf = 0.35`,
+   `window_frames = 30`). `init.sql` yalnızca ilk oluşturmada çalışır.
+   Aşama 5 ORM'i yazmadan önce volume yeniden oluşturulmalı:
+   `docker compose down && docker volume rm videoanomalitespiti_postgres_data`.
+   Kayıp veri yok, içinde yalnızca tohum admin kaydı var.
+
+### Plandan sapmalar
+
+1. **`Candidate` alanları JSON'a çevrilemiyordu.** `metrics`, `track_ids` ve
+   `score` `numpy.float32`/`int64` tipindeydi. `candidate_to_dict` artık
+   yerel Python tiplerine çeviriyor. Gerçek bir hatadır, planda yoktu.
+2. **`stream/filters.py` planda yoktu.** Eşik mantığı üç yerde lazım
+   (Spark işi, süpürme, test). Tek saf fonksiyona alındı ki iki yerde iki
+   farklı eşik doğmasın.
+3. **`spark_job.py`'da `sys.path` yaması.** `./stream:/app:ro` bağlaması
+   paketi düzleştiriyor, konteyner içinde `stream.filters` import edilemiyor.
+4. **`SPARK_MIN_SEC_DEFAULT=0` tek başına yetmiyor.** Beş tip de varsayılan
+   haritada açıkça yazılı olduğu için gerçekten izin verici koşu
+   `SPARK_MIN_SEC='{}'` de istiyor. İlk süpürme koşusu bu yüzden eksik
+   çıktı ve tekrarlandı.
+5. **`anomaly-events` topic'i koşular arasında birikiyor.** Yeni `group.id`
+   + `earliest` ile okuyan tüketici önceki koşuların çıktısını da görüyordu.
+   `consume_events` artık `start_time >= base_epoch` süzüyor.
+6. **`--from-cache` sıfır adaylı klipleri düşürüyordu.** `candidates.jsonl`
+   aday üretmeyen klibi hiç kaydetmiyor. `eval/out/.clip_stems` manifestosu
+   eklendi.
+7. **Gecikme ölçümü yeniden tanımlandı.** Klipler bilinçli olarak 1000
+   saniyelik sentetik epoch aralıklarıyla ayrıldığı için sahne zamanı
+   (`event_time`) ile duvar saatinin farkı anlamsız. Ölçüm klip başına
+   "yayın bitişi → alım" farkına çevrildi.
+8. **`eval/spark_eval.py` 367 satır** (bütçe ~220). Karşılaştırma:
+   `pilot_eval.py` 184, `feature_stats.py` 191. İçinde GPU aday üretimi,
+   epoch izolasyonlu yayın, bayat mesaj süzen tüketim, dört tablo ve
+   çevrimdışı eşik süpürmesi var.
+9. **Plandaki imaj doğrulama komutu yanlıştı.** `docker run --rm <imaj>
+   python3 -c "import pyspark"` başarısız oluyor; pyspark `PYTHONPATH`'e
+   yalnızca `spark-submit` önyüklemesiyle giriyor. İmaj sağlam, doğrulama
+   gerçek mekanizmayla yapıldı.
+
+---
+
 ## Bir sonraki adım
 
-Aşama 4 — Kafka ve Spark:
+Aşama 5 — Veri katmanı ve API:
 
-1. `vision/publish.py`: Kafka producer, `anomaly-candidates` topic'ine aday
-   olay JSON'u. `Candidate` alanları hazır (`thresholds_used` dahil).
-2. `stream/spark_job.py`: Structured Streaming, 3 sn pencere / 1 sn kayma,
-   `(camera, track, type)` başına `hits >= spark_min_hits` → `anomaly-events`
-3. `docker-compose.yml`: `spark` servisi (Aşama 1'de bilinçli ertelenmişti)
+1. **Önce `postgres` volume'unu yeniden oluştur** (bkz. Aşama 4 bilinen
+   sınır 5). Çalışan şema Aşama 2.1 öncesinden kalma; ORM onun üstüne
+   yazılırsa üç aşamalık şema değişikliği sessizce kaybolur.
+2. SQLAlchemy modelleri + Alembic, PyMongo bağlantısı.
+3. JWT auth, CRUD uçları: cameras, zones, detection_settings, events,
+   analytics.
+4. `api/workers/consumer.py`: `anomaly-events` → PostgreSQL olay satırı +
+   MongoDB keypoint zaman serisi + kanıt. Mesaj sözleşmesi
+   `docs/ASAMA4_PLAN.md` §4.2'de donduruldu; olay `metrics` ve
+   `thresholds_used` alanlarını tepe skorlu adaydan taşıyor, kanıt karesi
+   bunlarla seçilecek.
+5. `vision/settings_client.py`: eşikleri API'den çek, pipeline yeniden
+   başlatılmadan uygula. `spark_min_sec` JSONB sütunu Spark işine de
+   bağlanmalı — şu an ortam değişkeninden okunuyor.
 
-**Onay kriteri:** tek kare gürültüsü eleniyor, gerçek olay geçiyor;
-öncesi/sonrası alarm sayısı karşılaştırma tablosunda.
+**Onay kriteri:** Swagger'dan tüm uçlar çalışıyor; panelden eşik değişince
+pipeline restart'sız uyum sağlıyor.
 
-Gürültü tabanı ölçülmüş durumda — Spark'ın süzeceği ham aday sayıları
-"Aşama 3 sonucu" bölümündeki tabloda. Karşılaştırma doğrudan o satırlara
-karşı yapılacak. Beklenti: `normal_01`'in 11 adayı (2.0 sn'de kısa tempolu
-yürüyüş) elenmeli, `run_01`'in 333 kesintisiz adayı geçmeli. Bu iki klip
-Spark filtresinin doğru çalıştığının en temiz sınavıdır.
-
-Ayrıca Aşama 4'te doğrulanacak açık soru: host'ta çalışan `vision/` gerçekten
-`localhost:9092`'ye yazabiliyor mu.
+Arayüz tarafı paralel ilerliyor: kullanıcı Aşama 8 şablonunu hazırlıyor,
+ekran listesi ve veri sözlüğü belirlendi. API uçları o ekranların istediği
+alanları karşılamalı.
 
 ---
 
@@ -650,6 +871,15 @@ Ayrıca Aşama 4'te doğrulanacak açık soru: host'ta çalışan `vision/` ger�
 | 2026-08-25 | `window_frames` 30 → 50 | Adım medyanı 2 saniyelik pencere istiyor; bedeli iz başına 50 `FrameFeatures` |
 | 2026-08-25 | Türev, tampon dolmadan hesaplanmaz | Kısa pencerede `dt` tek kareye düşüp kutunun oturma titremesini hız yapıyordu: `normal_01` 0.4 sn'de 25 sahte RUN. Bedeli iz başına 0.2 sn sessizlik |
 | 2026-08-25 | `zone_01` değerlendirmesi 28. saniyede kesiliyor | Klip kurgu: 28. sn'de kamera değişiyor, bölge poligonu kameraya bağlı olduğu için otopark sahnesindeki yayaların üstüne düşüyordu. 20 yanlış pozitif saniyenin tamamı buradandı |
+| 2026-08-27 | Kayan pencere değil `session_window` | Kayan pencere `run_01`'in 11 sn'lik tek koşusu için 11 ayrı doğrulanmış olay yazardı; tekrarı Aşama 5'te ayıklamak yama yığını olurdu. Oturum penceresi episodu tek satır yapıyor: 333 aday → 1 olay |
+| 2026-08-27 | Süzgeç iki ölçütlü ve tipe göre | Gerçek FALL 2 aday, sahte RUN 11 aday üretiyor. Tek `hits` eşiği ya FALL'ı eler ya gürültüyü geçirir. FALL darbe, RUN/ZONE durum |
+| 2026-08-27 | `min_sec` süre cinsinden, kare cinsinden değil | `police_run` 15 FPS, diğerleri 25–30. Kare sayan eşik 15 FPS'lik kamerada iki katı süre talep eder |
+| 2026-08-27 | `spark_min_hits` varsayılanı 5 → 2 | 5, `fall_01`'in 2 adaylık gerçek düşmesini elerdi |
+| 2026-08-27 | `spark_min_sec` JSONB sütunu | Tip başına ayrı sütun yeni kural tipinde şema göçü ister; JSONB istemez |
+| 2026-08-27 | Akış sonu işaretçisi `_EOS` | Dosya bitince damga ilerlemiyor ve klibin son oturumu hiç yazılmıyordu. Toplamadan önce elenmez, yoksa damgayı da ilerletmez |
+| 2026-08-27 | Pencerelenen zaman sahne zamanı | 25 FPS'lik klip 35 FPS'te işlenirse duvar saatiyle 3 sn'lik pencere 4 sn'lik sahneyi kapsar; ölçüm tekrarlanabilir olmaz |
+| 2026-08-27 | `confluent-kafka`, `kafka-python` değil | `produce()` kuyruğa atıp dönüyor; ölçülen maliyeti 0.0 ms. Saf Python istemci GPU döngüsünün içinde GIL altında protokol işi yapardı |
+| 2026-08-27 | RUN `min_sec` 1.0 kaldı, 2.0 reddedildi | 2.0 toplam precision'ı 1.00'a çıkarıyor ama tek klipteki tek yanlış pozitife göre seçilmiş olur ve RUN gecikmesini 2 sn'den 4 sn'ye çıkarır |
 | 2026-08-25 | Eşikler pilot kliplere uydurulmadı | `mixed_01`'in koşusu adım kanıtında normal yürüyüşle örtüşüyor (0.69 vs 0.66). Ayıracak eşik yok; zorlanırsa `zone_01`'in normal yürüyüşü de RUN olurdu. Beş klibe uydurmak test kümesini ezberlemektir |
 
 ---
@@ -667,8 +897,6 @@ Ayrıca Aşama 4'te doğrulanacak açık soru: host'ta çalışan `vision/` ger�
   ölçümde toplu çıkarım kare başına maliyeti belirgin düşürdü, ama tek
   process içinde N kamerayla tekrar ölçülmeli
 - Frontend Tailwind şablonu henüz sağlanmadı (Aşama 8'e kadar gerekmiyor)
-- Host'ta çalışan `vision/` gerçekten `localhost:9092`'ye yazabiliyor mu —
-  port açık, ama uçtan uca producer denemesi Aşama 4'te yapılacak
 - **Pilot küme RUN için yetersiz.** Etiketli iki koşu klibi de stok
   görüntüdür: birinde kamera koşucuyu takip ediyor, diğerinde kişi kameraya
   doğru koşuyor. Sabit kameralı, kadrajı kesen, etiketli bir koşu klibi yok.
@@ -683,6 +911,18 @@ Ayrıca Aşama 4'te doğrulanacak açık soru: host'ta çalışan `vision/` ger�
   `camera_id` FK'siyle bunu yapısal olarak çözüyor; kurgu klip yine de
   değerlendirme dışıdır
 
+- Canlı akışta kırmızı alarm gecikmesi ölçülmedi. Aşama 4'teki 11.1 sn
+  medyan değerlendirme betiğinin kapanış mekaniğidir, sistemin gecikmesi
+  değil. Tasarım beklentisi oturum boşluğu 3 sn + damga 2 sn + mikro-toplu;
+  Aşama 6'da uçtan uca ölçülecek
+- `--kafka` açıkken FPS 36.5'ten 31.8'e düşüyor ama ölçülen `publish`
+  aşaması 0.0 ms. Kaybın librdkafka'nın arka plan I/O iş parçacığından
+  geldiği varsayıldı, doğrulanmadı. Çoklu kamerada (Aşama 10) tekrar ölçülmeli
+- FIGHT ve LOITERING için seçilen `min_sec` değerleri (0.5 / 2.0) ölçüme
+  değil akıl yürütmeye dayanıyor; bu olayları içeren klip yok
+- `zone_01`'in sahte RUN'ı (35 vuruş, 1.80 sn) Spark'tan geçiyor. Süzgeç
+  gürültüyü eler, yanlış kuralı düzeltmez — kök neden RUN kuralının kendisinde
+
 Kapanan sorular:
 
 - 4 GB VRAM'de `yolov8s-pose` sığıyor mu — evet, 49 MiB tepe kullanım
@@ -692,6 +932,10 @@ Kapanan sorular:
   kalitesi ise hâlâ kanıtlanmadı (yukarıdaki açık soru)
 - YOLO26'nın daha az kişi bulması gerçek kaçırma mı — hayır, güven eşiği
   kalibrasyonuydu; `conf=0.25` v8 davranışını yakalıyor
+- Host'ta çalışan `vision/` `localhost:9092`'ye yazabiliyor mu — evet,
+  `scripts/check_kafka.py` gidiş-dönüş 781 ms
+- Spark tek kare gürültüsünü eliyor mu — evet, ama tek eşikle değil: vuruş
+  sayısı + tipe göre süre gerekti (§ Aşama 4 sonucu)
 
 ---
 

@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="tr"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Sistem Sağlığı - VADAP Kontrol Paneli</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Theme Config -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-background": "#d8e3fb",
+                    "secondary-fixed-dim": "#adc6ff",
+                    "on-surface-variant": "#c6c6cd",
+                    "primary-fixed": "#dae2fd",
+                    "secondary-fixed": "#d8e2ff",
+                    "on-tertiary": "#213145",
+                    "surface-container": "#152031",
+                    "on-primary-fixed-variant": "#3f465c",
+                    "inverse-primary": "#565e74",
+                    "tertiary-fixed-dim": "#b7c8e1",
+                    "primary": "#bec6e0",
+                    "surface-container-low": "#111c2d",
+                    "inverse-surface": "#d8e3fb",
+                    "on-tertiary-fixed-variant": "#38485d",
+                    "tertiary-fixed": "#d3e4fe",
+                    "secondary": "#adc6ff",
+                    "surface-container-highest": "#2a3548",
+                    "tertiary-container": "#06182b",
+                    "secondary-container": "#0566d9",
+                    "on-primary-fixed": "#131b2e",
+                    "outline-variant": "#45464d",
+                    "on-tertiary-container": "#728299",
+                    "inverse-on-surface": "#263143",
+                    "surface-bright": "#2f3a4c",
+                    "on-error": "#690005",
+                    "surface-tint": "#bec6e0",
+                    "primary-container": "#0f172a",
+                    "on-secondary-container": "#e6ecff",
+                    "on-primary-container": "#798098",
+                    "on-secondary-fixed-variant": "#004395",
+                    "error-container": "#93000a",
+                    "surface": "#081425",
+                    "on-tertiary-fixed": "#0b1c30",
+                    "on-surface": "#d8e3fb",
+                    "error": "#ffb4ab",
+                    "on-error-container": "#ffdad6",
+                    "on-primary": "#283044",
+                    "surface-container-high": "#1f2a3c",
+                    "tertiary": "#b7c8e1",
+                    "surface-container-lowest": "#040e1f",
+                    "on-secondary-fixed": "#001a42",
+                    "surface-dim": "#081425",
+                    "outline": "#909097",
+                    "background": "#081425",
+                    "on-secondary": "#002e6a",
+                    "surface-variant": "#2a3548",
+                    "primary-fixed-dim": "#bec6e0"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "unit": "4px",
+                    "stack-md": "16px",
+                    "sidebar-width": "280px",
+                    "event-stream-width": "320px",
+                    "grid-gutter": "12px",
+                    "stack-sm": "8px",
+                    "container-padding": "24px"
+            },
+            "fontFamily": {
+                    "display-lg": ["Inter"],
+                    "body-sm": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "body-md": ["Inter"],
+                    "data-mono": ["JetBrains Mono"],
+                    "label-caps": ["Inter"],
+                    "title-sm": ["Inter"]
+            },
+            "fontSize": {
+                    "display-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                    "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                    "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                    "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                    "data-mono": ["13px", { "lineHeight": "16px", "fontWeight": "500" }],
+                    "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                    "title-sm": ["18px", { "lineHeight": "24px", "fontWeight": "600" }]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        /* Pulse animation for skeleton/alarms if needed */
+        @keyframes subtle-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .animate-subtle-pulse {
+            animation: subtle-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        /* Table row hover accent */
+        .table-row-hover {
+            border-left: 2px solid transparent;
+        }
+        .table-row-hover:hover {
+            background-color: theme('colors.surface-variant');
+            border-left-color: theme('colors.secondary');
+        }
+        
+        /* Circular progress animation */
+        .circular-chart { display: block; margin: 0 auto; max-width: 80%; max-height: 250px; }
+        .circle-bg { fill: none; stroke: theme('colors.surface-variant'); stroke-width: 3.8; }
+        .circle { 
+            fill: none; 
+            stroke-width: 3.8; 
+            stroke-linecap: round; 
+            transition: stroke-dasharray 1s ease-out;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md antialiased overflow-x-hidden selection:bg-secondary-container selection:text-on-secondary-container">
+<!-- SideNavBar -->
+<nav aria-label="Sidebar" class="bg-surface-container dark:bg-surface-container flex flex-col h-screen fixed left-0 top-0 z-40 border-r border-outline-variant dark:border-outline-variant w-sidebar-width">
+<!-- Brand Header -->
+<div class="flex items-center gap-3 px-4 py-6 border-b border-outline-variant">
+<div class="w-10 h-10 rounded bg-primary-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary" data-icon="shield">shield</span>
+</div>
+<div class="flex flex-col overflow-hidden">
+<span class="font-headline-md text-headline-md font-bold text-on-surface dark:text-on-surface truncate">VADAP</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Anomali Tespit Sistemi</span>
+</div>
+</div>
+<!-- Navigation Links -->
+<ul class="flex flex-col py-4 overflow-y-auto">
+<!-- Canlı İzleme (Inactive) -->
+<li>
+<a class="flex items-center gap-3 font-body-md text-body-md text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="videocam">videocam</span>
+<span>Canlı İzleme</span>
+</a>
+</li>
+<!-- Olaylar (Inactive) -->
+<li>
+<a class="flex items-center gap-3 font-body-md text-body-md text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="notifications_active">notifications_active</span>
+<span>Olaylar</span>
+</a>
+</li>
+<!-- Kameralar (Inactive) -->
+<li>
+<a class="flex items-center gap-3 font-body-md text-body-md text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="videocam_off">videocam_off</span>
+<span>Kameralar</span>
+</a>
+</li>
+<!-- Bölgeler (Inactive) -->
+<li>
+<a class="flex items-center gap-3 font-body-md text-body-md text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="map">map</span>
+<span>Bölgeler</span>
+</a>
+</li>
+<!-- Analitik (Inactive) -->
+<li>
+<a class="flex items-center gap-3 font-body-md text-body-md text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span>Analitik</span>
+</a>
+</li>
+<!-- Sistem Sağlığı (Active Semantic Match) -->
+<li>
+<a class="flex items-center gap-3 font-body-md text-body-md text-secondary dark:text-secondary font-bold border-l-2 border-secondary bg-surface-container-high px-4 py-3 scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="health_and_safety" data-weight="fill" style="font-variation-settings: 'FILL' 1;">health_and_safety</span>
+<span>Sistem Sağlığı</span>
+</a>
+</li>
+<!-- Kullanıcılar (Inactive) -->
+<li>
+<a class="flex items-center gap-3 font-body-md text-body-md text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span>Kullanıcılar</span>
+</a>
+</li>
+<!-- Denetim Kaydı (Inactive) -->
+<li>
+<a class="flex items-center gap-3 font-body-md text-body-md text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span>Denetim Kaydı</span>
+</a>
+</li>
+<!-- Ayarlar (Inactive) -->
+<li>
+<a class="flex items-center gap-3 font-body-md text-body-md text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Ayarlar</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Main Wrapper (accounts for sidebar width) -->
+<div class="ml-sidebar-width min-h-screen flex flex-col">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-surface flex justify-between items-center w-full px-container-padding h-16 sticky top-0 z-30 border-b border-outline-variant dark:border-outline-variant">
+<!-- Left: Title -->
+<div class="flex items-center gap-4">
+<h1 class="font-headline-md text-headline-md font-black text-on-surface dark:text-on-surface">VADAP Kontrol Paneli</h1>
+</div>
+<!-- Right: Actions & Icons -->
+<div class="flex items-center gap-4">
+<!-- Text Actions -->
+<div class="flex items-center gap-2 mr-4 border-r border-outline-variant pr-4">
+<button class="font-title-sm text-title-sm text-primary dark:text-primary hover:bg-surface-variant px-3 py-1.5 rounded transition-colors">Canlı İzle</button>
+<button class="font-title-sm text-title-sm text-primary dark:text-primary hover:bg-surface-variant px-3 py-1.5 rounded transition-colors">Alarm Geçmişi</button>
+</div>
+<!-- Icon Actions -->
+<div class="flex items-center gap-1">
+<button class="text-primary dark:text-primary hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-secondary">
+<span class="material-symbols-outlined block" data-icon="rss_feed">rss_feed</span>
+</button>
+<button class="text-primary dark:text-primary hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-secondary relative">
+<span class="material-symbols-outlined block" data-icon="notifications">notifications</span>
+<!-- Notification dot -->
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full animate-subtle-pulse"></span>
+</button>
+<button class="text-primary dark:text-primary hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-secondary">
+<span class="material-symbols-outlined block" data-icon="dark_mode">dark_mode</span>
+</button>
+<button class="text-primary dark:text-primary hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-secondary ml-2">
+<span class="material-symbols-outlined block text-[28px]" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 p-container-padding flex flex-col gap-stack-md bg-background">
+<!-- Page Header / Breadcrumb -->
+<div class="flex justify-between items-end pb-2">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Sistem Sağlığı</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Gerçek zamanlı altyapı ve analitik servis durumu.</p>
+</div>
+<div class="flex items-center gap-2 font-data-mono text-data-mono text-on-surface-variant bg-surface-container-low px-3 py-1 rounded border border-outline-variant">
+<span class="material-symbols-outlined text-[16px]" data-icon="sync">sync</span>
+<span>Son Güncelleme: 14:05:22 TSİ</span>
+</div>
+</div>
+<!-- Top Grid: Service Cards & GPU -->
+<div class="grid grid-cols-1 xl:grid-cols-4 gap-grid-gutter">
+<!-- Service Cards Column (Span 3 on large, stack on smaller) -->
+<div class="xl:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-grid-gutter">
+<!-- Card 1: Database -->
+<div class="bg-surface border border-outline-variant rounded p-4 flex flex-col justify-between h-full relative overflow-hidden group">
+<div class="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center border border-outline-variant">
+<span class="material-symbols-outlined text-primary text-[20px]" data-icon="database">database</span>
+</div>
+<div>
+<h3 class="font-title-sm text-title-sm text-on-surface">Veritabanı</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">PostgreSQL Cluster</p>
+</div>
+</div>
+<div class="flex items-center gap-1.5 bg-surface-container px-2 py-1 rounded-sm border border-outline-variant">
+<span class="w-2 h-2 rounded-full bg-primary animate-subtle-pulse"></span>
+<span class="font-label-caps text-label-caps text-on-surface">ONLİNE</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4 mt-auto border-t border-surface-variant pt-3">
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant mb-1">QPS</p>
+<p class="font-data-mono text-data-mono text-on-surface">1,245</p>
+</div>
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant mb-1">Gecikme</p>
+<p class="font-data-mono text-data-mono text-on-surface">12ms</p>
+</div>
+</div>
+</div>
+<!-- Card 2: Kafka -->
+<div class="bg-surface border border-outline-variant rounded p-4 flex flex-col justify-between h-full relative overflow-hidden group">
+<div class="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center border border-outline-variant">
+<span class="material-symbols-outlined text-primary text-[20px]" data-icon="route">route</span>
+</div>
+<div>
+<h3 class="font-title-sm text-title-sm text-on-surface">Kafka</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Event Stream</p>
+</div>
+</div>
+<div class="flex items-center gap-1.5 bg-surface-container px-2 py-1 rounded-sm border border-outline-variant">
+<span class="w-2 h-2 rounded-full bg-primary animate-subtle-pulse"></span>
+<span class="font-label-caps text-label-caps text-on-surface">ONLİNE</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4 mt-auto border-t border-surface-variant pt-3">
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant mb-1">İletişim</p>
+<p class="font-data-mono text-data-mono text-on-surface">8.4k/s</p>
+</div>
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant mb-1">Kuyruk</p>
+<p class="font-data-mono text-data-mono text-on-surface">0</p>
+</div>
+</div>
+</div>
+<!-- Card 3: Spark -->
+<div class="bg-surface border border-outline-variant rounded p-4 flex flex-col justify-between h-full relative overflow-hidden group">
+<div class="absolute inset-0 bg-gradient-to-br from-tertiary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center border border-outline-variant">
+<span class="material-symbols-outlined text-tertiary text-[20px]" data-icon="memory">memory</span>
+</div>
+<div>
+<h3 class="font-title-sm text-title-sm text-on-surface">Spark</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Analitik Motoru</p>
+</div>
+</div>
+<div class="flex items-center gap-1.5 bg-surface-container px-2 py-1 rounded-sm border border-outline-variant">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+<span class="font-label-caps text-label-caps text-tertiary">GECİKMELİ</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4 mt-auto border-t border-surface-variant pt-3">
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant mb-1">İş Yükü</p>
+<p class="font-data-mono text-data-mono text-tertiary">92%</p>
+</div>
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant mb-1">Batch S.</p>
+<p class="font-data-mono text-data-mono text-tertiary">14s</p>
+</div>
+</div>
+</div>
+</div>
+<!-- GPU Status Card (Span 1) -->
+<div class="xl:col-span-1 bg-surface border border-outline-variant rounded p-4 flex flex-col items-center justify-center relative">
+<div class="w-full flex justify-between items-start absolute top-4 left-4 right-4">
+<span class="font-title-sm text-title-sm text-on-surface">GPU Kümesi</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]" data-icon="developer_board">developer_board</span>
+</div>
+<!-- SVG Doughnut Chart -->
+<div class="relative w-32 h-32 mt-6">
+<svg class="circular-chart w-full h-full transform -rotate-90" viewbox="0 0 36 36">
+<!-- Background Circle -->
+<path class="circle-bg" d="M18 2.0845
+                                a 15.9155 15.9155 0 0 1 0 31.831
+                                a 15.9155 15.9155 0 0 1 0 -31.831"></path>
+<!-- Foreground Circle (65%) -->
+<path class="circle stroke-secondary-container" d="M18 2.0845
+                                a 15.9155 15.9155 0 0 1 0 31.831
+                                a 15.9155 15.9155 0 0 1 0 -31.831" stroke-dasharray="65, 100"></path>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="font-display-lg text-display-lg text-on-surface leading-none">65<span class="text-[16px] text-on-surface-variant">%</span></span>
+</div>
+</div>
+<div class="mt-4 text-center">
+<p class="font-body-sm text-body-sm text-on-surface-variant">NVIDIA A100 Tensor Core</p>
+<p class="font-data-mono text-data-mono text-on-surface mt-1">42°C Ortalama Sıcaklık</p>
+</div>
+</div>
+</div>
+<!-- Bottom Area: Camera-Based Health Table -->
+<div class="bg-surface border border-outline-variant rounded flex flex-col overflow-hidden mt-2">
+<div class="p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+<h3 class="font-title-sm text-title-sm text-on-surface">Kamera Bazlı Sağlık Tablosu</h3>
+<div class="flex gap-2">
+<input class="bg-surface-container border border-outline-variant rounded px-3 py-1 font-body-sm text-body-sm text-on-surface placeholder:text-on-surface-variant focus:border-secondary focus:ring-1 focus:ring-secondary w-48" placeholder="Kamera ara..." type="text"/>
+<button class="bg-surface-variant hover:bg-surface-container-highest border border-outline-variant rounded px-3 py-1 font-body-sm text-body-sm text-on-surface transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="filter_list">filter_list</span>
+                            Filtrele
+                        </button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-outline-variant bg-surface-container">
+<th class="font-label-caps text-label-caps text-on-surface-variant px-4 py-2 font-medium w-1/4">KAMERA</th>
+<th class="font-label-caps text-label-caps text-on-surface-variant px-4 py-2 font-medium w-1/6">FPS</th>
+<th class="font-label-caps text-label-caps text-on-surface-variant px-4 py-2 font-medium w-1/6">DÜŞEN KARE</th>
+<th class="font-label-caps text-label-caps text-on-surface-variant px-4 py-2 font-medium w-1/6">GECİKME</th>
+<th class="font-label-caps text-label-caps text-on-surface-variant px-4 py-2 font-medium w-1/6">TREND (SON 1S)</th>
+<th class="font-label-caps text-label-caps text-on-surface-variant px-4 py-2 font-medium text-right pr-6">DURUM</th>
+</tr>
+</thead>
+<tbody class="font-data-mono text-data-mono">
+<!-- Row 1 -->
+<tr class="table-row-hover border-b border-surface-variant h-[40px]">
+<td class="px-4 py-2 text-on-surface font-body-md text-body-md flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant" data-icon="videocam">videocam</span>
+                                    Nizamiye Giriş - CH01
+                                </td>
+<td class="px-4 py-2 text-on-surface">24.9</td>
+<td class="px-4 py-2 text-on-surface">0</td>
+<td class="px-4 py-2 text-on-surface">45ms</td>
+<td class="px-4 py-2">
+<svg class="stroke-primary fill-none" height="20" stroke-linecap="round" stroke-width="1.5" viewbox="0 0 60 20" width="60">
+<path d="M0 10 Q 5 10, 10 8 T 20 12 T 30 9 T 40 11 T 50 10 T 60 10"></path>
+</svg>
+</td>
+<td class="px-4 py-2 text-right pr-6">
+<span class="inline-flex items-center gap-1 text-primary">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> Optımal
+                                    </span>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="table-row-hover border-b border-surface-variant h-[40px]">
+<td class="px-4 py-2 text-on-surface font-body-md text-body-md flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant" data-icon="videocam">videocam</span>
+                                    Güney Çevre - CH04
+                                </td>
+<td class="px-4 py-2 text-on-surface">25.0</td>
+<td class="px-4 py-2 text-on-surface">2</td>
+<td class="px-4 py-2 text-on-surface">52ms</td>
+<td class="px-4 py-2">
+<svg class="stroke-primary fill-none" height="20" stroke-linecap="round" stroke-width="1.5" viewbox="0 0 60 20" width="60">
+<path d="M0 10 Q 10 12, 20 9 T 40 14 T 60 10"></path>
+</svg>
+</td>
+<td class="px-4 py-2 text-right pr-6">
+<span class="inline-flex items-center gap-1 text-primary">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> Optımal
+                                    </span>
+</td>
+</tr>
+<!-- Row 3 - Warning -->
+<tr class="table-row-hover border-b border-surface-variant h-[40px] bg-tertiary/5">
+<td class="px-4 py-2 text-on-surface font-body-md text-body-md flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-tertiary" data-icon="warning">warning</span>
+                                    Otopark B - CH12
+                                </td>
+<td class="px-4 py-2 text-tertiary">14.2</td>
+<td class="px-4 py-2 text-tertiary font-bold">145</td>
+<td class="px-4 py-2 text-tertiary">210ms</td>
+<td class="px-4 py-2">
+<svg class="stroke-tertiary fill-none" height="20" stroke-linecap="round" stroke-width="1.5" viewbox="0 0 60 20" width="60">
+<path d="M0 5 L 10 15 L 20 5 L 30 18 L 40 10 L 50 16 L 60 18"></path>
+</svg>
+</td>
+<td class="px-4 py-2 text-right pr-6">
+<span class="inline-flex items-center gap-1 text-tertiary">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary animate-subtle-pulse"></span> Kararsız
+                                    </span>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="table-row-hover border-b border-surface-variant h-[40px]">
+<td class="px-4 py-2 text-on-surface font-body-md text-body-md flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant" data-icon="videocam">videocam</span>
+                                    Ana Sunucu Odası - CH08
+                                </td>
+<td class="px-4 py-2 text-on-surface">30.0</td>
+<td class="px-4 py-2 text-on-surface">0</td>
+<td class="px-4 py-2 text-on-surface">12ms</td>
+<td class="px-4 py-2">
+<svg class="stroke-primary fill-none" height="20" stroke-linecap="round" stroke-width="1.5" viewbox="0 0 60 20" width="60">
+<path d="M0 10 L 60 10"></path>
+</svg>
+</td>
+<td class="px-4 py-2 text-right pr-6">
+<span class="inline-flex items-center gap-1 text-primary">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> Optımal
+                                    </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</main>
+</div>
+</body></html>

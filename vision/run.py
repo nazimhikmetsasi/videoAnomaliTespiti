@@ -8,6 +8,7 @@ Calistirma:
     venv\\Scripts\\python.exe -m vision.run --source 0 --show
     venv\\Scripts\\python.exe -m vision.run --source rtsp://... --save out.mp4
     venv\\Scripts\\python.exe -m vision.run --source data/pilot/zone_01.mp4 --rules --zones eval/zones.json
+    venv\\Scripts\\python.exe -m vision.run --source data/pilot/run_01.mp4 --rules --kafka
 
 ID degisimi olcumu: etiketli gercek referans olmadan tam sayilamaz. Burada
 pratik gosterge, isinma sonrasi (varsayilan 30 kare) yaratilan YENI ID
@@ -19,6 +20,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import statistics
 import sys
 import time
@@ -27,6 +29,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from vision.publish import CandidatePublisher
 from vision.rules.engine import Candidate, RuleEngine, Zone
 from vision.source import VideoSource
 from vision.stages.features import FeatureEngine
@@ -118,6 +121,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="duzleme+oznitelik+kural zincirini calistir (Asama 3)")
     parser.add_argument("--zones", default="",
                         help="bolge JSON yolu (SS7 formati); verilmezse bos bolge listesi")
+    parser.add_argument("--kafka", nargs="?",
+                        const=os.getenv("KAFKA_BOOTSTRAP_HOST", "localhost:9092"),
+                        default="", help="aday olaylari Kafka'ya bas (varsayilan bootstrap: env)")
+    parser.add_argument("--camera-id", default="", help="bos = kaynak dosya adi / webcam indeksi")
     return parser.parse_args(argv)
 
 
@@ -179,14 +186,24 @@ def main(argv: list[str] | None = None) -> int:
         rule_engine = RuleEngine(zones=zones)
 
     writer = None
-    pre_ms, infer_ms, track_ms, smooth_ms, rules_ms, loop_ms = [], [], [], [], [], []
+    pre_ms, infer_ms, track_ms, smooth_ms, rules_ms, loop_ms, publish_ms = [], [], [], [], [], [], []
     per_frame_counts = []
     late_new_ids = pose_missing = track_total = frames = 0
     started = time.perf_counter()
     idle_since: float | None = None
+    publisher: CandidatePublisher | None = None
 
     with VideoSource(args.source) as source:
         print(f"  kaynak: {args.source} ({source.source_type}), model: {args.model}")
+        if args.kafka and args.rules:
+            camera_id = args.camera_id or (
+                f"cam-{args.source}" if source.source_type == "webcam"
+                else Path(str(args.source)).stem)
+            # Canli kaynakta cand.ts zaten epoch'tur (epoch_base=0.0); dosya
+            # kaynaginda sahne zamani duvar saatinden farkli akabilir (SS2).
+            epoch_base = 0.0 if source.is_live else time.time()
+            publisher = CandidatePublisher(args.kafka, camera_id, epoch_base=epoch_base)
+            print(f"  Kafka: {args.kafka} -> {publisher.topic} (camera_id={camera_id})")
         while True:
             frame = source.read()
             if frame is None:
@@ -233,6 +250,10 @@ def main(argv: list[str] | None = None) -> int:
                 smooth_ms.append((t5 - t4) * 1000)
                 rules_ms.append((t6 - t5) * 1000)
                 all_candidates.extend(candidates)
+                if publisher is not None:
+                    tp0 = time.perf_counter()
+                    publisher(candidates)
+                    publish_ms.append((time.perf_counter() - tp0) * 1000)
                 for cand in candidates:
                     for tid in cand.track_ids:
                         active_labels[tid] = cand.anomaly_type
@@ -266,6 +287,9 @@ def main(argv: list[str] | None = None) -> int:
         last_error = source.last_error
         dropped, reconnects = source.frames_dropped, source.reconnects
 
+    if publisher is not None:
+        publisher.close(eos=True)
+
     if writer is not None:
         writer.release()
     if args.show:
@@ -293,6 +317,8 @@ def main(argv: list[str] | None = None) -> int:
     stage_rows = [("on isleme", pre_ms), ("cikarim", infer_ms), ("takip", track_ms)]
     if args.rules:
         stage_rows += [("duzleme", smooth_ms), ("oznitelik+kural", rules_ms)]
+    if publisher is not None and publish_ms:
+        stage_rows.append(("kafka publish", publish_ms))
     stage_rows.append(("dongu toplam", loop_ms))
     for name, samples in stage_rows:
         p95 = sorted(samples)[min(len(samples) - 1, int(len(samples) * 0.95))]
@@ -321,6 +347,12 @@ def main(argv: list[str] | None = None) -> int:
                       f"iz {len(track_ids):>3}  ilk tetik {first_ts:>6.1f} sn")
         else:
             print("    aday yok")
+
+    if publisher is not None:
+        print(f"\n  kafka yayin           : yayinlanan {publisher.published}  "
+              f"kuyruga alinan {publisher.queued}  basarisiz {publisher.failed}")
+        if publisher.last_error:
+            print(f"  kafka son hata        : {publisher.last_error}")
 
     if args.save:
         print(f"\n  video yazildi        : {args.save}")

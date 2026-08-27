@@ -72,8 +72,16 @@ CREATE TABLE detection_settings (
     loiter_sec       INT          NOT NULL DEFAULT 30,
     fight_proximity  NUMERIC(4,2) NOT NULL DEFAULT 1.20,
     window_frames    INT          NOT NULL DEFAULT 50,
+    -- Kayan pencere degil oturum bosluk suresi: bu kadar saniyelik sessizlikten
+    -- sonrasi yeni olaydir (ASAMA4_PLAN.md SS5.1, session_window kullanilir).
     spark_window_sec INT          NOT NULL DEFAULT 3,
-    spark_min_hits   INT          NOT NULL DEFAULT 5,
+    -- 5 -> 2: gercek FALL yalnizca 2 aday uretiyor (docs/DURUM.md), 5 onu elerdi.
+    spark_min_hits   INT          NOT NULL DEFAULT 2,
+    -- Tip basina minimum oturum suresi (sn). FALL bir darbedir (0.0, hits>=2
+    -- tek koruma); RUN/ZONE/LOITERING bir durumdur. Tek sutun yerine JSONB:
+    -- yeni bir kural tipi sema gocu gerektirmesin (ASAMA4_PLAN.md SS5.3/SS7).
+    spark_min_sec    JSONB        NOT NULL DEFAULT
+        '{"FALL":0.0,"RUN":1.0,"ZONE_VIOLATION":1.0,"LOITERING":2.0,"FIGHT":0.5}',
     tcn_min_conf     NUMERIC(3,2) NOT NULL DEFAULT 0.60,
     updated_by       INT          REFERENCES users(id) ON DELETE SET NULL,
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
