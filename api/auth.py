@@ -57,6 +57,20 @@ def create_access_token(user: dict[str, Any]) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
 
 
+def decode_token(token: str | None) -> dict[str, Any] | None:
+    """Jetonu YEREL dogrular, veritabanina gitmez; gecersizse None doner.
+
+    WebSocket el sikismasinda Depends(current_user) kullanilamaz (HTTP
+    Authorization basligi yoktur, jeton `?token=` ile gelir). vision/'in kendi
+    kopyasiyla ayni sozlesme: ayni JWT_SECRET, ayni HS256 (SS3, SS8.4)."""
+    if not token:
+        return None
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+    except jwt.PyJWTError:
+        return None
+
+
 def current_user(token: str = Depends(_oauth2_scheme), db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])

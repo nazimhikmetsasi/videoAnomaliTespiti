@@ -161,6 +161,29 @@ CREATE TABLE audit_log (
 
 CREATE INDEX idx_audit_user_time ON audit_log (user_id, created_at DESC);
 
+-- -------------------------------------------------------------- evidence
+-- vision/ epizot kapanisinda POST /api/evidence ile bildirir. Sira garantisi
+-- yoktur (kanit vs. Spark'tan gecen olay); event_id NULL kalabilir --
+-- eslesmeyen satir silinmez, GET /api/evidence?unmatched=true ile gorunur
+-- (docs/ASAMA6_PLAN.md SS8.2).
+CREATE TABLE evidence (
+    id             BIGSERIAL PRIMARY KEY,
+    event_id       BIGINT REFERENCES events(id) ON DELETE CASCADE,
+    camera_id      INT NOT NULL REFERENCES cameras(id) ON DELETE CASCADE,
+    anomaly_type   VARCHAR(30) NOT NULL,
+    track_key      VARCHAR(50) NOT NULL,
+    started_at     TIMESTAMPTZ NOT NULL,
+    ended_at       TIMESTAMPTZ,
+    frame_path     TEXT,
+    clip_path      TEXT,
+    clip_truncated BOOLEAN NOT NULL DEFAULT FALSE,
+    mongo_ref      VARCHAR(24),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_evidence_match ON evidence (camera_id, anomaly_type, started_at);
+CREATE INDEX idx_evidence_event ON evidence (event_id);
+
 -- --------------------------------------------------------- tohum kayitlar
 -- Sifre .env'deki ADMIN_PASSWORD'dan alinir ve burada bcrypt'lenir; depoda
 -- acik sifre tutulmaz. Ilk giristen sonra panelden degistirilmelidir.

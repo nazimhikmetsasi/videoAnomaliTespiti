@@ -206,6 +206,47 @@ class EventStatusIn(BaseModel):
     status: Literal["acknowledged", "false_positive", "resolved"]
 
 
+# ------------------------------------------------------------------ evidence
+class EvidenceIn(BaseModel):
+    """vision/ epizot kapanisinda gonderir (ASAMA6_PLAN.md SS8.1). camera_id
+    metin -- Kafka govdesiyle ayni: sayisal id veya kamera adi olabilir."""
+
+    camera_id: str
+    anomaly_type: str
+    track_key: str
+    start_time: float
+    end_time: float | None = None
+    frame_path: str | None = None
+    clip_path: str | None = None
+    clip_truncated: bool = False
+    mongo_ref: str | None = None
+
+
+class EvidenceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_id: int | None
+    camera_id: int
+    anomaly_type: str
+    track_key: str
+    started_at: datetime.datetime
+    ended_at: datetime.datetime | None
+    frame_path: str | None
+    clip_path: str | None
+    clip_truncated: bool
+    mongo_ref: str | None
+    created_at: datetime.datetime
+
+
+class EvidenceMatchOut(BaseModel):
+    """POST /api/evidence yaniti: hangi yolun izlendigini bildirir."""
+
+    matched: bool
+    event_id: int | None = None
+    evidence_id: int | None = None
+
+
 # ---------------------------------------------------------------- analytics
 class AnalyticsSummaryOut(BaseModel):
     total: int

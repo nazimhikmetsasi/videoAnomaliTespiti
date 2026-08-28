@@ -18,15 +18,17 @@ import threading
 
 from confluent_kafka import Consumer
 from pymongo.errors import PyMongoError
-from sqlalchemy import text
+from pymongo.database import Database
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from api.config import KAFKA_BOOTSTRAP
-from api.db.models import Event
-from api.db.mongo import get_mongo
+from api.db.models import Event, Evidence
+from api.db.mongo import get_mongo, link_pose_sequence
 from api.db.postgres import SessionLocal
+from api.matching import load_tolerance, tolerance
 
 TOPIC = "anomaly-events"
 GROUP_ID = "anomaly-event-consumer"
@@ -152,6 +154,52 @@ def _insert_with_retry(row: dict, stop) -> int | None:
     return None
 
 
+def _match_pending_evidence(db: Session, event_id: int, camera_id: int, anomaly_type: str,
+                             started_at: datetime.datetime, mongo: Database | None = None) -> bool:
+    """Yon 2 (docs/ASAMA6_PLAN.md SS8.2 madde 3): olay eklenirken ayni
+    (camera_id, anomaly_type) ve tolerans icinde, henuz eslesmemis
+    (event_id NULL) bir evidence satiri aranir. Bulunursa olay kanit
+    alanlariyla doldurulur ve satir baglanir (silinmez). api/routers/
+    evidence.py::_find_matching_event'in yon 1'i ile simetriktir -- en yakin
+    aday secilir, siralamasiz sorgu tolerans icindeki herhangi birini
+    dondururdu.
+
+    BU YOL BASKINDIR: kanit epizot kapanir kapanmaz gider, olay ise Spark
+    gecikmesinden sonra dogar. Bu yuzden pose_sequences.event_id'yi asil
+    dolduran yer burasidir; `mongo` verilmezse (DB'siz oz kontrol) Mongo'ya
+    hic dokunulmaz."""
+    tol = tolerance()
+    lo, hi = started_at - tol, started_at + tol
+    ev = db.scalar(
+        select(Evidence)
+        .where(
+            Evidence.camera_id == camera_id,
+            Evidence.anomaly_type == anomaly_type,
+            Evidence.event_id.is_(None),
+            Evidence.started_at >= lo,
+            Evidence.started_at <= hi,
+        )
+        .order_by(func.abs(func.extract("epoch", Evidence.started_at - started_at)))
+        .limit(1)
+    )
+    if ev is None:
+        return False
+    event = db.get(Event, event_id)
+    if event is not None:
+        if ev.frame_path:
+            event.frame_path = ev.frame_path
+        if ev.clip_path:
+            event.clip_path = ev.clip_path
+        if ev.mongo_ref:
+            event.mongo_ref = ev.mongo_ref
+    mongo_ref = ev.mongo_ref   # commit sonrasi ORM nesnesi expire olur
+    ev.event_id = event_id
+    db.commit()
+    if mongo is not None:
+        link_pose_sequence(mongo, mongo_ref, event_id)
+    return True
+
+
 def _write_telemetry(event_id: int, camera_id: int, msg: dict) -> None:
     """MongoDB telemetry belgesi (SS6.5). Hata firlarsa sayilir, tuketici
     durmaz -- Postgres satiri zaten yazildi, kaynak gercek orasidir."""
@@ -191,9 +239,11 @@ def run() -> None:
     consumer.subscribe([TOPIC])
 
     cameras, zones = CameraCache(), ZoneCache()
+    load_tolerance()   # kanit eslesme toleransi = spark_window_sec (api/matching.py)
     counters = {"processed": 0, "duplicates": 0, "malformed": 0,
-                "skipped_unknown_camera": 0, "mongo_errors": 0}
-    print(f"  tuketici basladi: {KAFKA_BOOTSTRAP} -> {TOPIC} (group={GROUP_ID})")
+                "skipped_unknown_camera": 0, "mongo_errors": 0, "evidence_matched": 0}
+    print(f"  tuketici basladi: {KAFKA_BOOTSTRAP} -> {TOPIC} (group={GROUP_ID}), "
+          f"kanit toleransi {tolerance().total_seconds():.0f} sn")
 
     try:
         while not stop.is_set():
@@ -239,6 +289,13 @@ def run() -> None:
             else:
                 counters["processed"] += 1
                 try:
+                    with SessionLocal() as db:
+                        if _match_pending_evidence(db, new_id, camera_id, row["anomaly_type"],
+                                                   row["started_at"], mongo=get_mongo()):
+                            counters["evidence_matched"] += 1
+                except (SQLAlchemyError, PyMongoError) as exc:
+                    print(f"  kanit eslesme hatasi (event {new_id}): {exc}")
+                try:
                     _write_telemetry(new_id, camera_id, body)
                 except PyMongoError as exc:
                     counters["mongo_errors"] += 1
@@ -249,7 +306,8 @@ def run() -> None:
         print(f"  tuketici kapandi -- islenen {counters['processed']}  "
               f"tekrar {counters['duplicates']}  bozuk {counters['malformed']}  "
               f"bilinmeyen-kamera {counters['skipped_unknown_camera']}  "
-              f"mongo-hata {counters['mongo_errors']}")
+              f"mongo-hata {counters['mongo_errors']}  "
+              f"kanit-eslesen {counters['evidence_matched']}")
 
 
 if __name__ == "__main__":

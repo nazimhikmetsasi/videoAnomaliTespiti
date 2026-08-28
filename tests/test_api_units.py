@@ -20,7 +20,7 @@ from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from api.auth import ALGORITHM, create_access_token  # noqa: E402
+from api.auth import ALGORITHM, create_access_token, decode_token  # noqa: E402
 from api.config import JWT_SECRET  # noqa: E402
 from api.routers.settings import get_camera_settings  # noqa: E402
 from api.schemas import ZoneIn  # noqa: E402
@@ -160,6 +160,26 @@ def test_settings_client_same_updated_at_skips_reapply() -> None:
     assert client.apply(data) is True
     assert client.apply(data) is False
     assert client.applied == 1
+
+
+# /ws/alerts jeton denetimi (docs/ASAMA6_PLAN.md SS8.4). WebSocket el
+# sikismasinda Depends(current_user) calismaz; decode_token yerel dogrular.
+def test_decode_token_accepts_valid_rejects_bad() -> None:
+    good = create_access_token({"id": 1, "username": "admin", "role": "admin"})
+    assert decode_token(good)["role"] == "admin"
+
+    assert decode_token(None) is None          # jetonsuz baglanti reddedilir
+    assert decode_token("") is None
+    assert decode_token("govde.olmayan.sey") is None
+
+    expired = jwt.encode(
+        {"sub": "1", "role": "admin",
+         "exp": datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)},
+        JWT_SECRET, algorithm=ALGORITHM)
+    assert decode_token(expired) is None
+
+    wrong_secret = jwt.encode({"sub": "1", "role": "admin"}, "baska-anahtar", algorithm=ALGORITHM)
+    assert decode_token(wrong_secret) is None   # imza tutmuyor
 
 
 def main() -> int:
