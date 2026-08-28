@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
+import urllib.request
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import coalesce, col, concat_ws, count, create_map
@@ -55,6 +57,35 @@ MIN_SEC = json.loads(os.getenv("SPARK_MIN_SEC", json.dumps(MIN_SEC_DEFAULT_MAP))
 CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", "/checkpoints")
 SCHEMA_VERSION = 1
 
+# ASAMA6_PLAN.md SS9: spark_min_sec/spark_min_hits/spark_window_sec panelden
+# degistirilebilir ama akan sorguya GOMULU -- ancak Spark yeniden baslayinca
+# gecerli olur (checkpoint uyumsuzlugu yuzunden sicak yukleme YOK, bilinclidir).
+# API_URL bos ise ozellik kapali sayilir (docker-compose SETTINGS_API_URL
+# saglamadikca), yukaridaki ortam degiskeni varsayilanlari aynen kalir.
+SETTINGS_API_URL = os.getenv("SETTINGS_API_URL", "")
+SETTINGS_API_TOKEN = os.getenv("SETTINGS_API_TOKEN", "")
+
+
+def fetch_settings_from_api() -> tuple[int, int, dict[str, float]] | None:
+    """GET /api/settings (global) -> (window_sec, min_hits, min_sec).
+    `urllib.request`: Spark imajina yeni paket girmiyor. Ulasilamazsa (ag
+    hatasi, 401, bozuk JSON) None doner -- cagiran ortam degiskeni
+    varsayilanlarina duser ve tek satir uyari basar."""
+    if not SETTINGS_API_URL:
+        return None
+    req = urllib.request.Request(f"{SETTINGS_API_URL.rstrip('/')}/api/settings")
+    if SETTINGS_API_TOKEN:
+        req.add_header("Authorization", f"Bearer {SETTINGS_API_TOKEN}")
+    try:
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return (int(data["spark_window_sec"]), int(data["spark_min_hits"]),
+                dict(data["spark_min_sec"]))
+    except (urllib.error.URLError, ValueError, KeyError, TypeError) as exc:
+        print(f"  [spark_job] esik API'sinden okunamadi, ortam varsayilanlari "
+              f"kullaniliyor: {exc}")
+        return None
+
 CANDIDATE_SCHEMA = StructType([
     StructField("schema", IntegerType()),
     StructField("camera_id", StringType()),
@@ -80,6 +111,13 @@ def build_min_sec_map():
 
 
 def main() -> None:
+    global GAP_SEC, MIN_HITS, MIN_SEC
+    fetched = fetch_settings_from_api()
+    if fetched is not None:
+        GAP_SEC, MIN_HITS, MIN_SEC = fetched
+        print(f"  [spark_job] esikler API'den alindi: window={GAP_SEC}s "
+              f"min_hits={MIN_HITS} min_sec={MIN_SEC}")
+
     spark = SparkSession.builder.appName("anomaly-spark").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
 

@@ -29,6 +29,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from vision.evidence import EvidenceWriter, default_mongo_url
+from vision.health_client import HealthClient
 from vision.publish import CandidatePublisher
 from vision.rules.engine import Candidate, RuleEngine, Zone
 from vision.settings_client import SettingsClient
@@ -38,6 +40,15 @@ from vision.stages.pose_detector import DEFAULT_WEIGHTS, PoseDetector
 from vision.stages.preprocess import FRAME_H, FRAME_W, Preprocessor
 from vision.stages.smoother import Smoother
 from vision.stages.tracker import DEFAULT_REID, OVERRIDES, Track, Tracker
+from vision.ws_server import StreamServer
+
+# ASAMA6_PLAN.md SS4.2: kodlama+yayin toplami butceyi tehdit ediyorsa kalite
+# duser, bosluk varsa yukselir. ponytail: sabit adim (5) ve sabit esikler
+# (4/8 ms) kaba bir denetleyicidir; istemci basina bant genisligi olcumu
+# gerekirse buraya girer.
+JPEG_QUALITY_MIN = 40
+JPEG_QUALITY_MAX = 85
+JPEG_QUALITY_STEP = 5
 
 WARMUP_FRAMES = 30
 # Webcam acilisi bu makinede ~5 sn suruyor, RTSP yeniden baglanmasi daha da
@@ -96,6 +107,52 @@ def draw(image: np.ndarray, tracks: list[Track],
     return out
 
 
+def next_jpeg_quality(quality: int, encode_publish_ms: float) -> int:
+    """SS4.2 kurali: kodlama+yayin suresi butceyi asarsa kalite duser, bosluk
+    varsa yukselir. Taban/tavan disina cikmaz."""
+    if encode_publish_ms > 8.0:
+        return max(JPEG_QUALITY_MIN, quality - JPEG_QUALITY_STEP)
+    if encode_publish_ms < 4.0:
+        return min(JPEG_QUALITY_MAX, quality + JPEG_QUALITY_STEP)
+    return quality
+
+
+def build_meta(camera_id: str, frame_idx: int, ts: float, width: int, height: int,
+                fps: float, tracks: list[Track], zones: list[Zone],
+                pre_alarms: list[Candidate], stage_ms: dict[str, float]) -> dict:
+    """`/ws/meta` govdesi (SS4.1). Overlay istemcide cizilir (PLAN.md zayif
+    nokta 11): bbox islenen kare uzayinda PIKSEL, zones 0-1 NORMALIZE kalir.
+    Pozsuz iz `kp: null` alir -- "pozsuz iz takipte gosterilir ama anomali
+    uretmez" kuralinin panele yansimasi."""
+    return {
+        "schema": 1,
+        "camera_id": camera_id,
+        "frame_idx": frame_idx,
+        "ts": ts,
+        "width": width, "height": height,
+        "fps": round(fps, 1),
+        "tracks": [
+            {
+                "id": t.track_id,
+                "bbox": [float(v) for v in t.bbox],
+                "conf": float(t.conf),
+                "kp": t.keypoints.tolist() if t.keypoints is not None else None,
+                "has_pose": t.keypoints is not None,
+            }
+            for t in tracks
+        ],
+        "zones": [
+            {"name": z.name, "type": z.zone_type, "polygon": z.polygon.tolist()}
+            for z in zones
+        ],
+        "pre_alarms": [
+            {"type": c.anomaly_type, "track_ids": c.track_ids, "score": float(c.score)}
+            for c in pre_alarms
+        ],
+        "stage_ms": stage_ms,
+    }
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Asama 2 goru cekirdegi")
     parser.add_argument("--source", required=True,
@@ -130,6 +187,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="esik API taban URL'i, orn. http://localhost:8000 (bos = sicak yukleme kapali)")
     parser.add_argument("--settings-interval", type=float, default=5.0)
     parser.add_argument("--settings-token", default="", help="bos = jetonsuz istek")
+    parser.add_argument("--ws", action="store_true",
+                        help="WebSocket sunucusunu ac (varsayilan kapali)")
+    parser.add_argument("--ws-port", type=int, default=8001)
+    parser.add_argument("--jpeg-quality", type=int, default=70,
+                        help="baslangic kalitesi (adaptif, SS4.2)")
+    parser.add_argument("--evidence", action="store_true",
+                        help="kanit uretimini ac (SS5)")
+    parser.add_argument("--storage-dir", default="storage", help="klip ve kare kok dizini")
+    parser.add_argument("--heartbeat-sec", type=float, default=5.0, help="0 = kapali (SS7)")
     return parser.parse_args(argv)
 
 
@@ -192,24 +258,33 @@ def main(argv: list[str] | None = None) -> int:
 
     writer = None
     pre_ms, infer_ms, track_ms, smooth_ms, rules_ms, loop_ms, publish_ms = [], [], [], [], [], [], []
+    ws_ms = []
     per_frame_counts = []
     late_new_ids = pose_missing = track_total = frames = 0
     started = time.perf_counter()
     idle_since: float | None = None
     publisher: CandidatePublisher | None = None
     settings_client: SettingsClient | None = None
+    stream_server: StreamServer | None = None
+    evidence_writer: EvidenceWriter | None = None
+    health_client: HealthClient | None = None
+    jpeg_quality = args.jpeg_quality
 
     with VideoSource(args.source) as source:
         print(f"  kaynak: {args.source} ({source.source_type}), model: {args.model}")
         camera_id = ""
-        if args.rules and (args.kafka or args.settings_url):
+        if args.kafka or args.settings_url or args.ws or args.evidence:
             camera_id = args.camera_id or (
                 f"cam-{args.source}" if source.source_type == "webcam"
                 else Path(str(args.source)).stem)
+        # Canli kaynakta cand.ts zaten epoch'tur (epoch_base=0.0); dosya
+        # kaynaginda sahne zamani duvar saatinden farkli akabilir (SS2).
+        # publish.py'daki candidate_to_dict ile AYNI anlasma: events.started_at
+        # (Spark/consumer) bu epoch_base + cand.ts'ten gelir; evidence.py'nin
+        # POST /api/evidence govdesi eslesebilmek icin ayni degeri kullanir
+        # (ASAMA6_PLAN.md SS8.2). args.rules olmadan cand.ts hic uretilmez.
+        epoch_base = (0.0 if source.is_live else time.time()) if args.rules else 0.0
         if args.kafka and args.rules:
-            # Canli kaynakta cand.ts zaten epoch'tur (epoch_base=0.0); dosya
-            # kaynaginda sahne zamani duvar saatinden farkli akabilir (SS2).
-            epoch_base = 0.0 if source.is_live else time.time()
             publisher = CandidatePublisher(args.kafka, camera_id, epoch_base=epoch_base)
             print(f"  Kafka: {args.kafka} -> {publisher.topic} (camera_id={camera_id})")
         if args.settings_url and args.rules:
@@ -219,6 +294,29 @@ def main(argv: list[str] | None = None) -> int:
             settings_client.start()
             print(f"  esik sicak yukleme: {args.settings_url} "
                   f"(camera_id={camera_id}, interval={args.settings_interval}s)")
+        if args.ws:
+            # JWT_SECRET ortamdan okunur -- yoksa StreamServer.start() sunucuyu
+            # ACMAZ ve tek satir uyari basar (ASAMA6_PLAN.md SS3). Varsayilan
+            # DEGER verilmez: api/config.py'nin "dev-secret-change-me" yedegi
+            # burada BILEREK tekrarlanmiyor -- kimliksiz yayin kabul edilemez.
+            stream_server = StreamServer(port=args.ws_port, jwt_secret=os.getenv("JWT_SECRET"))
+            stream_server.start()
+            print(f"  WebSocket: ws://localhost:{args.ws_port}/ws/live|meta/{camera_id}"
+                  + ("" if stream_server.opened else " (ACILAMADI)"))
+        if args.evidence and args.rules:
+            evidence_writer = EvidenceWriter(
+                source, storage_dir=args.storage_dir,
+                api_base_url=args.settings_url, token=args.settings_token or "",
+                mongo_url=default_mongo_url(), epoch_base=epoch_base)
+            evidence_writer.start()
+            print(f"  kanit uretimi: acik (storage_dir={args.storage_dir})")
+        if args.heartbeat_sec > 0 and args.settings_url and camera_id:
+            health_client = HealthClient(
+                args.settings_url, camera_id, source,
+                interval=args.heartbeat_sec, token=args.settings_token or None,
+                mongo_url=default_mongo_url())
+            health_client.start()
+            print(f"  kalp atisi: {args.settings_url} (interval={args.heartbeat_sec}s)")
         while True:
             frame = source.read()
             if frame is None:
@@ -252,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
             track_ms.append((t3 - t2) * 1000)
 
             active_labels: dict[int, str] = {}
+            candidates: list[Candidate] = []
             if args.rules:
                 # Video zamani: dosya kaynaginda kare indeksi/FPS, canlida duvar
                 # saati. Smoother ve FeatureEngine'in tek zaman kaynagi budur.
@@ -272,6 +371,45 @@ def main(argv: list[str] | None = None) -> int:
                 for cand in candidates:
                     for tid in cand.track_ids:
                         active_labels[tid] = cand.anomaly_type
+
+            if evidence_writer is not None:
+                # I/O yok -- epizot takibi hafif, ana dongude guvenle cagrilir.
+                # `ts` sahne zamani (candidate.ts ile ayni saat), `frame.ts`
+                # duvar saati (halka tampon eslesmesi icin, bkz. evidence.py).
+                evidence_writer.on_frame(camera_id, frame.idx, ts, frame.ts, tracks, candidates)
+
+            if stream_server is not None:
+                # SS3/SS12 olcum 3: dinleyen yoksa NE meta kurulur NE JPEG
+                # kodlanir. Iki akis AYRI sayilir -- yalniz meta dinleyen bir
+                # istemci kare kodlamasini baslatmamali.
+                tw0 = time.perf_counter()
+                if stream_server.meta_clients > 0:
+                    stage_ms = {"pre": pre_ms[-1], "infer": infer_ms[-1], "track": track_ms[-1]}
+                    if args.rules:
+                        stage_ms["rules"] = rules_ms[-1]
+                    recent_loop = loop_ms[-30:]
+                    fps_now = 1000.0 / (sum(recent_loop) / len(recent_loop)) if recent_loop else 0.0
+                    meta = build_meta(camera_id, frame.idx, frame.ts, FRAME_W, FRAME_H, fps_now,
+                                       tracks, rule_engine.zones if rule_engine else [],
+                                       candidates, stage_ms)
+                    stream_server.publish_meta(camera_id, meta)
+                if stream_server.live_clients > 0:
+                    # SS4.2 denetleyicisine YALNIZ kodlama+yayin suresi girer;
+                    # tw0'dan olcmek meta kurulumunu da iceri katar ve kaliteyi
+                    # yanlis yere dusururdu.
+                    te0 = time.perf_counter()
+                    ok, buf = cv2.imencode(".jpg", image,
+                                           [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+                    if ok:
+                        stream_server.publish_frame(camera_id, buf.tobytes())
+                    jpeg_quality = next_jpeg_quality(
+                        jpeg_quality, (time.perf_counter() - te0) * 1000)
+                # Kosulsuz olculur: sifir istemcideki maliyet de raporda
+                # gorunmeli, yoksa SS12 olcum 3 kendi kor noktasini olcerdi.
+                ws_ms.append((time.perf_counter() - tw0) * 1000)
+
+            if health_client is not None:
+                health_client.note(frames / (time.perf_counter() - started + 1e-9), infer_ms[-1])
 
             frames += 1
             per_frame_counts.append(len(tracks))
@@ -302,10 +440,21 @@ def main(argv: list[str] | None = None) -> int:
         last_error = source.last_error
         dropped, reconnects = source.frames_dropped, source.reconnects
 
+        if evidence_writer is not None:
+            # Dosya EOF: kalan acik epizotlar `gap_sec`'lik sessizligi hic
+            # gormeden zorla kapatilir (bkz. evidence.py flush() docstring).
+            evidence_writer.flush(camera_id)
+
     if publisher is not None:
         publisher.close(eos=True)
     if settings_client is not None:
         settings_client.stop()
+    if health_client is not None:
+        health_client.stop()
+    if evidence_writer is not None:
+        evidence_writer.stop()
+    if stream_server is not None:
+        stream_server.stop()
 
     if writer is not None:
         writer.release()
@@ -336,6 +485,8 @@ def main(argv: list[str] | None = None) -> int:
         stage_rows += [("duzleme", smooth_ms), ("oznitelik+kural", rules_ms)]
     if publisher is not None and publish_ms:
         stage_rows.append(("kafka publish", publish_ms))
+    if stream_server is not None and ws_ms:
+        stage_rows.append(("ws kodlama+yayin", ws_ms))
     stage_rows.append(("dongu toplam", loop_ms))
     for name, samples in stage_rows:
         p95 = sorted(samples)[min(len(samples) - 1, int(len(samples) * 0.95))]
@@ -376,6 +527,25 @@ def main(argv: list[str] | None = None) -> int:
               f"{settings_client.failures} hata")
         if settings_client.last_error:
             print(f"  esik son hata         : {settings_client.last_error}")
+
+    if stream_server is not None:
+        print(f"\n  WebSocket             : acildi={stream_server.opened}  "
+              f"son gorulen istemci sayisi={stream_server.live_clients}  "
+              f"bitis kalitesi={jpeg_quality}")
+
+    if evidence_writer is not None:
+        print(f"\n  kanit                 : klip {evidence_writer.written_clips}  "
+              f"kare {evidence_writer.written_frames}  "
+              f"POST basarili {evidence_writer.posted}  basarisiz {evidence_writer.post_failed}  "
+              f"mongo hata {evidence_writer.mongo_failed}  kuyruktan dusen {evidence_writer.dropped}")
+        if evidence_writer.last_error:
+            print(f"  kanit son hata        : {evidence_writer.last_error}")
+
+    if health_client is not None:
+        print(f"\n  kalp atisi            : gonderilen {health_client.sent}  "
+              f"hata {health_client.failures}")
+        if health_client.last_error:
+            print(f"  kalp atisi son hata   : {health_client.last_error}")
 
     if args.save:
         print(f"\n  video yazildi        : {args.save}")

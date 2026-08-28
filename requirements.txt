@@ -12,3 +12,10 @@ lap>=0.5.12          # BoT-SORT/ByteTrack esleme cozucusu (ultralytics calisma a
 onnxruntime-gpu==1.22.0
 confluent-kafka>=2.5.0   # librdkafka; produce() kuyruga atip doner, GPU dongusunu bloklamaz
 httpx>=0.27              # vision/settings_client.py (Asama 5) API'den esik ceker
+websockets>=13.0         # vision/ws_server.py (Asama 6) canli kare/meta yayini, saf Python
+pymongo>=4.9             # vision/evidence.py (Asama 6) pose_sequences'i dogrudan yazar (SS6)
+# ASAMA6_PLAN.md SS2 iki satiri listeliyordu (websockets, pymongo); pyjwt
+# planda yoktu ama vision/ws_server.py JWT'yi YEREL dogrulamak (SS3) icin
+# gerektiriyor. api/requirements.txt'te zaten var; kok dosyaya da eklendi ki
+# yalniz vision/ kurulan bir host'ta import hatasi vermesin.
+pyjwt>=2.9

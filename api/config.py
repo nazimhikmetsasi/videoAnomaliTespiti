@@ -40,3 +40,7 @@ API_PORT = int(os.getenv("API_PORT", "8000"))
 # consumer.py (Asama 5, ikinci ajan) bunu kullanir; vision/ zaten kendi
 # KAFKA_BOOTSTRAP_HOST'unu okur, burasi yalnizca api/ konteynerlerinedir.
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", os.getenv("KAFKA_BOOTSTRAP_INTERNAL", "localhost:9092"))
+
+# Kanit dosyalarinin kok dizini (Asama 6). vision/ host'ta "storage" yazar,
+# api konteynerinde ayni agac "/storage" salt-okunur baglanir (docker-compose.yml).
+STORAGE_DIR = os.getenv("STORAGE_DIR", "storage")

@@ -121,6 +121,28 @@ class Event(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Evidence(Base):
+    """vision/ epizot kapanisinda POST /api/evidence ile yazar. event_id NULL
+    = henuz eslesmemis (ASAMA6_PLAN.md SS8.2)."""
+
+    __tablename__ = "evidence"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    event_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("events.id", ondelete="CASCADE"))
+    camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"))
+    anomaly_type: Mapped[str] = mapped_column(String(30))
+    track_key: Mapped[str] = mapped_column(String(50))
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    frame_path: Mapped[str | None] = mapped_column(Text)
+    clip_path: Mapped[str | None] = mapped_column(Text)
+    clip_truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    mongo_ref: Mapped[str | None] = mapped_column(String(24))
+    # server_default: ORM unset birakinca DB'nin kendi DEFAULT now()'i uygulanir
+    # (server_default olmadan SQLAlchemy acikca NULL gonderir, NOT NULL'i kirar).
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 

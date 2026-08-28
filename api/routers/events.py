@@ -3,20 +3,36 @@
 from __future__ import annotations
 
 import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from pymongo.database import Database
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.audit import write_audit
 from api.auth import current_user, require_role
+from api.config import STORAGE_DIR
 from api.db.mongo import get_mongo
 from api.db.models import Camera, Event, Zone
 from api.db.postgres import get_db
 from api.schemas import EventDetailOut, EventListOut, EventOut, EventStatusIn
 
 router = APIRouter()
+
+# storage/ koku; kanit yollari veritabaninda bu koke GORELI saklanir
+# (docs/ASAMA6_PLAN.md SS8.1). resolve() burada bir kez yapilir.
+_STORAGE_ROOT = Path(STORAGE_DIR).resolve()
+
+
+def _safe_storage_path(relative: str) -> Path:
+    """relative veritabanindan gelen DIS girdidir -- kok disina cikan yol
+    (`../../etc/passwd` gibi) reddedilir (SS8.3, Path.resolve().is_relative_to)."""
+    candidate = (_STORAGE_ROOT / relative).resolve()
+    if not candidate.is_relative_to(_STORAGE_ROOT):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "gecersiz kanit yolu")
+    return candidate
 
 
 @router.get("", response_model=EventListOut)
@@ -93,3 +109,29 @@ def update_event_status(
     db.commit()
     db.refresh(event)
     return event
+
+
+@router.get("/{event_id}/clip")
+def get_event_clip(
+    event_id: int, db: Session = Depends(get_db), _: dict = Depends(current_user),
+) -> FileResponse:
+    event = db.get(Event, event_id)
+    if event is None or not event.clip_path:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "klip bulunamadi")
+    path = _safe_storage_path(event.clip_path)
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "klip dosyasi diskte yok")
+    return FileResponse(path, media_type="video/mp4")
+
+
+@router.get("/{event_id}/frame")
+def get_event_frame(
+    event_id: int, db: Session = Depends(get_db), _: dict = Depends(current_user),
+) -> FileResponse:
+    event = db.get(Event, event_id)
+    if event is None or not event.frame_path:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "kare bulunamadi")
+    path = _safe_storage_path(event.frame_path)
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "kare dosyasi diskte yok")
+    return FileResponse(path, media_type="image/jpeg")
