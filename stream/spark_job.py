@@ -87,6 +87,13 @@ def main() -> None:
            .option("kafka.bootstrap.servers", BOOTSTRAP)
            .option("subscribe", "anomaly-candidates")
            .option("startingOffsets", "latest")
+           # Kafka log'u KALICI DEGIL (docker-compose.yml karari) ama checkpoint
+           # volume'u kalici: broker yeniden kurulunca topic offset'i 0'a doner,
+           # checkpoint hala 12'yi bekler ve sorgu "offset was changed from 12
+           # to 0" ile duser. Kalici olmayan bir log'da veri kaybi zaten kabul
+           # edilmis bir maliyettir; olaylar PostgreSQL'de yasar. Kafka log'u
+           # kalici yapilirsa bu satir kaldirilabilir.
+           .option("failOnDataLoss", "false")
            .load())
 
     cand = (raw.select(from_json(col("value").cast("string"), CANDIDATE_SCHEMA).alias("c"))

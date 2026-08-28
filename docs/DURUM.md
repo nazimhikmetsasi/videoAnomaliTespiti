@@ -3,26 +3,26 @@
 Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 `docs/PLAN.md` sonra bu dosya okunur ve kaldığı yerden devam edilir.
 
-**Son güncelleme:** 2026-08-27
+**Son güncelleme:** 2026-08-28
 
 ---
 
 ## Şu an neredeyiz
 
-**Aşama 4 — Kafka ve Spark tamamlandı.** Görü hattı aday olayları
-`anomaly-candidates` topic'ine basıyor, Spark Structured Streaming bunları
-oturum penceresiyle süzüp `anomaly-events`'e yazıyor. Pilot kliplerde
-**1085 ham aday 5 doğrulanmış olaya** indi; yanlış pozitif 5'ten 3'e düştü,
-recall hiç düşmedi (0.75). ZONE_VIOLATION precision'ı 0.50'den 1.00'a çıktı.
+**Aşama 5 — Veri katmanı ve API tamamlandı.** Zincirin son halkası kapandı:
+`vision/` → Kafka → Spark → **tüketici → PostgreSQL + MongoDB** → REST API.
+Pilot kliplerin tam geçişi veritabanına **5 doğrulanmış olay** yazdı ve bu
+beş satır Aşama 4'te ölçülen beş oturumla tip, klip ve **süre olarak birebir**
+aynı (`fall_01` 33 ms, `run_01` 11067 ms, `zone_01` 1800 / 27640 / 1000 ms).
+Ölçüm iki kez, iki ayrı geçişte tekrarlandı ve aynı çıktı geldi.
 
-Bu aşamanın esas kazancı süzgecin çalışması değil, **süzgecin tek eşikle
-çalışamayacağının ölçülmüş olmasıdır.** Gerçek düşme olayı yalnızca 2 aday
-üretiyor, `normal_01`'in sahte koşusu 11 aday üretiyor; tipten bağımsız bir
-"kaç vuruş" ölçütü gerçek FALL'ı eleyip sahte RUN'ı geçirirdi. Süzgeç bu
-yüzden vuruş sayısı + tipe göre minimum süre olarak kuruldu (§ Aşama 4
-sonucu). Sıradaki iş Aşama 5 (veri katmanı ve API).
-
----
+Bu aşamanın esas kazancı olay satırının yazılması değil, **zincirin
+kırılganlığının nerede olduğunun ölçülmüş olmasıdır.** Uçtan uca ilk deneme
+sıfır olay üretti: Spark, ayakta görünen bir konteynerde ölmüştü — kalıcı
+checkpoint kalıcı olmayan bir Kafka log'unun offset'ini bekliyordu. Tüketici
+ve API kusursuz çalışıyordu; sorun ikisinde de değildi. Aynı sınıftan üç
+sessiz hata daha bulundu ve düzeltildi (§ Aşama 5 sonucu, "Yol boyunca
+bulunan hatalar"). Sıradaki iş Aşama 6 (canlı görüntü ve kanıt).
 
 ## Aşama durumu
 
@@ -35,8 +35,8 @@ sonucu). Sıradaki iş Aşama 5 (veri katmanı ve API).
 | 2.1 | YOLOv8 → YOLO26 geçişi | Tamamlandı |
 | 3 | Öznitelik ve kural motoru | Tamamlandı |
 | 4 | Kafka ve Spark | Tamamlandı |
-| 5 | Veri katmanı ve API | Sırada |
-| 6 | Canlı görüntü (WebSocket) | Bekliyor |
+| 5 | Veri katmanı ve API | Tamamlandı |
+| 6 | Canlı görüntü (WebSocket) | Sırada |
 | 7 | LLM ve Telegram | Bekliyor |
 | 8 | Panel (kullanıcı şablonu) | Bekliyor |
 | 9 | TCN modeli ve yeni sınıflar | Bekliyor |
@@ -796,31 +796,215 @@ elenmez — elenirse damga da ilerlemez; vuruş sayısı 1 olduğu için
 
 ---
 
+## Aşama 5 sonucu (2026-08-28)
+
+Uygulama sözleşmesi: `docs/ASAMA5_PLAN.md`. Kod iki Sonnet alt ajanına
+verildi (API katmanı / tüketici + sıcak yükleme + testler); ölçümler ve
+aşağıdaki düzeltmeler ana oturumda yapıldı.
+
+### Yazılan dosyalar
+
+| dosya | satır | ne yapar |
+|---|---|---|
+| `api/main.py` | 45 | FastAPI kurulumu, router kaydı, `/health` |
+| `api/config.py` | 42 | tek ortam okuma noktası; `DATABASE_URL` yoksa `POSTGRES_*`'tan kurar |
+| `api/auth.py` | 89 | `pgcrypto crypt()` ile şifre doğrulama, JWT, `require_role` |
+| `api/schemas.py` | 216 | pydantic v2 gövdeleri |
+| `api/audit.py` | 20 | `audit_log` yazıcı |
+| `api/db/models.py` | 148 | SQLAlchemy 2.0, 7 tablo, `create_all` yok |
+| `api/db/postgres.py` / `mongo.py` | 24 / 25 | engine + oturum / tembel `MongoClient` |
+| `api/routers/*.py` | 37–95 | auth, cameras, zones, settings, events, analytics |
+| `api/workers/consumer.py` | 256 | `anomaly-events` → PostgreSQL + MongoDB |
+| `vision/settings_client.py` | 100 | eşik sıcak yükleme (arka plan iş parçacığı) |
+| `scripts/seed_pilot.py` | 73 | pilot klipler için kamera + bölge tohumu |
+| `tests/test_consumer.py` | 107 | `event_to_row` saf fonksiyon testi |
+| `tests/test_api_units.py` | 183 | JWT, poligon, eşik birleştirme, sıcak yükleme |
+| `tests/test_schema_sync.py` | 46 | ORM ile canlı şema arasında drift kontrolü |
+
+Değişenler: `infra/postgres/init.sql` (+`idx_events_dedup`),
+`docker-compose.yml` (+`api`, +`consumer`), `.env.example`, `vision/run.py`
+(+3 argüman, ~25 satır), `stream/spark_job.py` (+`failOnDataLoss`).
+
+`api/workers/consumer.py` 256 satır — plandaki 140 hedefinin üstünde. Şişme
+süs değil: kamera/bölge önbelleği, kalıcı-geçici hata ayrımı ve sayaçlar.
+Bölünecek doğal bir sınır yok; bölmek çağrı zincirini uzatırdı.
+
+### Ölçüm 1 — uçtan uca zincir
+
+`docker compose up -d` → `scripts/seed_pilot.py` → beş pilot klip
+`--kafka --camera-id <klip>` ile koşturuldu. Veritabanına düşen satırlar
+(API'nin `GET /api/events` ucundan okundu):
+
+| id | kamera | tip | iz | skor | şiddet | süre (ms) | Aşama 4 oturumu |
+|---|---|---|---|---|---|---|---|
+| 8 | run_01 | RUN | [1] | 0.999 | medium | 11067 | 11.07 sn ✓ |
+| 9 | fall_01 | FALL | [1] | 0.999 | critical | 33 | 0.03 sn ✓ |
+| 10 | zone_01 | RUN | [1] | 0.999 | medium | 1800 | 1.80 sn ✓ |
+| 1011 | zone_01 | ZONE_VIOLATION | [1] | 0.999 | high | 27640 | 27.64 sn ✓ |
+| 1012 | zone_01 | ZONE_VIOLATION | [4] | 0.999 | high | 1000 | 1.00 sn ✓ |
+
+**Beş olay, beşi de Aşama 4'ün beklediği oturum.** `normal_01`'in 11 adaylık
+sahte koşusu ve `mixed_01`'in sıfır adayı beklendiği gibi olay üretmedi;
+süzgeç canlı zincirde de eliyor. `id` boşlukları gerçek: 1008–1010 gecikme
+ölçümünün sentetik satırları, 3 ise tekrar korumasının yaktığı sıra numarası.
+
+Ölçüm iki geçişte tekrarlandı (ilk geçişte `normal_01` ve `run_01` aşağıdaki
+Spark hatası yüzünden kayıptı). İkinci geçiş beş olayın tamamını aynı
+sürelerle üretti. Görü tarafındaki aday sayıları da Aşama 4 ile birebir:
+`normal_01` 11, `run_01` 333, `fall_01` 2, `zone_01` 35 RUN + 703 ZONE,
+`mixed_01` 0.
+
+### Ölçüm 2 — tekrar yazma koruması
+
+Aynı `anomaly-events` mesajı elle iki kez üretildi:
+
+```
+mesaj 1 basildi
+mesaj 2 basildi
+-> events: 1 satir (id 2), telemetry: 1 belge
+```
+
+`idx_events_dedup` + `ON CONFLICT DO NOTHING` çalışıyor. İkinci INSERT bir
+`BIGSERIAL` değeri yakıyor (id 3 boş kaldı) — beklenen davranış; sıra
+numarası boşluğu kayıp satır anlamına gelmiyor.
+
+### Ölçüm 3 — eşik sıcak yükleme
+
+`zone_01` koşarken `PUT /api/settings/7` ile `run_norm_speed` 1.80 → 1.55:
+
+```
+PUT 200 @ 15:23:48.072
+[15:23:30] esik guncellendi: ... run_norm_speed=1.8 ...     <- baslangic senkronu
+[15:23:53] esik guncellendi: ... run_norm_speed=1.55 ...    <- PUT'tan ~5 sn sonra
+esik sicak yukleme    : 2 kez uygulandi, 0 hata
+```
+
+Gecikme **~5 sn**, yani yoklama aralığının kendisi. **Pipeline yeniden
+başlamadı:** aynı process, kesintisiz FPS sayacı, korunan iz id'leri.
+
+Sınır dürüstçe yazılıyor: bu ölçüm eşiğin *uygulandığını* kanıtlar,
+*sonucu değiştirdiğini* kanıtlamaz — değişiklik klibin RUN adayları
+üretildikten sonra oturdu, aday sayısı (35) değişmedi. Eşik değişiminin
+karara etkisi Aşama 8'de panelden ölçülecek.
+
+### Ölçüm 4 — uç gecikmeleri
+
+1008 olay satırıyla, 10 ardışık istek, iki ayrı yerden:
+
+| uç | konteyner içinden p50 / p95 | Windows host'tan p50 / p95 |
+|---|---|---|
+| `GET /api/events?limit=50` | 41.0 / 71.6 ms | 594 / 728 ms |
+| `GET /api/analytics/summary` | 39.3 / 56.4 ms | 647 / 671 ms |
+| `GET /api/analytics/ablation` | 25.4 / 42.9 ms | 658 / 730 ms |
+| `GET /api/cameras` | 21.6 / 39.1 ms | 588 / 701 ms |
+| `GET /api/settings` | 28.4 / 31.8 ms | 604 / 646 ms |
+| `GET /health` | 18.1 / 23.2 ms | 754 / 794 ms |
+
+**Bulgu:** host'tan ölçülen ~600 ms sabit bir tabandır, sorgu maliyeti
+değil. Konteyner içinden bakınca `/health` (bir `SELECT 1` + bir `ping`) 18
+ms, 1008 satır tarayan `/api/events` 41 ms; host'tan bakınca bu fark
+kayboluyor. Yük Docker Desktop'ın Windows port yönlendirmesinde (WSL2 NAT),
+API'de değil. Panel geliştirilirken bu taban hesaba katılmalı; sunucuya
+taşındığında kendiliğinden kalkar.
+
+### Ölçüm 5 — Swagger
+
+`/openapi.json` 200, `/docs` 200. Açılan uçlar: `/health`,
+`/api/auth/login|me`, `/api/cameras` (+`{id}`, +`{id}/heartbeat`),
+`/api/zones` (+`{id}`), `/api/settings` (+`{camera_id}`), `/api/events`
+(+`{id}`), `/api/analytics/summary|ablation`. Plan §9 listesinin tamamı.
+
+### Testler
+
+`venv/Scripts/python.exe -m pytest tests/ -q` → **42 geçti, 2 atlandı**
+(8.13 sn). Atlananlar `test_schema_sync.py`: `.env` yüklü olmayan bir kabukta
+veritabanına bağlanamıyor. `.env` yüklü ortamda ayrıca koşturuldu, **ikisi de
+geçti** — ORM ile canlı şema arasında drift yok.
+
+### Yol boyunca bulunan hatalar (hepsi düzeltildi)
+
+1. **Spark ölmüştü, konteyner ayakta görünüyordu.** `Partition
+   anomaly-candidates-2's offset was changed from 12 to 0`. Kafka log'u
+   kalıcı değil (Aşama 1 kararı) ama `spark_checkpoints` volume'u kalıcı;
+   broker yeniden kurulunca checkpoint var olmayan bir offset'i bekliyor.
+   Çözüm: `failOnDataLoss=false` + bozuk checkpoint'in sıfırlanması. Bu
+   hatanın belirtisi "hiç olay yazılmıyor"du; tüketici ve API kusursuzdu.
+2. **`MongoClient` import anında kuruluyordu.** `MongoClient(url)` şifresiz
+   URL'de `ConfigurationError` fırlatıyor; `api.workers.consumer` ortam
+   değişkeni olmayan her yerde daha içe aktarılırken patlıyordu ve
+   `tests/test_consumer.py` toplama aşamasında düşüyordu. İstemci ilk
+   kullanıma ertelendi.
+3. **Kalıcı `IntegrityError` sonsuza kadar yeniden deneniyordu.** Plan
+   "veritabanı hatasında yeniden dene" diyor; CHECK/FK ihlali ise asla
+   düzelmez ve tüketiciyi arkasındaki tüm olaylarla birlikte kilitler.
+   `IntegrityError` ayrıldı: satır bozuk sayılıp atlanıyor, offset commit
+   ediliyor. (Tekrar kaydı zaten `ON CONFLICT` ile eleniyor, buraya
+   düşmüyor.)
+4. **`PUT /api/settings` tam gövde istiyordu.** Tek bir eşiği değiştirmek 13
+   alanın tamamını göndermeyi gerektiriyordu (422). Panelde bu, forma
+   dokunulmamış bir alanı eski değerine geri yazma riski demek. Gövde kısmi
+   hale getirildi (`exclude_unset`); yeni kamera satırı global'den miras
+   alıyor.
+5. **`idx_events_dedup` canlı veritabanında yoktu.** `init.sql` yalnızca boş
+   veri diziniyle ilk açılışta çalışır; index elle uygulandı. Şema
+   değişikliği bundan sonra hep bu iki adımı isteyecek — Alembic'in Aşama
+   9'da gireceği yer tam olarak burasıdır.
+
+### Plandan sapmalar
+
+- **Alembic kurulmadı** (`docs/ASAMA5_PLAN.md` §2): şema tek kaynak
+  `init.sql`, drift'i `tests/test_schema_sync.py` yakalıyor. Alembic Aşama
+  9'a ertelendi.
+- **`api/requirements.txt` ayrı dosya:** kök `requirements.txt` torch +
+  ultralytics + onnxruntime-gpu içeriyor, API'nin hiçbirine ihtiyacı yok.
+- **`PUT /api/settings` kısmi gövde** kabul ediyor (yukarıda 4).
+- **`--settings-url` kullanılıyorsa `--camera-id` sayısal olmalı:**
+  `/api/settings/{camera_id}` int bekliyor. Kafka tarafı klip adını da
+  kabul ediyor (tüketici `id::text = :cid OR name = :cid` ile çözüyor), eşik
+  ucu çözmüyor.
+
+### Bilinen sınırlar (kapatılmadı, ölçüldü)
+
+1. `events.mongo_ref` ve `pose_sequences` boş. Ham keypoint dizisi Kafka
+   mesajında yok, `vision/` sürecinin belleğinde — kanıt üretimiyle birlikte
+   Aşama 6'da gelecek. `telemetry` koleksiyonu yazılıyor.
+2. `frame_path`, `clip_path`, `llm_report_tr` NULL (Aşama 6 / 7).
+3. Docker altyapısı ayaktayken görü hattının FPS'i **36.5 → 12–15**'e düştü.
+   Aynı dizüstünde Spark, Kafka, iki veritabanı ve iki Python servisi CPU
+   için yarışıyor. GPU değil CPU darboğazı; Aşama 10'un çoklu kamera ölçümü
+   bunu izole etmek zorunda.
+4. Gecikme ölçümünün 1000 sentetik satırı `events` tablosunda duruyor
+   (`llm_report_tr = 'SENTETIK-YUK-TESTI'`). Temizlemek için:
+   `DELETE FROM events WHERE llm_report_tr = 'SENTETIK-YUK-TESTI';`
+5. `spark_min_sec` JSONB sütunu hâlâ Spark işine bağlı değil; Spark eşikleri
+   ortam değişkeninden okuyor. Veritabanındaki değer değişince Spark uymuyor.
+   Aşama 6'da bağlanacak.
+6. Kullanıcı yönetimi CRUD'u yok (yalnızca `admin` tohumu ve `/auth/me`).
+   Panelin kullanıcı ekranı Aşama 8'de gerektiğinde açılacak.
+
+---
+
 ## Bir sonraki adım
 
-Aşama 5 — Veri katmanı ve API:
+Aşama 6 — Canlı görüntü ve kanıt:
 
-1. **Önce `postgres` volume'unu yeniden oluştur** (bkz. Aşama 4 bilinen
-   sınır 5). Çalışan şema Aşama 2.1 öncesinden kalma; ORM onun üstüne
-   yazılırsa üç aşamalık şema değişikliği sessizce kaybolur.
-2. SQLAlchemy modelleri + Alembic, PyMongo bağlantısı.
-3. JWT auth, CRUD uçları: cameras, zones, detection_settings, events,
-   analytics.
-4. `api/workers/consumer.py`: `anomaly-events` → PostgreSQL olay satırı +
-   MongoDB keypoint zaman serisi + kanıt. Mesaj sözleşmesi
-   `docs/ASAMA4_PLAN.md` §4.2'de donduruldu; olay `metrics` ve
-   `thresholds_used` alanlarını tepe skorlu adaydan taşıyor, kanıt karesi
-   bunlarla seçilecek.
-5. `vision/settings_client.py`: eşikleri API'den çek, pipeline yeniden
-   başlatılmadan uygula. `spark_min_sec` JSONB sütunu Spark işine de
-   bağlanmalı — şu an ortam değişkeninden okunuyor.
+1. `api/ws/live.py`: ikili JPEG kare akışı, adaptif kalite.
+2. `api/ws/meta.py`: tracks / poses / zones / sarı ön-alarm JSON akışı.
+3. `api/ws/alerts.py`: Spark'tan geçen kırmızı alarmın yayını (tüketici
+   satırı yazdıktan sonra tetikler).
+4. `vision/evidence.py`: halka tampon → ±5 sn mp4 klip + en iyi kare;
+   `events.frame_path` / `clip_path` / `mongo_ref` bu aşamada dolar,
+   `pose_sequences` koleksiyonu burada yazılır.
+5. `vision/run.py` → `PATCH /api/cameras/{id}/heartbeat` (uç açık, çağıran
+   yok) ve `camera_health` koleksiyonuna yazım.
+6. `spark_min_sec` JSONB sütununu Spark işine bağla (bilinen sınır 5).
 
-**Onay kriteri:** Swagger'dan tüm uçlar çalışıyor; panelden eşik değişince
-pipeline restart'sız uyum sağlıyor.
+**Onay kriteri:** tarayıcıda 20+ FPS, uçtan uca gecikme 300 ms altında, olay
+klibi oynatılabiliyor.
 
-Arayüz tarafı paralel ilerliyor: kullanıcı Aşama 8 şablonunu hazırlıyor,
-ekran listesi ve veri sözlüğü belirlendi. API uçları o ekranların istediği
-alanları karşılamalı.
+Ölçülmesi gerekenler: canlı akışta kırmızı alarm gecikmesi (Aşama 4'ten kalan
+açık soru) ve Docker altyapısı ayaktayken görü FPS'inin düşüşü (bilinen
+sınır 3).
 
 ---
 
@@ -882,9 +1066,36 @@ alanları karşılamalı.
 | 2026-08-27 | RUN `min_sec` 1.0 kaldı, 2.0 reddedildi | 2.0 toplam precision'ı 1.00'a çıkarıyor ama tek klipteki tek yanlış pozitife göre seçilmiş olur ve RUN gecikmesini 2 sn'den 4 sn'ye çıkarır |
 | 2026-08-25 | Eşikler pilot kliplere uydurulmadı | `mixed_01`'in koşusu adım kanıtında normal yürüyüşle örtüşüyor (0.69 vs 0.66). Ayıracak eşik yok; zorlanırsa `zone_01`'in normal yürüyüşü de RUN olurdu. Beş klibe uydurmak test kümesini ezberlemektir |
 
+| 2026-08-28 | Alembic kurulmadı, şema tek kaynak `init.sql` | Üzerinde veri olmayan bir veritabanında göç aracının getirisi yok; şema iki yerde tanımlanınca kaçınılmaz olarak ayrışıyor. Drift'i 46 satırlık bir test yakalıyor. Gerçek ihtiyaç Aşama 9'da (yeni sınıflar + birikmiş `telemetry`) doğacak |
+| 2026-08-28 | Şifre doğrulaması `pgcrypto crypt()` ile veritabanında | Hash zaten `init.sql`'de bcrypt'lendi; Python'a `passlib`/`bcrypt` sokmak ikinci bir hash yolu ve ikinci bir hata kaynağı demek |
+| 2026-08-28 | Senkron SQLAlchemy + `def` uçlar | 4 kameralık sistemde asenkron sürücünün ölçülebilir getirisi yok; tüketici aynı `sessionmaker`'ı paylaşınca ikinci bir veri katmanı yazılmıyor. WebSocket işleyicileri yine `async` kalabilir |
+| 2026-08-28 | `camera_id` çözümü `id::text = :cid OR name = :cid` | Panel sayısal id ile, pilot değerlendirme klip adıyla yayın yapıyor; tek sorgu ikisini de karşılıyor. Bulunamayan kamerada satır yaratılmıyor, mesaj atlanıyor |
+| 2026-08-28 | `idx_events_dedup` + `ON CONFLICT DO NOTHING`, offset elle commit | Kafka en-az-bir-kez teslim ediyor. Oturum penceresi bir episodu tek satır yazdığı için (camera, tip, başlangıç, izler) doğal anahtar. Offset DB yazımından sonra commit edilirse en kötü ihtimal tekrar, kayıp değil |
+| 2026-08-28 | `IntegrityError` yeniden denenmez, atlanır | CHECK/FK ihlali yeniden denemeyle düzelmez; tüketiciyi arkasındaki tüm olaylarla kilitler. Tekrar kaydı zaten `ON CONFLICT` ile eleniyor |
+| 2026-08-28 | `MongoClient` ilk kullanımda kurulur | Import anında kurulunca `consumer` modülü ortam değişkeni olmayan her yerde içe aktarılırken patlıyor; saf fonksiyon testi Mongo'ya bağlanmak zorunda kalıyordu |
+| 2026-08-28 | Spark `failOnDataLoss=false` | Kafka log'u kalıcı değil ama checkpoint kalıcı; broker yeniden kurulunca sorgu "offset 12'den 0'a düştü" diye ölüyor. Kalıcı olmayan log'da veri kaybı zaten kabul edilmiş bir maliyet, olaylar PostgreSQL'de yaşıyor |
+| 2026-08-28 | `PUT /api/settings` kısmi gövde kabul eder | Tek eşik için 13 alanın tamamını göndermek, formda dokunulmamış alanı eski değerine geri yazma (lost update) riski demek. Yeni kamera satırı global'den miras alır |
+| 2026-08-28 | Sıcak yükleme yalnız kural eşiklerini kapsar | `pose_conf`/`track_conf` model ve tracker kurulumunda, `window_frames` öznitelik tamponunda donuyor. API yanıtı `restart_required` listesini taşıyor ki panel yalan söylemesin |
+| 2026-08-28 | Şiddet (severity) tipten türetilir, skordan değil | Kural skorları tipler arasında karşılaştırılabilir bir ölçekte değil (her kural kendi eşiğine normalize ediyor); skoru şiddete çevirmek uydurma bir hassasiyet olurdu |
+| 2026-08-28 | `api/requirements.txt` ayrı | Kök dosya torch + ultralytics + onnxruntime-gpu içeriyor; API imajının hiçbirine ihtiyacı yok. İkinci bir dosya 2 GB'lık gereksiz imajdan ucuz |
+
 ---
 
 ## Açık sorular
+
+- Windows host'tan API uçlarına gecikme ~600 ms sabit taban gösteriyor;
+  konteyner içinden aynı uç 18–41 ms. Fark Docker Desktop'ın port
+  yönlendirmesinden geliyor gibi duruyor ama izole edilmedi (WSL2 NAT mı,
+  makinenin GPU yükü mü). Panel geliştirmeye başlamadan ölçülmeli
+- Docker altyapısı ayaktayken görü FPS'i 36.5'ten 12–15'e düşüyor. CPU
+  rekabeti olduğu varsayıldı (Spark + Kafka + iki veritabanı + iki Python
+  servisi), profillenerek doğrulanmadı. Aşama 10'un çoklu kamera ölçümü bu
+  taban üzerinde yapılmamalı
+- `spark_min_sec` veritabanında ama Spark ortam değişkeninden okuyor;
+  panelden değiştirilen değer akışa ulaşmıyor (Aşama 6)
+- Tüketici tek process. Aşama 10'un 4 kamerasında tek tüketicinin yetip
+  yetmeyeceği ölçülmedi; Kafka tarafı ölçeklenebilir (aynı group.id ile
+  ikinci konteyner), veritabanı tarafı ölçülmeli
 
 - ReID kalitesi kalabalık/kesişmeli sahnede ölçülmedi — pilot klipler yeterince
   zor değil, `--no-reid` ile ID sayıları hiç değişmedi. YOLO26 geçişinden sonra

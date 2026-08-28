@@ -1,7 +1,5 @@
 # Altyapi servisleri. GPU gerektiren vision/ servisi host'ta native venv'de
 # calisir ve Kafka'ya localhost:9092 uzerinden baglanir (bkz. docs/PLAN.md 2).
-#
-# api    -> Asama 5'te eklenecek (api/ henuz yok)
 
 services:
   postgres:
@@ -115,6 +113,54 @@ services:
       - ./stream:/app:ro
       - spark_checkpoints:/checkpoints
       - spark_ivy:/ivy
+
+  api:
+    build: ./api
+    container_name: anomaly-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      MONGO_URL: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/
+      MONGO_DB: ${MONGO_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # anomaly-events -> PostgreSQL + MongoDB (ASAMA5_PLAN.md SS6). Kalici
+  # servis degil ayni imaji api ile paylasir, yalnizca komutu farklidir.
+  consumer:
+    build: ./api
+    container_name: anomaly-consumer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      MONGO_URL: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/
+      MONGO_DB: ${MONGO_DB}
+      KAFKA_BOOTSTRAP: kafka:29092
+      # stdout TTY degilken Python arabellege alir; arabellek olmadan `docker
+      # compose logs` sayac ozetini/uyarilari gecikmeden gosterir.
+      PYTHONUNBUFFERED: "1"
+    command: python -m api.workers.consumer
 
 volumes:
   postgres_data:
