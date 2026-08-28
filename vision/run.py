@@ -31,6 +31,7 @@ import numpy as np
 
 from vision.publish import CandidatePublisher
 from vision.rules.engine import Candidate, RuleEngine, Zone
+from vision.settings_client import SettingsClient
 from vision.source import VideoSource
 from vision.stages.features import FeatureEngine
 from vision.stages.pose_detector import DEFAULT_WEIGHTS, PoseDetector
@@ -125,6 +126,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         const=os.getenv("KAFKA_BOOTSTRAP_HOST", "localhost:9092"),
                         default="", help="aday olaylari Kafka'ya bas (varsayilan bootstrap: env)")
     parser.add_argument("--camera-id", default="", help="bos = kaynak dosya adi / webcam indeksi")
+    parser.add_argument("--settings-url", default="",
+                        help="esik API taban URL'i, orn. http://localhost:8000 (bos = sicak yukleme kapali)")
+    parser.add_argument("--settings-interval", type=float, default=5.0)
+    parser.add_argument("--settings-token", default="", help="bos = jetonsuz istek")
     return parser.parse_args(argv)
 
 
@@ -192,18 +197,28 @@ def main(argv: list[str] | None = None) -> int:
     started = time.perf_counter()
     idle_since: float | None = None
     publisher: CandidatePublisher | None = None
+    settings_client: SettingsClient | None = None
 
     with VideoSource(args.source) as source:
         print(f"  kaynak: {args.source} ({source.source_type}), model: {args.model}")
-        if args.kafka and args.rules:
+        camera_id = ""
+        if args.rules and (args.kafka or args.settings_url):
             camera_id = args.camera_id or (
                 f"cam-{args.source}" if source.source_type == "webcam"
                 else Path(str(args.source)).stem)
+        if args.kafka and args.rules:
             # Canli kaynakta cand.ts zaten epoch'tur (epoch_base=0.0); dosya
             # kaynaginda sahne zamani duvar saatinden farkli akabilir (SS2).
             epoch_base = 0.0 if source.is_live else time.time()
             publisher = CandidatePublisher(args.kafka, camera_id, epoch_base=epoch_base)
             print(f"  Kafka: {args.kafka} -> {publisher.topic} (camera_id={camera_id})")
+        if args.settings_url and args.rules:
+            settings_client = SettingsClient(
+                args.settings_url, camera_id, rule_engine,
+                interval=args.settings_interval, token=args.settings_token or None)
+            settings_client.start()
+            print(f"  esik sicak yukleme: {args.settings_url} "
+                  f"(camera_id={camera_id}, interval={args.settings_interval}s)")
         while True:
             frame = source.read()
             if frame is None:
@@ -289,6 +304,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if publisher is not None:
         publisher.close(eos=True)
+    if settings_client is not None:
+        settings_client.stop()
 
     if writer is not None:
         writer.release()
@@ -353,6 +370,12 @@ def main(argv: list[str] | None = None) -> int:
               f"kuyruga alinan {publisher.queued}  basarisiz {publisher.failed}")
         if publisher.last_error:
             print(f"  kafka son hata        : {publisher.last_error}")
+
+    if settings_client is not None:
+        print(f"\n  esik sicak yukleme    : {settings_client.applied} kez uygulandi, "
+              f"{settings_client.failures} hata")
+        if settings_client.last_error:
+            print(f"  esik son hata         : {settings_client.last_error}")
 
     if args.save:
         print(f"\n  video yazildi        : {args.save}")

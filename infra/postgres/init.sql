@@ -128,6 +128,12 @@ CREATE INDEX idx_events_status      ON events (status);
 CREATE INDEX idx_events_decided_by  ON events (decided_by);
 CREATE INDEX idx_events_time        ON events (started_at DESC);
 
+-- Tekrar yazma korumasi: Spark oturum penceresi bir episodu tek satir olarak
+-- yazar, bu dortlu dogal anahtardir. Tuketici en-az-bir-kez teslimatinda
+-- ayni olayi INSERT ... ON CONFLICT DO NOTHING ile atlar (ASAMA5_PLAN.md SS6.4).
+CREATE UNIQUE INDEX idx_events_dedup
+    ON events (camera_id, anomaly_type, started_at, track_ids);
+
 -- --------------------------------------------------------- notifications
 CREATE TABLE notifications (
     id       BIGSERIAL    PRIMARY KEY,
