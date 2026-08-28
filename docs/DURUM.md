@@ -1107,7 +1107,12 @@ sınır 3).
 - Çoklu kamera toplu çıkarımı gerçek FPS'te ölçülmedi (Aşama 10). Temiz
   ölçümde toplu çıkarım kare başına maliyeti belirgin düşürdü, ama tek
   process içinde N kamerayla tekrar ölçülmeli
-- Frontend Tailwind şablonu henüz sağlanmadı (Aşama 8'e kadar gerekmiyor)
+- Frontend şablonu `sablon/` altında hazır: 11 ekran (canlı izleme, kameralar,
+  kamera detay, olaylar, olay detay, bölgeler, analitik, ayarlar, kullanıcılar,
+  sistem sağlığı, denetim kaydı) + `sentinel_control_system/DESIGN.md` renk ve
+  tipografi jetonları (Material 3 şeması, koyu tema, Inter). Aşama 8'de
+  tasarıma dokunulmadan veri bağlanacak; API uçları bu ekranların alanlarını
+  karşılıyor mu, ekran ekran doğrulanmadı
 - **Pilot küme RUN için yetersiz.** Etiketli iki koşu klibi de stok
   görüntüdür: birinde kamera koşucuyu takip ediyor, diğerinde kişi kameraya
   doğru koşuyor. Sabit kameralı, kadrajı kesen, etiketli bir koşu klibi yok.
