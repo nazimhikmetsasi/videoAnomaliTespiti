@@ -24,6 +24,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from api import notify
 from api.config import KAFKA_BOOTSTRAP
 from api.db.models import Event, Evidence
 from api.db.mongo import get_mongo, link_pose_sequence
@@ -240,6 +241,7 @@ def run() -> None:
 
     cameras, zones = CameraCache(), ZoneCache()
     load_tolerance()   # kanit eslesme toleransi = spark_window_sec (api/matching.py)
+    notify.start()     # LLM + Telegram worker (ASAMA7_PLAN.md SS1) -- ayri is parcacigi, bloklamaz
     counters = {"processed": 0, "duplicates": 0, "malformed": 0,
                 "skipped_unknown_camera": 0, "mongo_errors": 0, "evidence_matched": 0}
     print(f"  tuketici basladi: {KAFKA_BOOTSTRAP} -> {TOPIC} (group={GROUP_ID}), "
@@ -295,6 +297,9 @@ def run() -> None:
                             counters["evidence_matched"] += 1
                 except (SQLAlchemyError, PyMongoError) as exc:
                     print(f"  kanit eslesme hatasi (event {new_id}): {exc}")
+                # SS1: kanit eslesmesinden HEMEN SONRA -- frame_path bu noktada
+                # doluysa bildirim fotografli gider (SS10 bilinen sinir).
+                notify.enqueue(new_id)
                 try:
                     _write_telemetry(new_id, camera_id, body)
                 except PyMongoError as exc:
@@ -303,6 +308,7 @@ def run() -> None:
             consumer.commit(msg)
     finally:
         consumer.close()
+        notify.stop()   # kuyruktaki bekleyen bildirimlerin bitmesini bekler (SS4.5)
         print(f"  tuketici kapandi -- islenen {counters['processed']}  "
               f"tekrar {counters['duplicates']}  bozuk {counters['malformed']}  "
               f"bilinmeyen-kamera {counters['skipped_unknown_camera']}  "

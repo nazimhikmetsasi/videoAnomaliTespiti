@@ -179,6 +179,20 @@ services:
       # stdout TTY degilken Python arabellege alir; arabellek olmadan `docker
       # compose logs` sayac ozetini/uyarilari gecikmeden gosterir.
       PYTHONUNBUFFERED: "1"
+      # Asama 7: bildirim (api/llm.py, api/notify.py) burada, consumer icinde
+      # calisir (ASAMA7_PLAN.md SS1/7). api servisine eklenmez -- api bu iki
+      # servisi cagirmiyor.
+      STORAGE_DIR: /storage
+      # Rapor metnindeki saat operatorun yerel saatidir; container UTC
+      # dogar ve saat 3 saat geri gorunurdu (Asama 7 olcum 1).
+      TZ: ${TZ:-Europe/Istanbul}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-lite-latest}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      # Kanit karesi Telegram'a yuklenir -- salt okunur (api ile ayni gerekce).
+      - ./storage:/storage:ro
     command: python -m api.workers.consumer
 
 volumes:

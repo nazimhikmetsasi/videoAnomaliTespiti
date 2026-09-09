@@ -44,3 +44,15 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", os.getenv("KAFKA_BOOTSTRAP_INTERN
 # Kanit dosyalarinin kok dizini (Asama 6). vision/ host'ta "storage" yazar,
 # api konteynerinde ayni agac "/storage" salt-okunur baglanir (docker-compose.yml).
 STORAGE_DIR = os.getenv("STORAGE_DIR", "storage")
+
+# api/llm.py (Asama 7). Bos anahtar = kanal kapali, ayri bir bayrak yok
+# (ASAMA7_PLAN.md SS6).
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
+LLM_TIMEOUT_SEC = float(os.getenv("LLM_TIMEOUT_SEC", "8.0"))
+LLM_COOLDOWN_SEC = float(os.getenv("LLM_COOLDOWN_SEC", "600.0"))
+
+# api/notify.py (Asama 7). Bos token/chat_id = kanal kapali (ASAMA7_PLAN.md SS6).
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+NOTIFY_MIN_INTERVAL_SEC = float(os.getenv("NOTIFY_MIN_INTERVAL_SEC", "1.0"))
