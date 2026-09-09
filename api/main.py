@@ -15,7 +15,7 @@ from api.config import FRONTEND_DIR
 from api.db.mongo import get_mongo
 from api.db.postgres import engine
 from api.matching import load_tolerance
-from api.routers import analytics, auth, cameras, events, evidence, settings, zones
+from api.routers import analytics, audit, auth, cameras, events, evidence, health, settings, users, zones
 from api.ws import alerts
 
 
@@ -44,6 +44,9 @@ app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(events.router, prefix="/api/events", tags=["events"])
 app.include_router(evidence.router, prefix="/api/evidence", tags=["evidence"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
+app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(alerts.router, tags=["ws"])
 
 

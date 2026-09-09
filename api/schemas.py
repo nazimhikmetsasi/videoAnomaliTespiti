@@ -30,6 +30,60 @@ class TokenOut(BaseModel):
     user: UserOut
 
 
+class UserCreate(BaseModel):
+    """Sifre hash'i veritabaninda uretilir (crypt()) -- gorunmesi gereken
+    tek dogrulanmamis alan `password`, Python tarafinda hic tutulmaz."""
+
+    username: str
+    full_name: str
+    role: Literal["admin", "operator", "viewer"]
+    telegram_chat_id: str | None = None
+    is_active: bool = True
+    password: str
+
+
+class UserUpdate(BaseModel):
+    """Tum alanlar istege bagli (PATCH semantigi) -- `password` yoksa hash'e
+    dokunulmaz (api/routers/users.py)."""
+
+    username: str | None = None
+    full_name: str | None = None
+    role: Literal["admin", "operator", "viewer"] | None = None
+    telegram_chat_id: str | None = None
+    is_active: bool | None = None
+    password: str | None = None
+
+
+# -------------------------------------------------------------------- audit
+class AuditOut(BaseModel):
+    id: int
+    user_id: int | None
+    username: str | None = None
+    action: str
+    entity: str
+    entity_id: int | None
+    payload: dict[str, Any] | None
+    ip: str | None
+    created_at: datetime.datetime
+
+
+class AuditListOut(BaseModel):
+    total: int
+    items: list[AuditOut]
+
+
+# ------------------------------------------------------------------- health
+class CameraHealthOut(BaseModel):
+    camera_id: int
+    name: str
+    fps_actual: float | None = None
+    dropped: int | None = None
+    infer_ms: float | None = None
+    gpu_mem: int | None = None
+    queue_depth: int | None = None
+    age_sec: float | None = None
+
+
 # ------------------------------------------------------------------ cameras
 class CameraIn(BaseModel):
     name: str
@@ -255,3 +309,30 @@ class AnalyticsSummaryOut(BaseModel):
     by_status: list[dict[str, Any]]
     by_camera: list[dict[str, Any]]
     by_hour: list[dict[str, Any]]
+
+
+class AblationRowOut(BaseModel):
+    decided_by: str
+    anomaly_type: str
+    status: str
+    count: int
+
+
+class QualityRowOut(BaseModel):
+    """Ground-truth etiketi yok -- recall/f1 hesaplanamaz, her zaman None
+    (QualityOut.note aciklar). Gercek sinyal operatorun events.status geri
+    bildirimi: confirmed = acknowledged + resolved (ASAMA8_PLAN.md SS3.8.2)."""
+
+    anomaly_type: str
+    total: int
+    confirmed: int
+    false_positive: int
+    pending: int
+    precision: float | None
+    recall: float | None = None
+    f1: float | None = None
+
+
+class QualityOut(BaseModel):
+    items: list[QualityRowOut]
+    note: str
