@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from api.audit import write_audit
@@ -15,6 +15,19 @@ from api.db.postgres import get_db
 from api.schemas import CameraHeartbeatIn, CameraIn, CameraOut
 
 router = APIRouter()
+
+
+def resolve_camera_id(db: Session, raw: str) -> int | None:
+    """Sayisal id VEYA kamera adi kabul eder.
+
+    `vision/` kamerayi ADIYLA tanir (klip dosya adi / webcam indeksi), panel
+    ise sayisal id ile. Kafka tuketicisi (CameraCache) ve POST /api/evidence
+    zaten bu cozumu kullaniyor; ucuncu kopyayi acmamak icin tek yer burasi."""
+    row = db.execute(
+        text("SELECT id FROM cameras WHERE id::text = :cid OR name = :cid"),
+        {"cid": raw},
+    ).first()
+    return row[0] if row else None
 
 
 def _get_or_404(db: Session, camera_id: int) -> Camera:
@@ -78,12 +91,17 @@ def delete_camera(
 
 @router.patch("/{camera_id}/heartbeat", response_model=CameraOut)
 def heartbeat(
-    camera_id: int, body: CameraHeartbeatIn, db: Session = Depends(get_db),
+    camera_id: str, body: CameraHeartbeatIn, db: Session = Depends(get_db),
     _: dict = Depends(current_user),
 ) -> Camera:
-    # Kimlik ister -- JWT'siz herkes kamera durumunu degistiremesin. Asama 6'da
-    # vision/ servisi bir jetonla cagiracak (uc bugunden aciliyor, SS9.2).
-    cam = _get_or_404(db, camera_id)
+    # Kimlik ister -- JWT'siz herkes kamera durumunu degistiremesin.
+    # camera_id METIN: vision/ kamerayi adiyla cagirir ("zone_01"), int
+    # bekleyen surum her kalp atisina 422 donuyordu ve cameras.status hic
+    # guncellenmiyordu (Asama 6 olcumunde yakalandi).
+    resolved = resolve_camera_id(db, camera_id)
+    if resolved is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "kamera bulunamadi")
+    cam = _get_or_404(db, resolved)
     cam.status = body.status
     cam.last_seen_at = datetime.datetime.now(datetime.timezone.utc)
     db.commit()

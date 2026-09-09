@@ -3,10 +3,25 @@
 
 Kendi asyncio dongusunu ayri bir daemon thread'de calistirir -- ana goru
 dongusu asla bloklanmaz. `publish_frame`/`publish_meta` kamera basina TEK
-elemanli "son deger kazanir" bir kutuya yazar; yayin tarafi bu kutuyu kisa
-araliklarla yoklar (polling). Kuyruk yok: yavas istemci kare biriktirmez,
-`vision/source.py`'nin canli kaynak kuralinin (en yeni kare kazanir) ayni
-tasarimi.
+elemanli "son deger kazanir" bir kutuya yazar. Kuyruk yok: yavas istemci kare
+biriktirmez, `vision/source.py`'nin canli kaynak kuralinin (en yeni kare
+kazanir) ayni tasarimi.
+
+Uyandirma OLAY GUDUMLUDUR, yoklama DEGIL. Onceki surum kutuyu 5 ms'de bir
+yokluyordu ve bu olculmus bir hataydi: iki bagli istemcide saniyede 400
+zamanlayici uyanmasi, CPU'su dolu goru dongusuyle GIL icin yarisiyordu.
+Sonuc terstenti -- daha sik yoklama DAHA AZ kare teslim ediyordu, cunku
+asyncio dongusu kit GIL zamanini gonderim yerine zamanlayici muhasebesine
+harciyordu. Olculen degerler (zone_01, tek istemci):
+
+    yoklama  5 ms : goru 18.6 FPS, istemci  1.0 FPS
+    yoklama 33 ms : goru 26.6 FPS, istemci 21.6 FPS
+    olay gudumlu  : asagidaki tasarim -- uyanma yalnizca yeni kare basina
+
+Uretici her yayinda `loop.call_soon_threadsafe` ile bekleyen istemcilerin
+`asyncio.Event`'lerini kurar; kare basina bir uyanma olur, bos gecen tek bir
+uyanma kalmaz. Her baglanti KENDI Event'ini tasir -- paylasilan tek Event'te
+"kim temizleyecek" yarisi olurdu.
 
 Kimlik dogrulama: `?token=<JWT>` sorgu parametresi, api/auth.py ile AYNI
 JWT_SECRET + HS256 kullanilarak YEREL dogrulanir -- veritabanina gidilmez
@@ -26,9 +41,6 @@ import websockets
 from websockets.exceptions import ConnectionClosed
 
 ALGORITHM = "HS256"
-# ponytail: event-driven (asyncio.Condition) daha az CPU yakardi; 5 ms yoklama
-# 25 FPS'lik (40 ms) kare hizinin sekizde biri, yeterince sik ve basit.
-POLL_SEC = 0.005
 
 
 class _Box:
@@ -37,13 +49,17 @@ class _Box:
     `data` kare icin `bytes` (BINARY WS cercevesi), meta icin `str` (TEXT WS
     cercevesi) tasir. `websockets` tip'e gore cerceveyi kendisi secer --
     meta'yi bytes olarak gondermek tarayicida `event.data` Blob/ArrayBuffer
-    yapar, `JSON.parse` once `.text()` ister; `str` dogrudan calisir."""
+    yapar, `JSON.parse` once `.text()` ister; `str` dogrudan calisir.
 
-    __slots__ = ("data", "seq")
+    `waiters` bu kutuyu bekleyen baglantilarin Event'leridir; uretici yayin
+    yapinca hepsi kurulur."""
+
+    __slots__ = ("data", "seq", "waiters")
 
     def __init__(self) -> None:
         self.data: bytes | str | None = None
         self.seq = 0
+        self.waiters: set[asyncio.Event] = set()
 
 
 class StreamServer:
@@ -84,17 +100,28 @@ class StreamServer:
     # --- uretici tarafi (goru dongusu bu iki metodu cagirir) -------------
 
     def publish_frame(self, camera_id: str, jpeg: bytes) -> None:
-        with self._lock:
-            box = self._frames.setdefault(camera_id, _Box())
-            box.data = jpeg
-            box.seq += 1
+        self._publish(self._frames, camera_id, jpeg)
 
     def publish_meta(self, camera_id: str, meta: dict) -> None:
         body = json.dumps(meta)   # str -> TEXT WS cercevesi (bkz. _Box docstring)
+        self._publish(self._meta, camera_id, body)
+
+    def _publish(self, boxes: dict[str, _Box], camera_id: str, payload: bytes | str) -> None:
+        """Goru dongusunden cagrilir. Kilit yalnizca sozluk/kutu yazimi kadar
+        tutulur; uyandirma kilidin DISINDA, call_soon_threadsafe ile asyncio
+        thread'ine devredilir -- bu cagri geri donene kadar goru dongusu
+        beklemez."""
         with self._lock:
-            box = self._meta.setdefault(camera_id, _Box())
-            box.data = body
+            box = boxes.setdefault(camera_id, _Box())
+            box.data = payload
             box.seq += 1
+            waiters = list(box.waiters)
+        if not waiters or self._loop is None:
+            return
+        try:
+            self._loop.call_soon_threadsafe(_wake_all, waiters)
+        except RuntimeError:
+            pass   # dongu kapaniyor; yayin kaybi kabul edilir, dongu duraklamaz
 
     @property
     def live_clients(self) -> int:
@@ -154,13 +181,31 @@ class StreamServer:
                 self._counts[kind] -= 1
 
     async def _stream(self, connection, boxes: dict[str, _Box], camera_id: str) -> None:
+        event = asyncio.Event()
+        with self._lock:
+            box = boxes.setdefault(camera_id, _Box())
+            box.waiters.add(event)
         last_seq = -1
         try:
             while True:
-                box = boxes.get(camera_id)
-                if box is not None and box.data is not None and box.seq != last_seq:
-                    last_seq = box.seq
-                    await connection.send(box.data)
-                await asyncio.sleep(POLL_SEC)
+                # clear() OKUMADAN once gelir: aksi halde okuma ile clear
+                # arasinda gelen bir yayin silinir ve o uyandirma kaybolurdu.
+                event.clear()
+                with self._lock:
+                    data, seq = box.data, box.seq
+                if data is not None and seq != last_seq:
+                    last_seq = seq
+                    await connection.send(data)
+                    continue   # gonderirken yeni kare gelmis olabilir, hemen bak
+                await event.wait()
         except ConnectionClosed:
             return
+        finally:
+            with self._lock:
+                box.waiters.discard(event)
+
+
+def _wake_all(waiters: list[asyncio.Event]) -> None:
+    """asyncio thread'inde calisir (call_soon_threadsafe ile gonderilir)."""
+    for event in waiters:
+        event.set()

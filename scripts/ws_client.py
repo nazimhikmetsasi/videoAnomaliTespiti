@@ -59,9 +59,14 @@ async def _measure_latency(uri: str, seconds: float, samples: list[float]) -> No
 
 async def _watch_alerts(uri: str, seconds: float, alerts: list[dict]) -> None:
     """SS12 olcum 4: kirmizi alarm /ws/alerts'ten (api, 8000) cikinca gelis
-    ani kaydedilir. Gecikme, olayin BITISI (`end_ts`, oturumun kapandigi an)
-    ile alarmin gelisi arasindaki farktir -- Spark oturum boslugu + damga +
-    mikro-toplu + tuketici bu araliktadir."""
+    ani kaydedilir. Gecikme, olayin BITISI ile alarmin gelisi arasindaki
+    farktir -- Spark oturum boslugu + damga + mikro-toplu + tuketici bu
+    araliktadir.
+
+    EPOCH alani `end_time`, `end_ts` DEGIL: stream/spark_job.py `end_ts`'i
+    adayin SAHNE zamanindan uretir (dosya kaynaginda 0'dan baslar), epoch'u
+    ise `end_time` tasir (event_time'in double hali). `end_ts` kullanmak
+    dosya kaynaginda epoch'un tamamini gecikme sanmaya yol acar."""
     try:
         async with websockets.connect(uri) as ws:
             deadline = time.monotonic() + seconds
@@ -78,12 +83,12 @@ async def _watch_alerts(uri: str, seconds: float, alerts: list[dict]) -> None:
                     body = json.loads(raw)
                 except ValueError:
                     continue
-                end_ts = body.get("end_ts")
+                end_time = body.get("end_time")
                 alerts.append({
                     "recv_at": recv_at,
                     "type": body.get("anomaly_type"),
                     "camera": body.get("camera_name") or body.get("camera_id"),
-                    "lag_ms": (recv_at - float(end_ts)) * 1000.0 if end_ts else None,
+                    "lag_ms": (recv_at - float(end_time)) * 1000.0 if end_time else None,
                 })
     except Exception as exc:  # noqa: BLE001
         print(f"  [alerts] baglanti hatasi: {exc}")
@@ -127,7 +132,7 @@ async def _run(args: argparse.Namespace) -> None:
     if args.alerts_url:
         print(f"  kirmizi alarm sayisi     : {len(alerts)}")
         for a in alerts:
-            lag = f"{a['lag_ms']:.0f} ms" if a["lag_ms"] is not None else "end_ts yok"
+            lag = f"{a['lag_ms']/1000:.1f} sn" if a["lag_ms"] is not None else "end_time yok"
             print(f"    {a['type']} (kamera {a['camera']})  olay bitisinden beri: {lag}")
 
 

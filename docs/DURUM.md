@@ -3,26 +3,31 @@
 Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 `docs/PLAN.md` sonra bu dosya okunur ve kaldığı yerden devam edilir.
 
-**Son güncelleme:** 2026-08-28
+**Son güncelleme:** 2026-09-09
 
 ---
 
 ## Şu an neredeyiz
 
-**Aşama 5 — Veri katmanı ve API tamamlandı.** Zincirin son halkası kapandı:
-`vision/` → Kafka → Spark → **tüketici → PostgreSQL + MongoDB** → REST API.
-Pilot kliplerin tam geçişi veritabanına **5 doğrulanmış olay** yazdı ve bu
-beş satır Aşama 4'te ölçülen beş oturumla tip, klip ve **süre olarak birebir**
-aynı (`fall_01` 33 ms, `run_01` 11067 ms, `zone_01` 1800 / 27640 / 1000 ms).
-Ölçüm iki kez, iki ayrı geçişte tekrarlandı ve aynı çıktı geldi.
+**Aşama 6 — Canlı görüntü ve kanıt tamamlandı.** Operatör artık olayı
+yalnızca satır olarak okumuyor: canlı kare `vision/`'dan doğrudan tarayıcıya
+akıyor, olayın klibi ve en iyi karesi diske yazılıp veritabanına bağlanıyor,
+kırmızı alarm API'den yayınlanıyor.
 
-Bu aşamanın esas kazancı olay satırının yazılması değil, **zincirin
-kırılganlığının nerede olduğunun ölçülmüş olmasıdır.** Uçtan uca ilk deneme
-sıfır olay üretti: Spark, ayakta görünen bir konteynerde ölmüştü — kalıcı
-checkpoint kalıcı olmayan bir Kafka log'unun offset'ini bekliyordu. Tüketici
-ve API kusursuz çalışıyordu; sorun ikisinde de değildi. Aynı sınıftan üç
-sessiz hata daha bulundu ve düzeltildi (§ Aşama 5 sonucu, "Yol boyunca
-bulunan hatalar"). Sıradaki iş Aşama 6 (canlı görüntü ve kanıt).
+Aşama 5'in beş oturumu **birebir yeniden üretildi** (`fall_01` 33 ms,
+`run_01` 11067 ms, `zone_01` 1800 / 27640 / 1000 ms) ve bu kez altısının da
+`clip_path`, `frame_path`, `mongo_ref` alanları doldu; eşleşmeyen kanıt satırı
+sıfır, `pose_sequences` belgelerinin **%100'ü** olaya bağlandı.
+
+Bu aşamanın esas kazancı ölçümün tasarımı yanlışlaması oldu. Yayın için
+seçilen 5 ms'lik yoklama döngüsü, ölçüldüğünde **sezgiye ters** davrandı:
+daha sık yoklamak daha az kare teslim ediyordu (istemci 1.0 FPS, görü
+18.6 FPS). Sebep, saniyede 400 zamanlayıcı uyanmasının CPU'su zaten dolu görü
+döngüsüyle GIL için yarışmasıydı. Yoklama tamamen kaldırılıp olay güdümlü
+uyandırmaya geçilince istemci 23.6 FPS'e çıktı. Aynı ölçüm iki ölçüm
+yönteminin de geçersiz olduğunu gösterdi: dosya kaynağında hem uçtan uca
+gecikme hem alarm gecikmesi, hattın hızını değil kaynağın ileri okumasını ve
+akış sonunu ölçüyordu (§ Ölçüm 2 ve 4). Sıradaki iş Aşama 7 (LLM ve Telegram).
 
 ## Aşama durumu
 
@@ -36,8 +41,8 @@ bulunan hatalar"). Sıradaki iş Aşama 6 (canlı görüntü ve kanıt).
 | 3 | Öznitelik ve kural motoru | Tamamlandı |
 | 4 | Kafka ve Spark | Tamamlandı |
 | 5 | Veri katmanı ve API | Tamamlandı |
-| 6 | Canlı görüntü (WebSocket) | Sırada |
-| 7 | LLM ve Telegram | Bekliyor |
+| 6 | Canlı görüntü (WebSocket) | Tamamlandı |
+| 7 | LLM ve Telegram | Sırada |
 | 8 | Panel (kullanıcı şablonu) | Bekliyor |
 | 9 | TCN modeli ve yeni sınıflar | Bekliyor |
 | 10 | Ölçek ve tez çıktıları | Bekliyor |
@@ -984,27 +989,253 @@ geçti** — ORM ile canlı şema arasında drift yok.
 
 ---
 
+---
+
+## Aşama 6 sonucu (2026-09-09)
+
+Zincirin son iki eksiği kapandı: panel canlı kareyi görebiliyor ve olayın
+kanıtı (klip + kare + iskelet dizisi) üretilip veritabanına bağlanıyor.
+
+```
+vision/ (host, GPU) ──┬─ ws://localhost:8001/ws/live  ikili JPEG
+                      ├─ ws://localhost:8001/ws/meta  JSON overlay
+                      ├─ storage/clips, storage/frames + POST /api/evidence
+                      ├─ MongoDB pose_sequences, camera_health
+                      └─ Kafka → Spark → consumer → PostgreSQL
+                                            └─ ws://localhost:8000/ws/alerts
+```
+
+### Yazılan dosyalar
+
+| dosya | satır | ne yapar |
+|---|---|---|
+| `vision/ws_server.py` | 166 | olay güdümlü WebSocket sunucusu, JWT yerel doğrulama |
+| `vision/evidence.py` | 436 | epizot, mp4 klip, en iyi kare, `pose_sequences` |
+| `vision/health_client.py` | 93 | kalp atışı + `camera_health` |
+| `scripts/ws_client.py` | 151 | ölçüm istemcisi: FPS, gecikme, alarm |
+| `api/routers/evidence.py` | 115 | `POST`/`GET /api/evidence`, çift yönlü eşleşme |
+| `api/ws/alerts.py` | 120 | `/ws/alerts` + ikinci Kafka tüketicisi |
+| `api/ws/manager.py` | 35 | bağlı istemci kümesi, yayın |
+| `api/matching.py` | 48 | eşleşme toleransı = `spark_window_sec` |
+| `vision/run.py` | +178 | `--ws`, `--evidence`, `--heartbeat-sec` bağlaması |
+| `stream/spark_job.py` | +38 | eşikleri açılışta API'den çekme |
+
+### Ölçüm 1 — tarayıcı FPS (hedef 20+)
+
+`scripts/ws_client.py`, 10 sn'den uzun pencerede.
+
+| kaynak | istemci FPS | not |
+|---|---|---|
+| dosya (`zone_01`, 62 sn) | **23.6** | 1515 karenin 1465'i teslim edildi (%96.7) |
+| webcam (40 sn) | **12.5** | hedefin altında |
+
+Dosya kaynağında hedef tutuyor. Webcam'de tutmuyor, **ama darboğaz yayın
+değil**: webcam hattının kendisi bu makinede ~12–19 FPS koşuyor
+(`camera_health` son kaydı `fps_actual=19.5`, `infer_ms=24.0`) ve istemci
+üretilenin neredeyse tamamını alıyor. 20+ için gereken şey daha hızlı yayın
+değil, daha hızlı çıkarım — Aşama 10'un konusu.
+
+### Ölçüm 2 — uçtan uca gecikme (hedef 300 ms altı)
+
+`/ws/meta` gövdesindeki `ts` ile mesajın istemcide alındığı an arasındaki
+fark, `scripts/ws_client.py` ile.
+
+| kaynak | p50 | p95 | geçerli mi |
+|---|---|---|---|
+| **webcam (canlı)** | **44.5 ms** | **84.1 ms** | evet, hedef tutuyor |
+| dosya (`zone_01`) | 2663 ms | 3785 ms | **hayır — ölçüm artefaktı** |
+
+Dosya kaynağındaki 2.7 saniye hattın gecikmesi değildir. `meta.ts` kareyi
+`VideoSource`'un *okuduğu* andır ve dosya kaynağında okuyucu iş parçacığı 64
+karelik bir kuyruğu önden doldurur (`vision/source.py:88`; canlıda kuyruk tek
+yuvadır). 23.6 FPS'te 64 kare 2.71 saniye eder — ölçülen p50 ile birebir.
+Sayı sabit kalıyor, büyümüyor; birikme değil sabit bir kayma.
+
+**Bu yüzden 300 ms ölçütü yalnızca canlı kaynakta anlamlıdır** ve orada 44.5 ms
+ile rahat tutuluyor. `camera_health.queue_depth=1` bunu ayrıca doğruluyor.
+
+### Ölçüm 3 — yayının görü döngüsüne maliyeti
+
+`zone_01`, 1515 kare, üç koşum. Üçüncüde istemci koşumun tamamı boyunca bağlı
+(yarısında bağlı olsaydı FPS iki fazın ortalaması çıkardı).
+
+| koşum | görü FPS | `ws kodlama+yayın` medyan / p95 |
+|---|---|---|
+| `--ws` kapalı | 29.1 | — |
+| `--ws` açık, 0 istemci | 30.8 | **0.0 / 0.0 ms** |
+| `--ws` açık, 1 istemci | 24.2 | 1.7 / 2.6 ms |
+
+Sıfır istemcide maliyet gerçekten sıfır: `live_clients == 0` iken JPEG
+kodlaması, `meta_clients == 0` iken meta gövdesi hiç kurulmuyor. İlk iki satır
+arasındaki 1.7 FPS fark ölçüm gürültüsüdür (kodlama hiç çağrılmıyor).
+
+Bir istemcide kare başına fark 8.8 ms, ama ölçülen kodlama+yayın bunun yalnız
+1.7 ms'si. **Kalan ~7 ms tek bir aşamaya yazılamıyor**: sunucu iş parçacığının
+saniyede ~24 kez ~40 KB göndermesinin GIL ve zamanlayıcı maliyeti döngünün
+tamamına yayılıyor. Olduğu gibi yazılıyor.
+
+### Ölçüm 4 — alarm gecikmesi (Aşama 4'ten kalan açık soru)
+
+Adayın `end_time`'ı ile kırmızı alarmın `/ws/alerts`'ten çıkışı arası:
+
+| klip | ölçülen |
+|---|---|
+| `fall_01` | 13.9 sn |
+| `run_01` | 46.8 sn |
+| `zone_01` | 54.8 sn |
+
+Tasarım beklentisi 3 sn oturum boşluğu + 2 sn damga + mikro-toplu, yani 5–8
+sn'ydi. **Beklenti düzeltilmiyor, ölçüm yazılıyor** — ama sayının ne ölçtüğü
+söylenmeli: dosya kaynağında Spark'ın oturumu, olayın bitmesiyle değil
+**akışın bitmesiyle** kapanıyor. Watermark yalnız yeni veri geldikçe ilerler;
+olaydan sonra aday üretilmediği için pencere, klibin sonundaki `_EOS`
+işaretçisi gelene kadar açık kalır. `zone_01`'de olay ~13. saniyede bitiyor,
+klip 60.6 saniye sürüyor: aradaki ~47 saniye ölçülen gecikmenin içindedir ve
+hattın hızıyla ilgisi yoktur.
+
+Canlı kaynakta aday akışı sürekli olduğu için bu etki yoktur, ama **canlı
+ölçüm yapılamadı**: kameranın önünde koşan/düşen biri gerekiyordu, webcam
+koşumunda kırmızı alarm üretilmedi. Aşama 4'ten kalan açık soru bu haliyle
+**hâlâ açık**.
+
+### Ölçüm 5 — kanıt
+
+Beş pilot oturumun tam geçişi (`fall_01`, `run_01`, `zone_01` — sonuncusu
+`--zones eval/zones.json` ile):
+
+- **6 klip + 6 kare** diske yazıldı, **6 POST başarılı**, 0 başarısız,
+  kuyruktan düşen 0, mongo hatası 0.
+- `events` tablosunda `clip_path`, `frame_path`, `mongo_ref` dolu satır: **6/6**.
+- `evidence` tablosu: 6 satır, **6'sı eşleşmiş, 0 eşleşmeyen**, 2'si
+  `clip_truncated`.
+- Süreler Aşama 4 ve 5 ile birebir: 33 / 11067 / 1800 / 27640 / 1000 ms.
+
+Altı klip de açılıp doğrulandı (ilk kare çözülüyor, süreler 7.9–11.4 sn —
+kısa epizotların ±5 sn payıyla tutarlı). `GET /api/events/{id}/clip` ve
+`/frame` doğru içerik tipiyle 200 dönüyor; jetonsuz istek 401, yolu olmayan
+olay 404.
+
+**Uyarı — klip kaynak çözünürlüğünde yazılıyor.** Halka tampon ham kareyi
+tuttuğu için klip 960×540 değil, kaynağın kendi boyutundadır. 4K olan
+`run_01` (2160×3840) için bu, 8.5 saniyelik klipte **46 MB** demek: altı
+klibin 52 MB'ının 46'sı tek dosya. Aşama 10'daki rotasyon borcunu ölçülü hale
+getiriyor.
+
+### Ölçüm 6 — `pose_sequences`
+
+- **6 belge**, belge başına kare: 107, 467, 158, ...
+- **`event_id` bağlanmış belge oranı: 6/6 (%100).**
+- `created_at` alanı BSON `Date` — TTL indeksi çalışıyor.
+
+### Ölçüm 7 — her şey açıkken görü FPS
+
+Docker altyapısı + Kafka + WebSocket + kanıt yazımı + kalp atışı birlikte:
+
+| klip | çözünürlük | FPS |
+|---|---|---|
+| `fall_01` | 768×432 | 31.6 |
+| `zone_01` | 640×360 | 23.8 / 23.4 |
+| `run_01` | **2160×3840 (4K)** | **9.3** |
+
+Aşama 5'te ölçülen 12–15 FPS düşüşü tekrar etmedi; 4K dışındaki kliplerde
+23–31 FPS korunuyor. `run_01`'in 9.3'ü yayın veya kanıt yüzünden değil, 4K
+karenin ön işleme maliyetidir.
+
+### Yol boyunca bulunan hatalar (hepsi düzeltildi)
+
+1. **Yoklama döngüsü yayını çökertiyordu.** `_stream` kutuyu 5 ms'de bir
+   yokluyordu. İki bağlantıda saniyede 400 uyanma, CPU'su dolu görü
+   döngüsüyle GIL için yarışıyor; asyncio döngüsü kıt zamanını gönderim
+   yerine zamanlayıcı muhasebesine harcıyordu. Ölçülen: yoklama 5 ms'de görü
+   18.6 FPS / istemci **1.0 FPS**; 33 ms'de 26.6 / 21.6. Yoklama tamamen
+   kaldırıldı, `call_soon_threadsafe` ile olay güdümlü uyandırmaya geçildi;
+   ayarlanacak sabit kalmadı. Sonuç: görü 24.2, istemci **23.6 FPS**.
+   Yalıtım testi (GPU'suz, sentetik 30 Hz üretici) sunucunun ve istemcinin
+   temiz olduğunu, sorunun yalnız CPU doygunluğunda ortaya çıktığını gösterdi.
+2. **Kalp atışı hiç çalışmıyordu.** `PATCH /api/cameras/{id}/heartbeat`
+   `camera_id: int` bekliyordu, `vision/` ise kamerayı **adıyla** çağırıyor
+   (`zone_01`): her atım 422 döndü, `cameras.status` ve `last_seen_at` hiç
+   güncellenmedi (gönderilen 0, hata 12). Uç, Kafka tüketicisi ve
+   `POST /api/evidence` ile aynı kurala getirildi (ad veya id); çözücü
+   `api/routers/cameras.py::resolve_camera_id` içinde tek kopya.
+3. **Ölçüm betiği yanlış alanı okuyordu.** `ws_client.py` alarm gecikmesini
+   `end_ts`'ten hesaplıyordu; o alan adayın **sahne zamanı** (dosya
+   kaynağında 0'dan başlar), epoch olan alan `end_time`. Sonuç epoch'un
+   tamamını gecikme sanmaktı.
+4. **`pose_sequences.event_id` baskın yolda hiç dolmuyordu.** Eşleşmenin iki
+   yönünden yalnız biri Mongo'yu güncelliyordu, oysa kanıt neredeyse her
+   zaman olaydan önce gelir. Ortak `link_pose_sequence` ile iki yön de
+   bağlıyor — ölçümdeki %100 bağlanma bununla geldi.
+5. **İki MongoDB TTL indeksi ölüydü.** `pose_sequences.created_at` ve
+   `camera_health.ts` `time.time()` ile float yazılıyordu; TTL yalnız BSON
+   `Date` alanında çalışır, belgeler hiç silinmezdi.
+6. **Yazılmayan dosyanın yolu POST ediliyordu**, veritabanında dolu görünüp
+   diskte olmayan kayıt bırakıyordu.
+7. **`live_clients` meta istemcisini de sayıyordu**; yalnız overlay dinleyen
+   bir panel her kareyi JPEG'e kodlatıyordu.
+8. **`_pose` sözlüğü hiç budanmıyordu** — görülen her `track_id` kalıcıydı.
+9. **Adaptif kalite yanlış girdiyi ölçüyordu**: süreye meta kurulumu da
+   dahildi, kaliteyi gereksiz düşürüyordu.
+10. **`docker compose restart` yeni ortamı uygulamıyor.** Spark, compose'a
+    eklenen `SETTINGS_API_URL` olmadan çalışmaya devam etti ve §9 sessizce
+    devre dışı kaldı; `docker compose up -d spark` ile yeniden oluşturmak
+    gerekti. Aşama 5'in "ayakta görünen ölü konteyner" dersinin ikinci hali.
+
+### Plandan sapmalar
+
+- `requirements.txt`'e planın iki satırına ek olarak **`pyjwt`**: `vision/`
+  jetonu yerel doğruluyor, plan bunu atlamış.
+- `vision/evidence.py` 436 satır, plan bütçesi ~140'tı. Fark spekülatif değil:
+  sahne zamanı / duvar saati ayrımı, EOF'ta epizot kapatma, yazma kuyruğu
+  drenajı — üçü de gerçek koşumda bulunan hataların düzeltmesi.
+- `pose_sequences.track_id` planda `<int>`, kodda metin (`"7"`, `"7-9"`).
+  Çoklu iz (FIGHT) için metin daha doğru; **Aşama 9'un TCN okuyucusu buna
+  göre yazılmalı.**
+- `evidence` satırı eşleşse de yazılıyor. Plan §8.2 madde 1 eşleşince satır
+  açmamayı ima ediyordu, ama `events` tablosunda `clip_truncated` kolonu yok;
+  satır atlanınca kırpılma bilgisi tamamen kaybolurdu (§5.2 buna izin vermiyor).
+- `/ws/alerts` jeton istiyor. Plan §8.4 bunu yazmamıştı; §3'ün görü akışı için
+  koyduğu "kimliksiz yayın kabul edilemez" ölçütü alarm akışı için de geçerli.
+
+### Bilinen sınırlar (kapatılmadı, ölçüldü)
+
+1. **Canlı kaynakta alarm gecikmesi ölçülemedi.** Kameranın önünde gerçek bir
+   olay gerekiyor. Dosya kaynağındaki 13.9–54.8 sn, hattın hızını değil
+   oturumun akış sonuyla kapanmasını ölçüyor (§ Ölçüm 4).
+2. **Webcam'de 20+ FPS tutmuyor** (12.5). Darboğaz yayın değil çıkarım.
+3. **Kanıt klipleri kaynak çözünürlüğünde** ve rotasyonu yok: 4K bir kaynak
+   8.5 saniyede 46 MB yazıyor. Aşama 10.
+4. **`SPARK_SETTINGS_TOKEN` 12 saatlik bir kullanıcı jetonu.** Süresi dolunca
+   Spark yeniden başlatıldığında eşikleri çekemez ve sessizce ortam
+   varsayılanlarına düşer (uyarı basar). Uzun ömürlü servis jetonu gerekiyor.
+5. **`camera_health.fps_actual` anlık değil**, koşum başından beri kümülatif
+   ortalama; ısınma dönemini hiç unutmuyor.
+6. `spark_window_sec` / `spark_min_hits` / `spark_min_sec` **açılışta** okunur;
+   panelden değiştirilirse ancak Spark ve tüketici yeniden başlayınca geçerli
+   olur. Sıcak yükleme yalnız kural eşiklerindedir (bilinçli, plan §9).
+
+### Testler
+
+`pytest tests/ -q` → **59 passed, 2 skipped**. Yeni: `tests/test_evidence.py`,
+`tests/test_ws_units.py`, `tests/test_evidence_match.py`, ve
+`test_api_units.py`'ye eklenen jeton denetimi.
+
 ## Bir sonraki adım
 
-Aşama 6 — Canlı görüntü ve kanıt:
+Aşama 7 — LLM ve Telegram:
 
-1. `api/ws/live.py`: ikili JPEG kare akışı, adaptif kalite.
-2. `api/ws/meta.py`: tracks / poses / zones / sarı ön-alarm JSON akışı.
-3. `api/ws/alerts.py`: Spark'tan geçen kırmızı alarmın yayını (tüketici
-   satırı yazdıktan sonra tetikler).
-4. `vision/evidence.py`: halka tampon → ±5 sn mp4 klip + en iyi kare;
-   `events.frame_path` / `clip_path` / `mongo_ref` bu aşamada dolar,
-   `pose_sequences` koleksiyonu burada yazılır.
-5. `vision/run.py` → `PATCH /api/cameras/{id}/heartbeat` (uç açık, çağıran
-   yok) ve `camera_health` koleksiyonuna yazım.
-6. `spark_min_sec` JSONB sütununu Spark işine bağla (bilinen sınır 5).
+1. Doğrulanan olay için Türkçe ihbar metni üretimi (`llm/`), `events.llm_report_tr`
+   sütununa yazım.
+2. Telegram bildirimi: metin + en iyi kare (`storage/frames/`), `notifications`
+   tablosuna kayıt.
+3. LLM erişilemezse olayın kaybolmaması: bildirim kuyruğu ve yeniden deneme.
 
-**Onay kriteri:** tarayıcıda 20+ FPS, uçtan uca gecikme 300 ms altında, olay
-klibi oynatılabiliyor.
+**Onay kriteri:** doğrulanan bir olay için Telegram'a kare + Türkçe metin
+düşüyor; LLM kapalıyken olay yine de bildiriliyor.
 
-Ölçülmesi gerekenler: canlı akışta kırmızı alarm gecikmesi (Aşama 4'ten kalan
-açık soru) ve Docker altyapısı ayaktayken görü FPS'inin düşüşü (bilinen
-sınır 3).
+Aşama 6'dan devralınan ve Aşama 7'de kapatılmayacak ölçümler: canlı kaynakta
+alarm gecikmesi (§ Ölçüm 4) ve webcam'de 20+ FPS (§ Ölçüm 1) — ikisi de
+donanım ve senaryo gerektiriyor, kod değişikliği değil.
 
 ---
 
@@ -1080,6 +1311,10 @@ sınır 3).
 | 2026-08-28 | `api/requirements.txt` ayrı | Kök dosya torch + ultralytics + onnxruntime-gpu içeriyor; API imajının hiçbirine ihtiyacı yok. İkinci bir dosya 2 GB'lık gereksiz imajdan ucuz |
 
 ---
+| 2026-09-09 | WS yayını yoklama değil olay güdümlü | 5 ms yoklama iki bağlantıda saniyede 400 uyanma demekti; CPU'su dolu görü döngüsüyle GIL yarışı teslimi 1 FPS'e düşürdü — daha sık yoklamak daha az kare teslim ediyordu |
+| 2026-09-09 | Kalp atışı ucu ad **veya** id kabul eder | vision/ kamerayı adıyla tanır; int bekleyen uç her atımda 422 döndü ve cameras.status hiç güncellenmedi |
+| 2026-09-09 | Uçtan uca gecikme ve alarm gecikmesi yalnız canlı kaynakta ölçülür | Dosya kaynağında ikisi de hattın hızını değil, 64 karelik ileri okumayı ve oturumun akış sonuyla kapanmasını ölçüyor |
+| 2026-09-09 | Kanıt satırı eşleşse de yazılır | events tablosunda clip_truncated kolonu yok; satır atlanırsa klibin kırpıldığı bilgisi tamamen kaybolur |
 
 ## Açık sorular
 
@@ -1091,8 +1326,10 @@ sınır 3).
   rekabeti olduğu varsayıldı (Spark + Kafka + iki veritabanı + iki Python
   servisi), profillenerek doğrulanmadı. Aşama 10'un çoklu kamera ölçümü bu
   taban üzerinde yapılmamalı
-- `spark_min_sec` veritabanında ama Spark ortam değişkeninden okuyor;
-  panelden değiştirilen değer akışa ulaşmıyor (Aşama 6)
+- ~~`spark_min_sec` veritabanında ama Spark ortam değişkeninden okuyor~~ —
+  **Aşama 6'da kapatıldı**: Spark açılışta `GET /api/settings` çağırıyor.
+  Değer yine de DAG'e açılışta gömülür; panelden değişiklik ancak Spark
+  yeniden başlayınca geçerli olur (bilinçli sınır)
 - Tüketici tek process. Aşama 10'un 4 kamerasında tek tüketicinin yetip
   yetmeyeceği ölçülmedi; Kafka tarafı ölçeklenebilir (aynı group.id ile
   ikinci konteyner), veritabanı tarafı ölçülmeli
@@ -1127,10 +1364,11 @@ sınır 3).
   `camera_id` FK'siyle bunu yapısal olarak çözüyor; kurgu klip yine de
   değerlendirme dışıdır
 
-- Canlı akışta kırmızı alarm gecikmesi ölçülmedi. Aşama 4'teki 11.1 sn
-  medyan değerlendirme betiğinin kapanış mekaniğidir, sistemin gecikmesi
-  değil. Tasarım beklentisi oturum boşluğu 3 sn + damga 2 sn + mikro-toplu;
-  Aşama 6'da uçtan uca ölçülecek
+- Canlı akışta kırmızı alarm gecikmesi **hâlâ ölçülmedi.** Aşama 6'da
+  `/ws/alerts` uçtan uca çalıştı ve dosya kaynağında 13.9–54.8 sn ölçüldü,
+  ama bu sayı hattın hızı değil: dosya kaynağında Spark oturumu olayın
+  bitmesiyle değil akışın `_EOS` ile bitmesiyle kapanıyor. Gerçek değer için
+  kameranın önünde gerçek bir olay gerekiyor
 - `--kafka` açıkken FPS 36.5'ten 31.8'e düşüyor ama ölçülen `publish`
   aşaması 0.0 ms. Kaybın librdkafka'nın arka plan I/O iş parçacığından
   geldiği varsayıldı, doğrulanmadı. Çoklu kamerada (Aşama 10) tekrar ölçülmeli
