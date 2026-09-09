@@ -9,22 +9,25 @@ Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 
 ## Şu an neredeyiz
 
-**Aşama 7 — LLM raporu ve Telegram bildirimi tamamlandı.** Zincir uçtan uca
-kapandı: kamera → görü hattı → Kafka → Spark → veritabanı → Türkçe ihbar
-metni → güvenlik personelinin telefonunda fotoğraflı bildirim.
+**Aşama 8.1 — panel iskeleti ve kimlik tamamlandı.** Kullanıcının 11 ekranlık
+Tailwind şablonu ve ayrıca gönderdiği giriş ekranı `frontend/` altına
+`scripts/build_frontend.py` ile taşındı; tasarıma dokunulmadı, yalnızca kenar
+çubuğu bağlantıları gerçek dosyalara çevrildi ve `js/app.js` eklendi. API
+paneli artık aynı origin'den sunuyor (`StaticFiles`, `FRONTEND_DIR`). Giriş
+gerçek: tarayıcıda `admin` ile `POST /api/auth/login` -> jeton ->
+`index.html`, hatalı şifrede sunucunun Türkçe mesajı, konsolda hata yok.
 
-Gerçek bir Telegram botuyla ve gerçek bir Gemini anahtarıyla ölçüldü: **5
-olay, 5 bildirim, 0 başarısız, hepsi kanıt karesiyle.** Bildirim gecikmesi
-medyan 0.90 sn, rapor üretimi medyan 1148 ms. `GEMINI_API_KEY` boşaltılıp
-tekrarlandığında zincir şablona düşerek sürdü — onay kriterinin ikinci yarısı.
+Ekranlar hâlâ şablonun sahte verisini gösteriyor — veri bağlama 8.3, canlı
+görüntü 8.4, formlar 8.5. 8.2 eksik üç ucu yazacak (kullanıcı CRUD,
+`audit_log` listesi, kamera başına sağlık) ve 8.1'in uç denetiminde çıkan
+dördüncü eksiği çözecek: analitik ekranının Doğruluk/Kesinlik/Duyarlılık/F1
+tablosunun hiçbir API karşılığı yok, bu metrikler bugün yalnız `eval/`
+altındaki çevrimdışı raporlarda üretiliyor.
 
-Bu aşamanın dersi Aşama 6'nınkinin devamı oldu: **34 birim testin hiçbiri,
-canlı koşunun ilk denemesinde çıkan iki gerçek hatayı yakalamadı.** Rapordaki
-saat 3 saat geri yazılıyordu (container UTC doğuyor, testler UTC'yi UTC ile
-karşılaştırıyordu) ve güven skoru "bilinmiyor" çıkıyordu (ham SQL `NUMERIC`
-sütununu `Decimal` döndürüyor, tür denetimi eliyordu). İkisi de yalnızca
-gerçek veritabanı + gerçek container ile görülebilirdi. Sıradaki iş Aşama 8
-(Panel) — projenin ilk kez baştan sona elle kullanılabileceği aşama.
+Aşama 7'nin dersi burada da doğrulandı: 6 birim test yeşilken panel
+konteynerden **404** dönüyordu. Neden testin göremeyeceği yerdeydi — `api`
+servisi kodu imaja gömüyor (`build: ./api`), `docker compose up -d` yeni
+`main.py`'yi almıyor, `--build` şart.
 
 ## Aşama durumu
 
@@ -40,7 +43,7 @@ gerçek veritabanı + gerçek container ile görülebilirdi. Sıradaki iş Aşam
 | 5 | Veri katmanı ve API | Tamamlandı |
 | 6 | Canlı görüntü (WebSocket) | Tamamlandı |
 | 7 | LLM ve Telegram | Tamamlandı |
-| 8 | Panel (kullanıcı şablonu) | Sırada |
+| 8 | Panel (kullanıcı şablonu) | 8.1 tamamlandı, 8.2 sırada |
 | 9 | TCN modeli ve yeni sınıflar | Bekliyor |
 | 10 | Ölçek ve tez çıktıları | Bekliyor |
 
@@ -1368,19 +1371,99 @@ gerçek `time.sleep` çağırmıyor.
 
 ---
 
+## Aşama 8.1 sonucu (2026-09-09)
+
+Panel iskeleti, kimlik akışı ve ekran-uç denetimi. Plan: `docs/ASAMA8_PLAN.md`
+(§ 1 yığın kararı, § 5 uç denetimi sonucu).
+
+### Yapılanlar
+
+| Dosya | Satır | İş |
+|---|---|---|
+| `scripts/build_frontend.py` | 292 | `sablon/*/code.html` -> `frontend/*.html`; kenar çubuğu `href="#"` bağlantılarını etikete göre gerçek dosyaya çevirir, `js/app.js` betiğini ekler, `login.html`'in sahte davranışını gerçek uca bağlar. Idempotent (iki koşu, aynı özet) |
+| `frontend/*.html` | 12 ekran | 11 panel ekranı + giriş ekranı, şablonla birebir |
+| `frontend/js/app.js` | 112 | `token`/`setToken`/`api`/`requireAuth`/`logout`, tarih-süre biçimleyicileri, `TIP_ADI`/`SEVERITY_ADI`/`DURUM_ADI`, `rowTemplate` |
+| `api/main.py`, `api/config.py` | — | `FRONTEND_DIR` (varsayılan `/frontend`) + `StaticFiles` mount, router'lardan **sonra**; dizin yoksa mount atlanır |
+| `docker-compose.yml` | — | `api` servisine `./frontend:/frontend:ro` ve `FRONTEND_DIR` |
+| `tests/test_frontend_asama8.py` | 133 | 6 test: nav hedefleri var, `href="#"` kalmadı, her sayfa `js/app.js` yüklüyor, şablon ile kopya arasında yalnız beyan edilen farklar var, `FRONTEND_DIR` yokken `api.main` import edilebiliyor |
+
+`sablon/` kaynak olarak duruyor; şablon güncellenirse `build_frontend.py`
+yeniden çalıştırılır. Tasarım korunuyor kanıtı testte: kopyadaki beyan edilen
+değişiklikler geri uygulanınca şablon birebir yeniden kuruluyor.
+
+### Giriş ekranı
+
+Kullanıcı 11 ekrandan sonra ayrı bir giriş şablonu gönderdi
+(`sablon/girisekrani/`). Elle yazılan ilk sürüm atıldı. Şablonun sahte
+`simulateLogin()`'i gerçek `POST /api/auth/login`'e bağlandı (form gövdesi,
+jeton `localStorage`), gömülü demo kimlik bilgileri temizlendi, hata için
+`#loginError` alanı eklendi. Karşılığı olmayan iki öğe **silindi**: "2FA
+Aktif" rozeti ve "Oturumu 8 saat açık tut" kutusu. Karşılığı olmayan ama
+yanıltıcı olmayan öğeler (Parolamı Unuttum, NODE/WSS/FPS altbilgisi,
+operatör/yönetici sekmeleri) pasif bırakıldı.
+
+### Doğrulama
+
+- `pytest tests/test_frontend_asama8.py -q`: 6 passed. Tüm paket: **99 passed,
+  2 skipped**
+- Konteynerden servis: `/login.html` 200, `/` 200, `/js/app.js` 200,
+  `/health` 200, `/api/cameras` 401 (jetonsuz) — statik mount API'yi
+  gölgelemiyor
+- Tarayıcıda uçtan uca: `admin` ile giriş -> `index.html`, konsolda hata yok,
+  kenar çubuğu bağlantıları gerçek dosyalara gidiyor
+- `build_frontend.py` iki kez koştu, 12 dosyanın özeti değişmedi
+
+### Bu aşamada yakalanan hata
+
+Testler yeşilken konteyner `/login.html` için **404** döndü. `api` servisi
+kodu imaja gömüyor (`build: ./api`, kod için volume yok); `docker compose up
+-d` çalışan imajı yeniden kullanıyor, yeni `main.py` konteynere hiç girmiyor.
+`docker compose up -d --build api` ile çözüldü. 8.2'den itibaren her API kod
+değişikliği `--build` ister.
+
+### Gecikme ölçümü (Aşama 5'in açık sorusu)
+
+25 istek, GPU boşta, `vision/` kapalı:
+
+| uç | host medyan | konteyner içi medyan |
+|---|---|---|
+| `/health` | 13.8 ms | 1.8 ms |
+| `/api/cameras` | 13.8 ms | — |
+| `/api/events?limit=20` | 11.1 ms | — |
+| `/api/analytics/summary` | 18.0 ms | — |
+
+Aşama 5'te ölçülen ~600 ms taban **yeniden üretilemedi**. Port
+yönlendirmesinin payı ~12 ms. Eski ölçüm GPU'su yüklü makinede alınmıştı;
+canlı koşuda (8.6) tekrar bakılacak.
+
+### 8.2'ye devreden
+
+Üç eksik uç (kullanıcı CRUD, `audit_log` listesi, Mongo `camera_health`
+okuması) + denetimde çıkan dördüncü: analitik ekranının
+Doğruluk/Kesinlik/Duyarlılık/F1 tablosunun API karşılığı yok, bu metrikler
+yalnız `eval/pilot_eval.py` ve `eval/spark_eval.py`'nin çevrimdışı
+raporlarında var. Ya bir metrik ucu yazılacak ya ekran sayı kırılımlarına
+daraltılacak. Ayrıntı: `docs/ASAMA8_PLAN.md` § 5.
+
+---
+
 ## Bir sonraki adım
 
-Aşama 8 — Panel:
+Aşama 8.2 — eksik uçlar:
 
-1. Kullanıcının Tailwind şablonu (`sablon/` altındaki 12 ekran) `frontend/`
-   içine yerleştirilir. **Tasarıma dokunulmaz**, yalnızca veri bağlanır.
-2. Canlı grid + Canvas katmanları (kutu / iskelet / bölge / ID aç-kapa),
-   `/ws/live` ve `/ws/meta` bağlanması.
-3. ROI poligon çizimi, eşik ayar formu, olay geçmişi ve filtreler,
-   Recharts yoğunluk grafikleri, `/ws/alerts` kırmızı alarm bildirimi.
+1. `api/routers/users.py`: kullanıcı listesi/ekleme/güncelleme/pasifleştirme,
+   rol denetimi `admin`, şifre `crypt()` ile veritabanında.
+2. `api/routers/audit.py`: `GET /api/audit` — kullanıcı, eylem, varlık, tarih
+   filtreleri + sayfalama.
+3. `GET /api/health/cameras`: Mongo `camera_health` koleksiyonundan kamera
+   başına son belge (FPS, çıkarım süresi, düşen kare).
+4. Analitik ekranının metrik tablosu: uç mu yazılacak, ekran mı daraltılacak —
+   karar 8.2'de verilir.
 
-**Onay kriteri:** uçtan uca demo — panelden kamera açılır, canlı görüntü akar,
-olay listelenir, kanıt klibi oynatılır, eşik panelden değiştirilir.
+**Onay kriteri:** üç ekranın alanları gerçek veriyle dolabiliyor, her uç için
+`tests/` altında bir kontrol. Sonrası 8.3 (okuma ekranları), 8.4 (canlı
+izleme), 8.5 (yazma ekranları), 8.6 (uçtan uca demo) —
+`docs/ASAMA8_PLAN.md` § 3.
 
 Aşama 8'de ilk kez çalışacak yollar: çoklu bildirim alıcısı
 (`users.telegram_chat_id` panelden doldurulunca) ve bildirim bastırma ayarları.
@@ -1474,13 +1557,13 @@ gerektiriyor, kod değişikliği değil.
 | 2026-09-09 | Sayı biçimleme `_sayi()` ile, tür denetimiyle değil | Ham SQL `NUMERIC` sütununu `Decimal` döndürüyor; `isinstance(..., float)` bunu eleyip metne "bilinmiyor" yazdı — düzeltme çağıranda değil ortak yerde |
 | 2026-09-09 | Uçtan uca gecikme ve alarm gecikmesi yalnız canlı kaynakta ölçülür | Dosya kaynağında ikisi de hattın hızını değil, 64 karelik ileri okumayı ve oturumun akış sonuyla kapanmasını ölçüyor |
 | 2026-09-09 | Kanıt satırı eşleşse de yazılır | events tablosunda clip_truncated kolonu yok; satır atlanırsa klibin kırpıldığı bilgisi tamamen kaybolur |
+| 2026-09-09 | `login.html`de "2FA Aktif" rozeti ve "Oturumu 8 saat açık tut" onay kutusu pasif bırakılmadı, silindi | Sistemde iki adımlı doğrulama yok; jeton süresi sunucuda `JWT_EXPIRE_MINUTES` ile sabitlenir, istemci değiştiremez. İkisi de gerçek olmayan bir vaat -- diğer bağlanmayan öğelerin (Parolamı Unuttum, NODE/WSS/FPS altbilgisi) aksine "arayüzde var ama pasif" bırakmak burada yanıltıcı olurdu |
+| 2026-09-09 | Panel React'siz, derleme adımı yok | Şablon düz HTML + Tailwind CDN geldi; React'e taşımak 11 ekranı elle yeniden yazmak, yani "tasarıma dokunulmaz" kuralını fiilen ihlal etmek demekti. Node/bundler zinciri de projeye girmiyor. PLAN.md'deki Recharts maddesi düştü: analitik grafikleri şablonda zaten `div` genişlikleriyle çizili, veriden hesaplanan tek şey yüzde |
+| 2026-09-09 | Panel API ile aynı origin'den, `StaticFiles` ile sunuluyor | Ayrı nginx konteyneri CORS, ikinci port ve ikinci yapılandırma demekti; tek `app.mount` ile jeton, kanıt dosyaları ve göreli yollar tek origin'de kalıyor. Mount router'lardan sonra: `/` tüm yolları yakalar |
+| 2026-09-09 | Şablon `frontend/`e elle değil `build_frontend.py` ile kopyalanıyor | Kullanıcı şablonu güncellerse 12 dosyadaki href ve betik satırı düzeltmesi elle tekrarlanamaz; betik idempotent ve testte "tasarım korunuyor" kanıtının kaynağı |
 
 ## Açık sorular
 
-- Windows host'tan API uçlarına gecikme ~600 ms sabit taban gösteriyor;
-  konteyner içinden aynı uç 18–41 ms. Fark Docker Desktop'ın port
-  yönlendirmesinden geliyor gibi duruyor ama izole edilmedi (WSL2 NAT mı,
-  makinenin GPU yükü mü). Panel geliştirmeye başlamadan ölçülmeli
 - Docker altyapısı ayaktayken görü FPS'i 36.5'ten 12–15'e düşüyor. CPU
   rekabeti olduğu varsayıldı (Spark + Kafka + iki veritabanı + iki Python
   servisi), profillenerek doğrulanmadı. Aşama 10'un çoklu kamera ölçümü bu
@@ -1537,6 +1620,13 @@ gerektiriyor, kod değişikliği değil.
   gürültüyü eler, yanlış kuralı düzeltmez — kök neden RUN kuralının kendisinde
 
 Kapanan sorular:
+
+- ~~Host'tan API'ye ~600 ms sabit taban~~ — **Aşama 8.1'de ölçüldü, taban
+  yok.** 25 istekle host'tan: `/health` medyan 13.8 ms, `/api/cameras` 13.8,
+  `/api/events?limit=20` 11.1, `/api/analytics/summary` 18.0; konteyner
+  içinden `/health` 1.8 ms. Port yönlendirmesinin maliyeti ~12 ms. Aşama 5'in
+  600 ms'lik ölçümü GPU'su yüklü makinede alınmıştı; panel için istek sayısı
+  bir tasarım kısıtı değil. Canlı koşuda (8.6) tekrar bakılacak
 
 - 4 GB VRAM'de `yolov8s-pose` sığıyor mu — evet, 49 MiB tepe kullanım
 - Gerçek döngüde FPS ne olacak — YOLO26 + ReID ile 27–37 FPS (4K olmayan

@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="tr"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VADAP - Kamera Görünümü</title>
+<!-- Google Fonts & Material Symbols -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-background": "#d8e3fb",
+                        "secondary-fixed-dim": "#adc6ff",
+                        "on-surface-variant": "#c6c6cd",
+                        "primary-fixed": "#dae2fd",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-tertiary": "#213145",
+                        "surface-container": "#152031",
+                        "on-primary-fixed-variant": "#3f465c",
+                        "inverse-primary": "#565e74",
+                        "tertiary-fixed-dim": "#b7c8e1",
+                        "primary": "#bec6e0",
+                        "surface-container-low": "#111c2d",
+                        "inverse-surface": "#d8e3fb",
+                        "on-tertiary-fixed-variant": "#38485d",
+                        "tertiary-fixed": "#d3e4fe",
+                        "secondary": "#adc6ff",
+                        "surface-container-highest": "#2a3548",
+                        "tertiary-container": "#06182b",
+                        "secondary-container": "#0566d9",
+                        "on-primary-fixed": "#131b2e",
+                        "outline-variant": "#45464d",
+                        "on-tertiary-container": "#728299",
+                        "inverse-on-surface": "#263143",
+                        "surface-bright": "#2f3a4c",
+                        "on-error": "#690005",
+                        "surface-tint": "#bec6e0",
+                        "primary-container": "#0f172a",
+                        "on-secondary-container": "#e6ecff",
+                        "on-primary-container": "#798098",
+                        "on-secondary-fixed-variant": "#004395",
+                        "error-container": "#93000a",
+                        "surface": "#081425",
+                        "on-tertiary-fixed": "#0b1c30",
+                        "on-surface": "#d8e3fb",
+                        "error": "#ffb4ab",
+                        "on-error-container": "#ffdad6",
+                        "on-primary": "#283044",
+                        "surface-container-high": "#1f2a3c",
+                        "tertiary": "#b7c8e1",
+                        "surface-container-lowest": "#040e1f",
+                        "on-secondary-fixed": "#001a42",
+                        "surface-dim": "#081425",
+                        "outline": "#909097",
+                        "background": "#081425",
+                        "on-secondary": "#002e6a",
+                        "surface-variant": "#2a3548",
+                        "primary-fixed-dim": "#bec6e0"
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.125rem",
+                        lg: "0.25rem",
+                        xl: "0.5rem",
+                        full: "0.75rem"
+                    },
+                    spacing: {
+                        unit: "4px",
+                        "stack-md": "16px",
+                        "sidebar-width": "280px",
+                        "event-stream-width": "320px",
+                        "grid-gutter": "12px",
+                        "stack-sm": "8px",
+                        "container-padding": "24px"
+                    },
+                    fontFamily: {
+                        "display-lg": ["Inter", "sans-serif"],
+                        "body-sm": ["Inter", "sans-serif"],
+                        "headline-md": ["Inter", "sans-serif"],
+                        "body-md": ["Inter", "sans-serif"],
+                        "data-mono": ["JetBrains Mono", "monospace"],
+                        "label-caps": ["Inter", "sans-serif"],
+                        "title-sm": ["Inter", "sans-serif"]
+                    },
+                    fontSize: {
+                        "display-lg": ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "body-sm": ["12px", { lineHeight: "16px", fontWeight: "400" }],
+                        "headline-md": ["24px", { lineHeight: "32px", fontWeight: "600" }],
+                        "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+                        "data-mono": ["13px", { lineHeight: "16px", fontWeight: "500" }],
+                        "label-caps": ["11px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "700" }],
+                        "title-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+            font-variation-settings: 'FILL' 1;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface h-screen overflow-hidden flex flex-col font-sans antialiased selection:bg-secondary-container selection:text-on-secondary-container">
+<!-- JSON Based Components -->
+<!-- SideNavBar -->
+<nav class="bg-surface-container dark:bg-surface-container border-r border-outline-variant dark:border-outline-variant flex flex-col h-screen fixed left-0 top-0 z-40 w-sidebar-width font-body-md text-body-md">
+<!-- Header -->
+<div class="p-container-padding flex items-center gap-stack-sm border-b border-outline-variant">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center text-on-primary-container flex-shrink-0">
+<span class="material-symbols-outlined icon-fill">visibility</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface dark:text-on-surface leading-none tracking-tight">VADAP</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Anomali Tespit Sistemi</p>
+</div>
+</div>
+<!-- Navigation Tabs -->
+<ul class="flex flex-col py-stack-md flex-1 overflow-y-auto">
+<!-- Canlı İzleme -->
+<li>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors active:scale-[0.98]" href="index.html">
+<span class="material-symbols-outlined text-lg">videocam</span>
+<span>Canlı İzleme</span>
+</a>
+</li>
+<!-- Olaylar -->
+<li>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors active:scale-[0.98]" href="olaylar.html">
+<span class="material-symbols-outlined text-lg">notifications_active</span>
+<span>Olaylar</span>
+</a>
+</li>
+<!-- Kameralar (ACTIVE STATE) -->
+<li>
+<a class="flex items-center gap-3 text-secondary dark:text-secondary font-bold border-l-2 border-secondary bg-surface-container-high px-4 py-3 active:scale-[0.98] transition-transform" href="kameralar.html">
+<span class="material-symbols-outlined text-lg icon-fill">videocam_off</span>
+<span>Kameralar</span>
+</a>
+</li>
+<!-- Bölgeler -->
+<li>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors active:scale-[0.98]" href="bolgeler.html">
+<span class="material-symbols-outlined text-lg">map</span>
+<span>Bölgeler</span>
+</a>
+</li>
+<!-- Analitik -->
+<li>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors active:scale-[0.98]" href="analitik.html">
+<span class="material-symbols-outlined text-lg">analytics</span>
+<span>Analitik</span>
+</a>
+</li>
+<!-- Sistem Sağlığı -->
+<li>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors active:scale-[0.98]" href="sistem-sagligi.html">
+<span class="material-symbols-outlined text-lg">health_and_safety</span>
+<span>Sistem Sağlığı</span>
+</a>
+</li>
+<!-- Kullanıcılar -->
+<li>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors active:scale-[0.98]" href="kullanicilar.html">
+<span class="material-symbols-outlined text-lg">group</span>
+<span>Kullanıcılar</span>
+</a>
+</li>
+<!-- Denetim Kaydı -->
+<li>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors active:scale-[0.98]" href="denetim-kaydi.html">
+<span class="material-symbols-outlined text-lg">history</span>
+<span>Denetim Kaydı</span>
+</a>
+</li>
+<!-- Ayarlar -->
+<li class="mt-auto border-t border-outline-variant pt-2">
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors active:scale-[0.98]" href="ayarlar.html">
+<span class="material-symbols-outlined text-lg">settings</span>
+<span>Ayarlar</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Main Content Wrapper -->
+<div class="flex flex-col flex-1 ml-sidebar-width h-screen relative">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-surface border-b border-outline-variant dark:border-outline-variant flex justify-between items-center w-full px-container-padding h-16 sticky top-0 z-30 font-title-sm text-title-sm">
+<!-- Product Name / Context -->
+<div class="flex items-center gap-4">
+<span class="font-headline-md text-headline-md font-black text-on-surface dark:text-on-surface">VADAP Kontrol Paneli</span>
+<div class="h-4 w-px bg-outline-variant"></div>
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-sm">videocam</span>
+<span class="font-body-md text-body-md">Kamera-04_Ana_Giris</span>
+</div>
+</div>
+<!-- Actions -->
+<div class="flex items-center gap-4">
+<!-- Primary/Secondary Actions -->
+<button class="px-4 py-1.5 rounded bg-surface-container border border-outline-variant text-on-surface hover:bg-surface-variant transition-colors text-body-sm font-label-caps uppercase tracking-wider">Alarm Geçmişi</button>
+<button class="px-4 py-1.5 rounded bg-secondary-container text-on-secondary-container hover:brightness-110 transition-all text-body-sm font-label-caps uppercase tracking-wider font-bold">Canlı İzle</button>
+<div class="h-4 w-px bg-outline-variant mx-2"></div>
+<!-- Icon Actions -->
+<div class="flex items-center gap-1 text-primary dark:text-primary">
+<button class="hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors flex items-center justify-center opacity-80 hover:opacity-100" title="RSS">
+<span class="material-symbols-outlined">rss_feed</span>
+</button>
+<button class="hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors flex items-center justify-center opacity-80 hover:opacity-100 relative" title="Notifications">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border border-surface"></span>
+</button>
+<button class="hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors flex items-center justify-center opacity-80 hover:opacity-100" title="Dark Mode">
+<span class="material-symbols-outlined">dark_mode</span>
+</button>
+<button class="hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors flex items-center justify-center opacity-80 hover:opacity-100" title="Profile">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Workspace (Canvas + Stream) -->
+<main class="flex-1 flex p-grid-gutter gap-grid-gutter overflow-hidden bg-background">
+<!-- Left: Large Camera Canvas Area -->
+<section class="flex-1 flex flex-col bg-surface-container rounded border border-outline-variant overflow-hidden relative shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
+<!-- Overlay Layer (Absolute) -->
+<div class="absolute inset-0 pointer-events-none z-10 flex flex-col justify-between">
+<!-- Top Controls Overlay -->
+<div class="p-stack-md flex justify-between items-start">
+<!-- Stream Info Badge -->
+<div class="bg-surface-container-high/90 backdrop-blur border border-outline-variant rounded px-3 py-1.5 flex items-center gap-2 pointer-events-auto shadow-lg">
+<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+<span class="font-data-mono text-data-mono text-on-surface">KAMERA-04 (Ana Giriş)</span>
+<span class="text-on-surface-variant mx-1">|</span>
+<span class="font-data-mono text-data-mono text-on-surface-variant">1920x1080</span>
+</div>
+<!-- Vision Layer Controls -->
+<div class="flex gap-2 pointer-events-auto">
+<button class="bg-secondary-container/90 text-on-secondary-container border border-secondary-fixed-dim rounded px-3 py-1.5 flex items-center gap-1.5 hover:bg-secondary-container transition-colors shadow-lg group">
+<span class="material-symbols-outlined text-[16px] group-hover:scale-110 transition-transform">crop_square</span>
+<span class="font-label-caps text-label-caps uppercase">Kutu</span>
+</button>
+<button class="bg-surface-container-high/90 text-on-surface-variant hover:text-on-surface border border-outline-variant rounded px-3 py-1.5 flex items-center gap-1.5 transition-colors shadow-lg">
+<span class="material-symbols-outlined text-[16px]">accessibility_new</span>
+<span class="font-label-caps text-label-caps uppercase">İskelet</span>
+</button>
+<button class="bg-secondary-container/90 text-on-secondary-container border border-secondary-fixed-dim rounded px-3 py-1.5 flex items-center gap-1.5 transition-colors shadow-lg">
+<span class="material-symbols-outlined text-[16px]">dashboard_customize</span>
+<span class="font-label-caps text-label-caps uppercase">Bölge</span>
+</button>
+<button class="bg-surface-container-high/90 text-on-surface-variant hover:text-on-surface border border-outline-variant rounded px-3 py-1.5 flex items-center gap-1.5 transition-colors shadow-lg">
+<span class="material-symbols-outlined text-[16px]">badge</span>
+<span class="font-label-caps text-label-caps uppercase">ID</span>
+</button>
+</div>
+</div>
+<!-- Simulated Analytics Overlays (Absolute inside container) -->
+<!-- Zone -->
+<div class="absolute bottom-20 left-1/4 w-1/3 h-1/3 border-2 border-dashed border-secondary/50 bg-secondary/10 rounded-sm pointer-events-none flex items-center justify-center">
+<span class="text-secondary/50 font-label-caps uppercase text-xs tracking-widest bg-surface-container/80 px-2 py-1 rounded">Yasak Bölge A</span>
+</div>
+<!-- Detection Box -->
+<div class="absolute top-1/3 left-1/2 w-32 h-64 border-2 border-error bg-error/10 pointer-events-none rounded-sm">
+<div class="bg-error text-on-error font-data-mono text-[10px] px-1 py-0.5 absolute -top-5 left-[-2px] whitespace-nowrap">
+                            KİŞİ_İHLALİ %98.4
+                        </div>
+</div>
+</div>
+<!-- Video Canvas Content -->
+<div class="flex-1 bg-black relative" data-alt="A high-resolution, wide-angle surveillance camera feed of a modern corporate lobby at night. The lighting is slightly dim but clear, employing a dark mode, highly technical aesthetic with deep shadows and cool, sterile light sources. A lone figure is walking near a restricted access door, creating a strong focal point for computer vision analysis. The overall mood is intense, observant, and precision-focused." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuC_hULONM50qW6JK4p2MAwqaoXm_l9J5ya_eoLHo52RKT5xbaxLbK9pjcCo_7GCrwKHSAgSDt_StLaqhrDrA2u6dFgE6dQp8lUx97QbDm5s3KJ0grO8yf5eTw8XyxxnAkYzA2-QBYt29CAn2A_O_8qE1k0XoJjxdAyCWSoySjpeffmZlH089aHI6oKL2B1N45KJkhYZBL87MSta0EuhP8xGZS9fLKVsnBVHaoUor05DsLYZTBKeyNif'); background-size: cover; background-position: center;">
+<!-- Placeholder background replaces actual video stream in this mockup -->
+</div>
+<!-- Bottom Health Metrics Panel -->
+<div class="h-12 bg-surface-container border-t border-outline-variant flex items-center justify-between px-container-padding z-20 shrink-0">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider">Gerçek FPS</span>
+<span class="font-data-mono text-data-mono text-secondary">24.2</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider">Düşen Kare</span>
+<span class="font-data-mono text-data-mono text-on-surface">0</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider">Çıkarım Süresi</span>
+<span class="font-data-mono text-data-mono text-primary">42ms</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Model Aktif: YOLOv8-Custom</span>
+</div>
+<div class="h-4 w-px bg-outline-variant"></div>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" title="Ayarlar">
+<span class="material-symbols-outlined text-[18px]">tune</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Right: Event Stream -->
+<aside class="w-event-stream-width flex flex-col bg-surface-container rounded border border-outline-variant overflow-hidden shrink-0">
+<!-- Stream Header -->
+<div class="p-3 border-b border-outline-variant bg-surface-container-low flex justify-between items-center">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-error icon-fill text-sm animate-pulse">emergency_home</span>
+<h2 class="font-label-caps text-label-caps text-on-surface uppercase tracking-widest">Canlı Olay Akışı</h2>
+</div>
+<span class="font-data-mono text-[10px] text-on-surface-variant">Sadece Kamera-04</span>
+</div>
+<!-- Stream List -->
+<div class="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
+<!-- Event Card: Critical -->
+<div class="bg-surface-container-high border border-error/50 rounded p-3 flex flex-col gap-2 relative overflow-hidden group cursor-pointer hover:bg-surface-container-highest transition-colors">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-error"></div>
+<div class="flex justify-between items-start pl-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-error text-[16px]">directions_run</span>
+<span class="font-body-sm text-body-sm text-error font-semibold">Sınır İhlali</span>
+</div>
+<span class="font-data-mono text-[11px] text-on-surface-variant">14:22:04</span>
+</div>
+<div class="flex gap-3 pl-2">
+<div class="w-16 h-12 bg-surface-container-lowest border border-outline-variant rounded overflow-hidden flex-shrink-0" data-alt="A very small, low-resolution thumbnail crop from a security camera. It shows a blurry silhouette of a person stepping over a marked yellow line on an industrial floor. High contrast, grainy texture, dramatic dark mode surveillance feel." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuC-4wblJp6NetUCOZC3glhD7PfUXJgM3Abqav3MCE2w0s1tkKHUfgjrt-IBWDY8-gue0jnsQSLqHBxFnfC-m2gYAIIG6oBLoxbvGgP1Y8gpJaoE5HqLGCMn97LHtPRMjo25IPTMzPuSsenYvHli2ZjQIq3DCatbkr2iVXsZ-o7oUscvOQQes_JQnzHzNIXgb9N8amMinByKXViMrT8iqN1LtpMhz0SpRjOF56bS_CpsWQBl58bdV875'); background-size: cover; background-position: center;"></div>
+<div class="flex flex-col justify-between flex-1">
+<p class="font-body-sm text-[11px] text-on-surface-variant leading-tight">Yasak Bölge A alanına yetkisiz giriş tespit edildi.</p>
+<button class="self-start text-secondary hover:text-secondary-fixed-dim font-label-caps text-[10px] uppercase mt-1 transition-colors">İncele →</button>
+</div>
+</div>
+</div>
+<!-- Event Card: Warning -->
+<div class="bg-surface-container-high border border-outline-variant rounded p-3 flex flex-col gap-2 relative overflow-hidden group cursor-pointer hover:bg-surface-container-highest transition-colors">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500/50"></div>
+<div class="flex justify-between items-start pl-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-yellow-500 text-[16px]">warning</span>
+<span class="font-body-sm text-body-sm text-yellow-500 font-semibold">Şüpheli Bekleme</span>
+</div>
+<span class="font-data-mono text-[11px] text-on-surface-variant">14:18:33</span>
+</div>
+<div class="flex gap-3 pl-2">
+<div class="w-16 h-12 bg-surface-container-lowest border border-outline-variant rounded overflow-hidden flex-shrink-0" data-alt="A tiny security camera thumbnail showing a static figure standing near a corner in a dimly lit hallway. The aesthetic is cold, technical, and slightly noisy, typical of low-light CCTV footage in a corporate environment." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCI1TIi-iPHaGNVQEWmWz4EYZxL89fxzKNCzfKt1YWi2BAWojODvto86Kfs7uytT74W1g5YvfO_-nsa961H30oTSNE250aXI2YX-lcrRhktvH5jRoB_8xYTpWPs3kAXwSaci_2bp_UC8kCs7Gp078do2KGGdu39gfJdr46Lv7t0x9RZ_XA7sMCjEwBNg-HbTSPfbeEy8xkBT7k5e-NtO65fQUhRDrWG4Orpt8w6K6fN4fV8KL35ICVY'); background-size: cover; background-position: center;"></div>
+<div class="flex flex-col justify-between flex-1">
+<p class="font-body-sm text-[11px] text-on-surface-variant leading-tight">ID_482 60 saniyeden uzun süredir hareketsiz.</p>
+<button class="self-start text-secondary hover:text-secondary-fixed-dim font-label-caps text-[10px] uppercase mt-1 transition-colors">İncele →</button>
+</div>
+</div>
+</div>
+<!-- Event Card: Info (Older) -->
+<div class="bg-surface-container-low border border-outline-variant/50 rounded p-3 flex flex-col gap-2 relative overflow-hidden opacity-75">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-outline-variant"></div>
+<div class="flex justify-between items-start pl-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-[16px]">info</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant font-semibold">Kalabalık Artışı</span>
+</div>
+<span class="font-data-mono text-[11px] text-on-surface-variant">13:45:00</span>
+</div>
+<div class="flex gap-3 pl-2">
+<div class="flex flex-col justify-between flex-1">
+<p class="font-body-sm text-[11px] text-on-surface-variant leading-tight">Bölge yoğunluğu %70 seviyesine ulaştı.</p>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</main>
+</div>
+<script src="js/app.js" defer></script>
+</body></html>

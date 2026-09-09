@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="tr"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VADAP - Ayarlar</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-background": "#d8e3fb",
+                    "secondary-fixed-dim": "#adc6ff",
+                    "on-surface-variant": "#c6c6cd",
+                    "primary-fixed": "#dae2fd",
+                    "secondary-fixed": "#d8e2ff",
+                    "on-tertiary": "#213145",
+                    "surface-container": "#152031",
+                    "on-primary-fixed-variant": "#3f465c",
+                    "inverse-primary": "#565e74",
+                    "tertiary-fixed-dim": "#b7c8e1",
+                    "primary": "#bec6e0",
+                    "surface-container-low": "#111c2d",
+                    "inverse-surface": "#d8e3fb",
+                    "on-tertiary-fixed-variant": "#38485d",
+                    "tertiary-fixed": "#d3e4fe",
+                    "secondary": "#adc6ff",
+                    "surface-container-highest": "#2a3548",
+                    "tertiary-container": "#06182b",
+                    "secondary-container": "#0566d9",
+                    "on-primary-fixed": "#131b2e",
+                    "outline-variant": "#45464d",
+                    "on-tertiary-container": "#728299",
+                    "inverse-on-surface": "#263143",
+                    "surface-bright": "#2f3a4c",
+                    "on-error": "#690005",
+                    "surface-tint": "#bec6e0",
+                    "primary-container": "#0f172a",
+                    "on-secondary-container": "#e6ecff",
+                    "on-primary-container": "#798098",
+                    "on-secondary-fixed-variant": "#004395",
+                    "error-container": "#93000a",
+                    "surface": "#081425",
+                    "on-tertiary-fixed": "#0b1c30",
+                    "on-surface": "#d8e3fb",
+                    "error": "#ffb4ab",
+                    "on-error-container": "#ffdad6",
+                    "on-primary": "#283044",
+                    "surface-container-high": "#1f2a3c",
+                    "tertiary": "#b7c8e1",
+                    "surface-container-lowest": "#040e1f",
+                    "on-secondary-fixed": "#001a42",
+                    "surface-dim": "#081425",
+                    "outline": "#909097",
+                    "background": "#081425",
+                    "on-secondary": "#002e6a",
+                    "surface-variant": "#2a3548",
+                    "primary-fixed-dim": "#bec6e0"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "unit": "4px",
+                    "stack-md": "16px",
+                    "sidebar-width": "280px",
+                    "event-stream-width": "320px",
+                    "grid-gutter": "12px",
+                    "stack-sm": "8px",
+                    "container-padding": "24px"
+            },
+            "fontFamily": {
+                    "display-lg": [
+                            "Inter"
+                    ],
+                    "body-sm": [
+                            "Inter"
+                    ],
+                    "headline-md": [
+                            "Inter"
+                    ],
+                    "body-md": [
+                            "Inter"
+                    ],
+                    "data-mono": [
+                            "JetBrains Mono"
+                    ],
+                    "label-caps": [
+                            "Inter"
+                    ],
+                    "title-sm": [
+                            "Inter"
+                    ]
+            },
+            "fontSize": {
+                    "display-lg": [
+                            "32px",
+                            {
+                                    "lineHeight": "40px",
+                                    "letterSpacing": "-0.02em",
+                                    "fontWeight": "700"
+                            }
+                    ],
+                    "body-sm": [
+                            "12px",
+                            {
+                                    "lineHeight": "16px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "headline-md": [
+                            "24px",
+                            {
+                                    "lineHeight": "32px",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "20px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "data-mono": [
+                            "13px",
+                            {
+                                    "lineHeight": "16px",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "label-caps": [
+                            "11px",
+                            {
+                                    "lineHeight": "16px",
+                                    "letterSpacing": "0.05em",
+                                    "fontWeight": "700"
+                            }
+                    ],
+                    "title-sm": [
+                            "18px",
+                            {
+                                    "lineHeight": "24px",
+                                    "fontWeight": "600"
+                            }
+                    ]
+            }
+    },
+        },
+      }
+    </script>
+</head>
+<body class="bg-background text-on-background font-body-md antialiased overflow-x-hidden min-h-screen">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-container-padding h-16 sticky top-0 z-30 ml-[280px] bg-surface dark:bg-surface text-primary dark:text-primary font-title-sm text-title-sm border-b border-outline-variant dark:border-outline-variant w-[calc(100%-280px)]">
+<div class="flex items-center gap-4">
+<span class="font-headline-md text-headline-md font-black text-on-surface dark:text-on-surface">VADAP Kontrol Paneli</span>
+</div>
+<!-- Search Bar (on_left in JSON, but typical placement is center or right, following JSON as closely as structural limits allow for top bar) -->
+<div class="flex-1 max-w-md mx-8">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="w-full bg-surface-container-high border border-outline-variant rounded-full py-1.5 pl-10 pr-4 text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-secondary transition-colors text-body-sm font-body-sm h-8" placeholder="Ara..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="bg-primary-container text-on-primary-container hover:bg-surface-variant dark:hover:bg-surface-variant px-4 py-1.5 rounded-full font-label-caps text-label-caps transition-colors border border-outline-variant">
+                Canlı İzle
+            </button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors font-label-caps text-label-caps">
+                Alarm Geçmişi
+            </button>
+<div class="flex items-center gap-2 ml-4 border-l border-outline-variant pl-4">
+<button class="text-on-surface-variant hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors flex items-center justify-center h-9 w-9">
+<span class="material-symbols-outlined text-[20px]">rss_feed</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors flex items-center justify-center h-9 w-9">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors flex items-center justify-center h-9 w-9">
+<span class="material-symbols-outlined text-[20px]">dark_mode</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-variant dark:hover:bg-surface-variant rounded-full p-2 transition-colors flex items-center justify-center h-9 w-9">
+<span class="material-symbols-outlined text-[20px]">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- SideNavBar -->
+<nav class="flex flex-col h-screen fixed left-0 top-0 z-40 bg-surface-container dark:bg-surface-container text-secondary dark:text-secondary font-body-md text-body-md border-r border-outline-variant dark:border-outline-variant w-[280px]">
+<!-- Brand Area -->
+<div class="h-16 flex items-center px-6 border-b border-outline-variant shrink-0">
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md font-bold text-on-surface dark:text-on-surface leading-none tracking-tight">VADAP</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Anomali Tespit Sistemi</span>
+</div>
+</div>
+<!-- Navigation Links -->
+<div class="flex-1 overflow-y-auto py-4 flex flex-col gap-1">
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 mx-2 rounded hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="index.html">
+<span class="material-symbols-outlined text-lg">videocam</span>
+<span>Canlı İzleme</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 mx-2 rounded hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="olaylar.html">
+<span class="material-symbols-outlined text-lg">notifications_active</span>
+<span>Olaylar</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 mx-2 rounded hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="kameralar.html">
+<span class="material-symbols-outlined text-lg">videocam_off</span>
+<span>Kameralar</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 mx-2 rounded hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="bolgeler.html">
+<span class="material-symbols-outlined text-lg">map</span>
+<span>Bölgeler</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 mx-2 rounded hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="analitik.html">
+<span class="material-symbols-outlined text-lg">analytics</span>
+<span>Analitik</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 mx-2 rounded hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="sistem-sagligi.html">
+<span class="material-symbols-outlined text-lg">health_and_safety</span>
+<span>Sistem Sağlığı</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 mx-2 rounded hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="kullanicilar.html">
+<span class="material-symbols-outlined text-lg">group</span>
+<span>Kullanıcılar</span>
+</a>
+<a class="flex items-center gap-3 text-on-surface-variant dark:text-on-surface-variant px-4 py-3 mx-2 rounded hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors" href="denetim-kaydi.html">
+<span class="material-symbols-outlined text-lg">history</span>
+<span>Denetim Kaydı</span>
+</a>
+<a class="flex items-center gap-3 text-secondary dark:text-secondary font-bold border-l-2 border-secondary bg-surface-container-high px-4 py-3 mx-2 rounded-r hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors relative left-[-8px] pl-[18px]" href="ayarlar.html">
+<span class="material-symbols-outlined text-lg">settings</span>
+<span>Ayarlar</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="ml-[280px] p-container-padding pb-32">
+<div class="max-w-6xl mx-auto">
+<!-- Page Header -->
+<div class="mb-stack-md flex justify-between items-end">
+<div>
+<h1 class="font-display-lg text-display-lg text-on-surface">Tespit Ayarları</h1>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2">Analitik motorunun hassasiyet ve algılama eşiklerini yapılandırın.</p>
+</div>
+<!-- Tabs -->
+<div class="flex bg-surface-container-low border border-outline-variant p-1 rounded-lg">
+<button class="px-6 py-2 rounded bg-surface-variant text-on-surface font-title-sm text-title-sm shadow-sm transition-all border border-outline-variant">Global</button>
+<button class="px-6 py-2 rounded text-on-surface-variant hover:text-on-surface font-title-sm text-title-sm transition-all hover:bg-surface-container-highest">Kamera Bazlı</button>
+</div>
+</div>
+<!-- Bento Grid Layout for Settings -->
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-grid-gutter">
+<!-- Model Settings -->
+<section class="bg-surface-container border border-outline-variant rounded-xl p-6 relative overflow-hidden flex flex-col">
+<div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-container to-surface-container"></div>
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-secondary">model_training</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Model Parametreleri</h2>
+</div>
+<div class="space-y-6 flex-1">
+<!-- Input Group -->
+<div>
+<div class="flex justify-between items-center mb-2">
+<label class="font-body-md text-body-md text-on-surface flex items-center gap-2">
+                                    Pose Güven Eşiği (Confidence)
+                                    <div class="group relative cursor-help">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">info</span>
+<div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-surface-bright border border-outline-variant rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 font-body-sm text-body-sm text-on-surface">
+                                            İnsan iskelet yapısının tespit edilme güven aralığı. Düşük değerler daha fazla tespit, ancak daha fazla yanlış alarm üretir (Örn: 0.65).
+                                        </div>
+</div>
+</label>
+<span class="font-data-mono text-data-mono text-secondary">0.75</span>
+</div>
+<input class="w-full accent-secondary h-2 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" max="1" min="0" step="0.05" type="range" value="0.75"/>
+<div class="flex justify-between mt-1 font-body-sm text-body-sm text-on-surface-variant">
+<span>Gevşek (0.1)</span>
+<span>Katı (1.0)</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Düşme (Fall Detection) -->
+<section class="bg-surface-container border border-outline-variant rounded-xl p-6 relative overflow-hidden">
+<div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-error to-surface-container"></div>
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-error">personal_injury</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Düşme Tespiti</h2>
+</div>
+<div class="space-y-6">
+<div>
+<div class="flex justify-between items-center mb-2">
+<label class="font-body-md text-body-md text-on-surface flex items-center gap-2">
+                                    Maksimum Eğim Açısı
+                                    <div class="group relative cursor-help">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">info</span>
+<div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-surface-bright border border-outline-variant rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 font-body-sm text-body-sm text-on-surface">
+                                            Yere göre dikey eksenden sapma açısı (derece). Bu açının üzerindeki yatay konumlanmalar 'düşme' olarak yorumlanır.
+                                        </div>
+</div>
+</label>
+</div>
+<div class="relative">
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded px-4 py-2 font-data-mono text-data-mono text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-all outline-none" type="number" value="65"/>
+<span class="absolute right-4 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-on-surface-variant">Derece (°)</span>
+</div>
+</div>
+<div>
+<div class="flex justify-between items-center mb-2">
+<label class="font-body-md text-body-md text-on-surface flex items-center gap-2">
+                                    Süre Eşiği
+                                </label>
+</div>
+<div class="relative">
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded px-4 py-2 font-data-mono text-data-mono text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-all outline-none" step="0.5" type="number" value="2.5"/>
+<span class="absolute right-4 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-on-surface-variant">Saniye (sn)</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Koşma (Run Detection) -->
+<section class="bg-surface-container border border-outline-variant rounded-xl p-6 relative overflow-hidden">
+<div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-tertiary to-surface-container"></div>
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-tertiary">directions_run</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Koşma Tespiti</h2>
+</div>
+<div class="space-y-6">
+<div>
+<div class="flex justify-between items-center mb-2">
+<label class="font-body-md text-body-md text-on-surface flex items-center gap-2">
+                                    Hız Eşiği (BBox Deplasmanı)
+                                    <div class="group relative cursor-help">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">info</span>
+<div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-surface-bright border border-outline-variant rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 font-body-sm text-body-sm text-on-surface">
+                                            Bounding Box'ın saniyedeki yer değiştirme miktarının, kendi yüksekliğine oranı. Örn: '1.20 = saniyede kendi boyunun 1.2 katı' yer değiştirme koşma sayılır.
+                                        </div>
+</div>
+</label>
+</div>
+<div class="relative">
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded px-4 py-2 font-data-mono text-data-mono text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-all outline-none" step="0.1" type="number" value="1.20"/>
+<span class="absolute right-4 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-on-surface-variant">Çarpan (xH)</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Kavga & Kayan Pencere -->
+<section class="bg-surface-container border border-outline-variant rounded-xl p-6 relative overflow-hidden">
+<div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-on-surface-variant to-surface-container"></div>
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-on-surface-variant">sports_martial_arts</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Kavga &amp; Analiz Penceresi</h2>
+</div>
+<div class="space-y-6">
+<!-- Kavga -->
+<div>
+<div class="flex justify-between items-center mb-2">
+<label class="font-body-md text-body-md text-on-surface flex items-center gap-2">
+                                    Kesişim Süresi (Kavga)
+                                    <div class="group relative cursor-help">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">info</span>
+<div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-surface-bright border border-outline-variant rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 font-body-sm text-body-sm text-on-surface">
+                                            İki veya daha fazla kişinin Bounding Box'larının kesiştiği ve agresif hareket vektörlerinin tespit edildiği minimum süre.
+                                        </div>
+</div>
+</label>
+</div>
+<div class="relative">
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded px-4 py-2 font-data-mono text-data-mono text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-all outline-none" step="0.5" type="number" value="4.0"/>
+<span class="absolute right-4 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-on-surface-variant">Saniye (sn)</span>
+</div>
+</div>
+<hr class="border-outline-variant border-dashed"/>
+<!-- Kayan Pencere -->
+<div>
+<div class="flex justify-between items-center mb-2">
+<label class="font-body-md text-body-md text-on-surface flex items-center gap-2">
+                                    Kayan Pencere Boyutu (Sliding Window)
+                                    <div class="group relative cursor-help">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">info</span>
+<div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-surface-bright border border-outline-variant rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 font-body-sm text-body-sm text-on-surface">
+                                            Analizin yapıldığı geçmiş kare sayısı (Frame buffer). Büyük değerler daha tutarlı ancak gecikmeli tespit sağlar.
+                                        </div>
+</div>
+</label>
+</div>
+<select class="w-full bg-surface-container-lowest border border-outline-variant rounded px-4 py-2 font-data-mono text-data-mono text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-all outline-none appearance-none">
+<option value="15">15 Frame (~0.5s)</option>
+<option selected="" value="30">30 Frame (~1.0s)</option>
+<option value="60">60 Frame (~2.0s)</option>
+<option value="90">90 Frame (~3.0s)</option>
+</select>
+</div>
+</div>
+</section>
+</div>
+<!-- Action Bar Fixed at Bottom -->
+<div class="fixed bottom-0 left-[280px] right-0 bg-surface border-t border-outline-variant px-container-padding py-4 flex justify-between items-center z-20">
+<p class="font-body-sm text-body-sm text-on-surface-variant">Son değişiklik: 2 saat önce</p>
+<div class="flex gap-4">
+<button class="px-6 py-2 rounded border border-outline-variant text-on-surface hover:bg-surface-variant transition-colors font-title-sm text-title-sm">
+                        Varsayılana Dön
+                    </button>
+<button class="px-6 py-2 rounded bg-secondary-container text-on-secondary-container hover:bg-secondary-fixed transition-colors font-title-sm text-title-sm shadow-md font-semibold">
+                        Kaydet
+                    </button>
+</div>
+</div>
+</div>
+</main>
+<script src="js/app.js" defer></script>
+</body></html>

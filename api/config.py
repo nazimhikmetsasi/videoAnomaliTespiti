@@ -45,6 +45,10 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", os.getenv("KAFKA_BOOTSTRAP_INTERN
 # api konteynerinde ayni agac "/storage" salt-okunur baglanir (docker-compose.yml).
 STORAGE_DIR = os.getenv("STORAGE_DIR", "storage")
 
+# Panel statik dosyalari (Asama 8). Konteynerde "./frontend:/frontend:ro"
+# baglanir; dizin yoksa main.py mount'u atlar (API-only calisma bozulmaz).
+FRONTEND_DIR = os.getenv("FRONTEND_DIR", "/frontend")
+
 # api/llm.py (Asama 7). Bos anahtar = kanal kapali, ayri bir bayrak yok
 # (ASAMA7_PLAN.md SS6).
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

@@ -1,0 +1,535 @@
+<!DOCTYPE html><html class="dark" lang="tr"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>VADAP | Video Tabanlı Anomali Tespit ve Davranış Analizi Platformu</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-bright": "#2f3a4c",
+                        "primary": "#bec6e0",
+                        "surface-variant": "#2a3548",
+                        "tertiary-fixed": "#d3e4fe",
+                        "surface-container-highest": "#2a3548",
+                        "on-tertiary-fixed": "#0b1c30",
+                        "primary-fixed-dim": "#bec6e0",
+                        "secondary-fixed-dim": "#adc6ff",
+                        "secondary-container": "#0566d9",
+                        "inverse-surface": "#d8e3fb",
+                        "on-surface": "#d8e3fb",
+                        "error-container": "#93000a",
+                        "surface": "#081425",
+                        "on-primary-fixed": "#131b2e",
+                        "outline": "#909097",
+                        "secondary": "#38bdf8",
+                        "brand-blue": "#3b82f6",
+                        "brand-cyan": "#06b6d4",
+                        "on-primary-fixed-variant": "#3f465c",
+                        "on-tertiary": "#213145",
+                        "on-secondary-fixed": "#001a42",
+                        "on-surface-variant": "#94a3b8",
+                        "error": "#f87171",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-primary-container": "#798098",
+                        "inverse-primary": "#565e74",
+                        "outline-variant": "#334155",
+                        "surface-container-lowest": "#040e1f",
+                        "tertiary-container": "#06182b",
+                        "on-primary": "#283044",
+                        "primary-fixed": "#dae2fd",
+                        "on-secondary-container": "#e6ecff",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-container": "#728299",
+                        "tertiary-fixed-dim": "#b7c8e1",
+                        "background": "#081425",
+                        "primary-container": "#0f172a",
+                        "inverse-on-surface": "#263143",
+                        "on-secondary-fixed-variant": "#004395",
+                        "on-tertiary-fixed-variant": "#38485d",
+                        "surface-container-high": "#131f33",
+                        "on-background": "#d8e3fb",
+                        "surface-container-low": "#0b1627",
+                        "on-secondary": "#002e6a",
+                        "surface-container": "#0f1c30",
+                        "surface-tint": "#bec6e0",
+                        "on-error": "#690005",
+                        "surface-dim": "#040c1a",
+                        "tertiary": "#b7c8e1"
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace']
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'scan-slow': 'radarSweep 10s linear infinite',
+                        'grid-breathe': 'gridPulse 8s ease-in-out infinite alternate',
+                        'shimmer': 'shimmer 2.4s infinite linear'
+                    },
+                    keyframes: {
+                        radarSweep: {
+                            '0%': { transform: 'rotate(0deg)' },
+                            '100%': { transform: 'rotate(360deg)' }
+                        },
+                        gridPulse: {
+                            '0%': { opacity: '0.2' },
+                            '100%': { opacity: '0.45' }
+                        },
+                        shimmer: {
+                            '0%': { transform: 'translateX(-100%)' },
+                            '100%': { transform: 'translateX(200%)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #040e1f;
+            color: #d8e3fb;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+        }
+
+        /* Tactical Grid Background */
+        .bg-grid-cyber {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(59, 130, 246, 0.07) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(59, 130, 246, 0.07) 1px, transparent 1px);
+        }
+
+        /* Central Surveillance Radar Sweep */
+        .radar-disc {
+            position: absolute;
+            width: 820px;
+            height: 820px;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 1px solid rgba(56, 189, 248, 0.12);
+            pointer-events: none;
+            box-shadow: 0 0 120px rgba(14, 165, 233, 0.05) inset;
+        }
+        .radar-disc::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 50%;
+            height: 50%;
+            background: conic-gradient(from 0deg, rgba(56, 189, 248, 0.28) 0deg, rgba(6, 182, 212, 0.05) 45deg, transparent 90deg);
+            transform-origin: 0% 100%;
+            animation: radarSweep 8s linear infinite;
+            border-radius: 100% 0 0 0;
+        }
+        .radar-ring-2 {
+            position: absolute;
+            width: 540px;
+            height: 540px;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 1px dashed rgba(59, 130, 246, 0.18);
+            pointer-events: none;
+        }
+        .radar-ring-3 {
+            position: absolute;
+            width: 280px;
+            height: 280px;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 1px solid rgba(59, 130, 246, 0.15);
+            pointer-events: none;
+        }
+
+        /* Glassmorphism Auth Card */
+        .glass-panel {
+            background: linear-gradient(135deg, rgba(15, 28, 48, 0.85) 0%, rgba(8, 20, 37, 0.92) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 40px rgba(56, 189, 248, 0.07);
+        }
+
+        /* Animated border beam */
+        .card-glow-border {
+            position: relative;
+        }
+        .card-glow-border::after {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.45), rgba(59, 130, 246, 0.08), rgba(16, 185, 129, 0.35));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+
+        /* Button shimmer highlight */
+        .btn-shimmer {
+            position: relative;
+            overflow: hidden;
+        }
+        .btn-shimmer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 60%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+            transform: skewX(-20deg) translateX(-150%);
+            animation: btnShimmer 3.8s ease-in-out infinite;
+        }
+        @keyframes btnShimmer {
+            0%, 50% { transform: skewX(-20deg) translateX(-150%); }
+            100% { transform: skewX(-20deg) translateX(300%); }
+        }
+
+        /* Fade-in entrance animation */
+        @keyframes entranceSlide {
+            from {
+                opacity: 0;
+                transform: translateY(18px) scale(0.98);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        .animate-entrance {
+            animation: entranceSlide 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+    </style>
+</head>
+<body class="min-h-screen w-full flex items-center justify-center relative bg-grid-cyber selection:bg-blue-500/30 selection:text-white h-screen">
+<!-- Canvas for Floating AI Pose & Node Network -->
+<canvas class="absolute inset-0 z-0 pointer-events-none opacity-40" id="nodeCanvas" width="1280" height="1148"></canvas>
+<!-- Surveillance Radar Rings & Scanner Sweep -->
+<div class="radar-disc"></div>
+<div class="radar-ring-2"></div>
+<div class="radar-ring-3"></div>
+<!-- HUD Crosshairs & Corner Calibrations -->
+<div class="absolute top-6 left-6 flex items-center gap-3 text-slate-500 font-mono text-[11px] tracking-widest z-10">
+<div class="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div>
+<span class="text-slate-300 font-medium">VADAP-CORE</span>
+<span class="text-slate-600">/</span>
+<span class="text-slate-400">SOC-MONITOR: ACTIVE</span>
+</div>
+<div class="absolute top-6 right-6 hidden md:flex items-center gap-4 text-slate-400 font-mono text-[11px] z-10">
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-900/80 border border-slate-700/60">
+<span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+<span>MODEL: YOLOv9-POSE</span>
+</div>
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-900/80 border border-slate-700/60">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+<span>FPS: 60.0 (SYNCED)</span>
+</div>
+</div>
+<!-- Framing Corner Bracket Overlays (Defense Tech UI) -->
+<div class="absolute top-5 left-5 w-8 h-8 border-t-2 border-l-2 border-blue-500/30 pointer-events-none"></div>
+<div class="absolute top-5 right-5 w-8 h-8 border-t-2 border-r-2 border-blue-500/30 pointer-events-none"></div>
+<div class="absolute bottom-5 left-5 w-8 h-8 border-b-2 border-l-2 border-blue-500/30 pointer-events-none"></div>
+<div class="absolute bottom-5 right-5 w-8 h-8 border-b-2 border-r-2 border-blue-500/30 pointer-events-none"></div>
+<!-- MAIN CENTRAL AUTH CARD -->
+<div class="animate-entrance relative z-20 w-full max-w-[440px] mx-4 rounded-2xl glass-panel card-glow-border p-7 sm:p-8 my-auto">
+<!-- Header & Logo Section -->
+<div class="flex flex-col items-center text-center mb-6">
+<!-- Sleek AI Shield / Sensor Logo -->
+<div class="relative w-14 h-14 mb-3.5 flex items-center justify-center">
+<!-- Rotating subtle ambient ring -->
+<div class="absolute inset-0 rounded-xl border border-cyan-500/30 rotate-45 animate-pulse-slow"></div>
+<div class="absolute -inset-1 rounded-2xl bg-gradient-to-tr from-blue-600/20 via-cyan-500/10 to-indigo-600/20 blur-sm"></div>
+<div class="relative w-12 h-12 rounded-xl bg-gradient-to-b from-slate-800 to-slate-950 border border-slate-700/70 shadow-inner flex items-center justify-center group">
+<svg class="w-7 h-7 text-cyan-400 transition-transform duration-300 group-hover:scale-105" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24">
+<!-- Shield Outline -->
+<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+<!-- Optical Iris / Core -->
+<circle class="stroke-blue-400 fill-blue-950/50" cx="12" cy="11" r="3"></circle>
+<circle class="fill-cyan-300" cx="12" cy="11" r="1"></circle>
+</svg>
+</div>
+</div>
+<!-- Title & Definition -->
+<div class="flex items-center gap-2">
+<h1 class="text-2xl font-bold tracking-tight text-white font-sans">VADAP</h1>
+<span class="px-1.5 py-0.5 rounded bg-blue-500/15 border border-blue-400/30 text-[10px] font-mono text-cyan-300 tracking-wider">SOC v2.4</span>
+</div>
+<p class="text-xs font-normal text-slate-400 mt-1 max-w-[320px] leading-relaxed">
+                Video Tabanlı Anomali Tespiti ve Davranış Analizi Platformu
+            </p>
+</div>
+<!-- Role Selector Switcher -->
+<div class="grid grid-cols-2 p-1 mb-5 bg-slate-900/90 rounded-lg border border-slate-800 text-xs font-medium">
+<button class="py-1.5 px-3 rounded-md transition-all duration-200 text-cyan-300 bg-slate-800 shadow-sm border border-slate-700/60 flex items-center justify-center gap-1.5" id="tabOperator" type="button">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+<span>Operatör Girişi</span>
+</button>
+<button class="py-1.5 px-3 rounded-md transition-all duration-200 text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5" id="tabAdmin" type="button">
+<span class="material-symbols-outlined text-[16px]">admin_panel_settings</span>
+<span>Yönetici Paneli</span>
+</button>
+</div>
+<!-- Quick Fill Role Chips (Convenient for Control Room Preview) -->
+<div class="flex items-center justify-between mb-4 px-1 text-[11px] text-slate-400">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-slate-500">flash_on</span>
+                Hızlı Rol Seçimi:
+            </span>
+<div class="flex items-center gap-1.5">
+<button class="px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 hover:text-cyan-300 border border-slate-700/50 text-slate-300 transition-colors" onclick="quickFill()" type="button">
+                    Operatör
+                </button>
+<button class="px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 hover:text-cyan-300 border border-slate-700/50 text-slate-300 transition-colors" onclick="quickFill()" type="button">
+                    Yönetici
+                </button>
+</div>
+</div>
+<!-- Authentication Form -->
+<form class="space-y-4" id="authForm" onsubmit="event.preventDefault(); simulateLogin();">
+<!-- Username / Email Field -->
+<div class="space-y-1.5">
+<label class="block text-[11px] font-mono uppercase tracking-wider text-slate-400" for="identityInput">
+                    Sicil No veya Kurumsal E-posta
+                </label>
+<div class="relative group">
+<div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 group-focus-within:text-cyan-400 transition-colors">
+<span class="material-symbols-outlined text-[18px]">badge</span>
+</div>
+<input class="w-full pl-10 pr-3.5 py-2.5 bg-slate-900/70 border border-slate-700/70 rounded-lg text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-sans" id="identityInput" placeholder="Örn: 489201 veya ad.soyad@vadap.gov.tr" required="" type="text">
+</div>
+</div>
+<!-- Password Field -->
+<div class="space-y-1.5">
+<div class="flex items-center justify-between">
+<label class="block text-[11px] font-mono uppercase tracking-wider text-slate-400" for="passwordInput">
+                        Sistem Parolası
+                    </label>
+<a class="text-xs text-cyan-400/80 hover:text-cyan-300 transition-colors hover:underline" href="#">
+                        Parolamı Unuttum
+                    </a>
+</div>
+<div class="relative group">
+<div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 group-focus-within:text-cyan-400 transition-colors">
+<span class="material-symbols-outlined text-[18px]">key</span>
+</div>
+<input class="w-full pl-10 pr-10 py-2.5 bg-slate-900/70 border border-slate-700/70 rounded-lg text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono" id="passwordInput" placeholder="••••••••••••" required="" type="password">
+<button class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition-colors focus:outline-none" id="togglePasswordBtn" onclick="togglePassword()" title="Parolayı Göster/Gizle" type="button">
+<span class="material-symbols-outlined text-[18px]" id="eyeIcon">visibility</span>
+</button>
+</div>
+</div>
+<p class="text-[11px] font-mono text-red-400 bg-red-950/40 border border-red-800/40 rounded px-2.5 py-1.5 text-center" hidden="" id="loginError"></p>
+<!-- Primary Submission Button with Shimmer & Ripple Effect -->
+<button class="w-full mt-2 btn-shimmer bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-medium text-sm py-2.5 px-4 rounded-lg shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2 transition-all duration-200 transform active:scale-[0.99] border border-cyan-400/20" id="loginBtn" type="submit">
+<span id="btnText">Sisteme Giriş Yap</span>
+<span class="material-symbols-outlined text-[18px] transition-transform group-hover:translate-x-0.5" id="btnIcon">arrow_forward</span>
+</button>
+</form>
+<!-- System Diagnostic & Monitoring Footer -->
+<div class="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+<div class="flex items-center gap-1.5" title="Sunucu Durumu: Aktif">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+<span>NODE: TR-IST-01</span>
+</div>
+<div class="flex items-center gap-1.5" title="WebSocket Anlık Akış: Sağlıklı">
+<span class="text-slate-600">|</span>
+<span class="text-slate-400">WSS: BAĞLI</span>
+<span class="text-slate-600">|</span>
+</div>
+<div class="text-slate-400">
+                v2.4.1-LTS
+            </div>
+</div>
+<!-- Security Warning Watermark -->
+<div class="mt-3 text-center">
+<p class="text-[10px] text-slate-400/80 flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[12px] text-slate-400">verified_user</span>
+                Bu sistem 5651 sayılı kanun uyarınca izlenmekte ve loglanmaktadır.
+            </p>
+</div>
+</div>
+<!-- Interactive Behavior Script -->
+<script>
+        // Password Visibility Toggle
+        function togglePassword() {
+            const pwdInput = document.getElementById('passwordInput');
+            const eyeIcon = document.getElementById('eyeIcon');
+            if (pwdInput.type === 'password') {
+                pwdInput.type = 'text';
+                eyeIcon.textContent = 'visibility_off';
+            } else {
+                pwdInput.type = 'password';
+                eyeIcon.textContent = 'visibility';
+            }
+        }
+
+        // Quick Fill Helper for Demo Testing
+        function quickFill(user, pass) {
+            if (user) document.getElementById('identityInput').value = user;
+            if (pass) document.getElementById('passwordInput').value = pass;
+        }
+
+        // Segmented Tab Controls
+        const tabOperator = document.getElementById('tabOperator');
+        const tabAdmin = document.getElementById('tabAdmin');
+
+        tabOperator.addEventListener('click', () => {
+            tabOperator.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-cyan-300 bg-slate-800 shadow-sm border border-slate-700/60 flex items-center justify-center gap-1.5";
+            tabAdmin.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5";
+        });
+
+        tabAdmin.addEventListener('click', () => {
+            tabAdmin.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-cyan-300 bg-slate-800 shadow-sm border border-slate-700/60 flex items-center justify-center gap-1.5";
+            tabOperator.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5";
+        });
+
+        // Gercek giris (ASAMA8_PLAN.md SS3, madde 4)
+        async function simulateLogin() {
+            const btn = document.getElementById('loginBtn');
+            const btnText = document.getElementById('btnText');
+            const btnIcon = document.getElementById('btnIcon');
+            const errorBox = document.getElementById('loginError');
+
+            errorBox.hidden = true;
+            btn.disabled = true;
+            btnText.textContent = "Doğrulanıyor...";
+            btnIcon.textContent = "hourglass_empty";
+            btnIcon.classList.add("animate-spin");
+
+            try {
+                const body = new URLSearchParams();
+                body.set('username', document.getElementById('identityInput').value);
+                body.set('password', document.getElementById('passwordInput').value);
+                const res = await fetch('/api/auth/login', { method: 'POST', body });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.detail || "giris basarisiz");
+
+                setToken(data.access_token);
+                btnIcon.classList.remove("animate-spin");
+                btnText.textContent = "Erişim Yetkilendirildi";
+                btnIcon.textContent = "check_circle";
+                btn.className = "w-full mt-2 bg-emerald-600 text-white font-medium text-sm py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all";
+
+                const params = new URLSearchParams(location.search);
+                location.href = params.get('next') || 'index.html';
+            } catch (err) {
+                btnIcon.classList.remove("animate-spin");
+                btnText.textContent = "Sisteme Giriş Yap";
+                btnIcon.textContent = "arrow_forward";
+                btn.className = "w-full mt-2 btn-shimmer bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-medium text-sm py-2.5 px-4 rounded-lg shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2 transition-all duration-200 border border-cyan-400/20";
+                btn.disabled = false;
+                errorBox.textContent = err.message;
+                errorBox.hidden = false;
+            }
+        }
+
+        // Jeton zaten varsa formu tekrar gostermeye gerek yok. DOMContentLoaded
+        // icinde -- js/app.js defer'dir, sayfa parse edilirken henuz calismamis olur.
+        document.addEventListener('DOMContentLoaded', function () {
+            if (token()) {
+                const params = new URLSearchParams(location.search);
+                location.href = params.get('next') || 'index.html';
+            }
+        });
+
+        // Lightweight AI Pose/Node Particle Mesh Simulation (surveillance network vibe)
+        const canvas = document.getElementById('nodeCanvas');
+        const ctx = canvas.getContext('2d');
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            initNodes();
+        });
+
+        let nodes = [];
+        const NODE_COUNT = Math.min(Math.floor((width * height) / 28000), 38);
+
+        class Node {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.vx = (Math.random() - 0.5) * 0.45;
+                this.vy = (Math.random() - 0.5) * 0.45;
+                this.radius = Math.random() * 2 + 1.2;
+                this.isKeypoint = Math.random() > 0.65;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                if (this.x < 0 || this.x > width) this.vx *= -1;
+                if (this.y < 0 || this.y > height) this.vy *= -1;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.isKeypoint ? 'rgba(56, 189, 248, 0.75)' : 'rgba(59, 130, 246, 0.45)';
+                ctx.fill();
+
+                if (this.isKeypoint) {
+                    ctx.strokeStyle = 'rgba(6, 182, 212, 0.25)';
+                    ctx.strokeRect(this.x - 4, this.y - 4, 8, 8);
+                }
+            }
+        }
+
+        function initNodes() {
+            nodes = [];
+            for (let i = 0; i < NODE_COUNT; i++) {
+                nodes.push(new Node());
+            }
+        }
+
+        function animateNodes() {
+            ctx.clearRect(0, 0, width, height);
+
+            for (let i = 0; i < nodes.length; i++) {
+                nodes[i].update();
+                nodes[i].draw();
+
+                for (let j = i + 1; j < nodes.length; j++) {
+                    const dx = nodes[i].x - nodes[j].x;
+                    const dy = nodes[i].y - nodes[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < 140) {
+                        ctx.beginPath();
+                        ctx.moveTo(nodes[i].x, nodes[i].y);
+                        ctx.lineTo(nodes[j].x, nodes[j].y);
+                        ctx.strokeStyle = `rgba(56, 189, 248, ${0.18 * (1 - dist / 140)})`;
+                        ctx.lineWidth = 0.8;
+                        ctx.stroke();
+                    }
+                }
+            }
+            requestAnimationFrame(animateNodes);
+        }
+
+        initNodes();
+        animateNodes();
+    </script>
+
+
+<script src="js/app.js" defer></script>
+</body></html>

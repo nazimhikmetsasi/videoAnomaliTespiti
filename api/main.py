@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pymongo.errors import PyMongoError
 from sqlalchemy import text
 
+from api.config import FRONTEND_DIR
 from api.db.mongo import get_mongo
 from api.db.postgres import engine
 from api.matching import load_tolerance
@@ -62,3 +65,11 @@ def health() -> dict:
         mongo_ok = False
 
     return {"status": "ok" if pg_ok and mongo_ok else "degraded", "postgres": pg_ok, "mongo": mongo_ok}
+
+
+# Panel statik dosyalari (Asama 8, ASAMA8_PLAN.md SS1/SS3.8.1). "/api", "/ws"
+# ve "/health" router'larindan SONRA -- StaticFiles "/" tum yollari yakalar,
+# onlarin gorulmesi icin sirali kayit sart. Dizin yoksa mount atlanir: testler
+# ve API-only kosu (docker-compose'suz, FRONTEND_DIR bos) bozulmaz.
+if Path(FRONTEND_DIR).is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
