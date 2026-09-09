@@ -9,25 +9,23 @@ Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 
 ## Şu an neredeyiz
 
-**Aşama 8.1 — panel iskeleti ve kimlik tamamlandı.** Kullanıcının 11 ekranlık
-Tailwind şablonu ve ayrıca gönderdiği giriş ekranı `frontend/` altına
-`scripts/build_frontend.py` ile taşındı; tasarıma dokunulmadı, yalnızca kenar
-çubuğu bağlantıları gerçek dosyalara çevrildi ve `js/app.js` eklendi. API
-paneli artık aynı origin'den sunuyor (`StaticFiles`, `FRONTEND_DIR`). Giriş
-gerçek: tarayıcıda `admin` ile `POST /api/auth/login` -> jeton ->
-`index.html`, hatalı şifrede sunucunun Türkçe mesajı, konsolda hata yok.
+**Aşama 8.2 — panelin eksik uçları tamamlandı.** 8.1'in ekran-uç denetiminde
+açık kalan dört boşluk kapandı: kullanıcı yönetimi (`/api/users`), denetim
+kaydı (`/api/audit`), kamera başına sağlık (`/api/health/cameras`, Mongo
+`camera_health`'ten) ve analitik ekranının metrik tablosu
+(`/api/analytics/quality`). Metrik kararı: ground-truth etiketi olmadan
+recall ve F1 hesaplanamaz, uydurulmadı — `null` dönüyor ve nedeni yanıtta
+yazıyor; onun yerine operatörün `events.status` geri bildiriminden gerçek
+precision üretiliyor.
 
-Ekranlar hâlâ şablonun sahte verisini gösteriyor — veri bağlama 8.3, canlı
-görüntü 8.4, formlar 8.5. 8.2 eksik üç ucu yazacak (kullanıcı CRUD,
-`audit_log` listesi, kamera başına sağlık) ve 8.1'in uç denetiminde çıkan
-dördüncü eksiği çözecek: analitik ekranının Doğruluk/Kesinlik/Duyarlılık/F1
-tablosunun hiçbir API karşılığı yok, bu metrikler bugün yalnız `eval/`
-altındaki çevrimdışı raporlarda üretiliyor.
+Artık panelin 11 ekranının tamamının veri kaynağı var. Sıradaki iş 8.3:
+okuma ekranlarına gerçek veriyi bağlamak (şu an hepsi hâlâ şablonun sahte
+satırlarını gösteriyor).
 
-Aşama 7'nin dersi burada da doğrulandı: 6 birim test yeşilken panel
-konteynerden **404** dönüyordu. Neden testin göremeyeceği yerdeydi — `api`
-servisi kodu imaja gömüyor (`build: ./api`), `docker compose up -d` yeni
-`main.py`'yi almıyor, `--build` şart.
+Gözden geçirmede iki eksik yakalandı ve düzeltildi: son admin'in **rolü**
+düşürülebiliyordu (yalnız pasifleştirme korunuyordu) ve tekrar eden kullanıcı
+adı 500 dönüyordu (artık 409). İkisi de birim testlerin değil, kodu okumanın
+ve canlı istek atmanın yakaladığı hatalar.
 
 ## Aşama durumu
 
@@ -43,7 +41,7 @@ servisi kodu imaja gömüyor (`build: ./api`), `docker compose up -d` yeni
 | 5 | Veri katmanı ve API | Tamamlandı |
 | 6 | Canlı görüntü (WebSocket) | Tamamlandı |
 | 7 | LLM ve Telegram | Tamamlandı |
-| 8 | Panel (kullanıcı şablonu) | 8.1 tamamlandı, 8.2 sırada |
+| 8 | Panel (kullanıcı şablonu) | 8.1–8.2 tamamlandı, 8.3 sırada |
 | 9 | TCN modeli ve yeni sınıflar | Bekliyor |
 | 10 | Ölçek ve tez çıktıları | Bekliyor |
 
@@ -1447,23 +1445,99 @@ daraltılacak. Ayrıntı: `docs/ASAMA8_PLAN.md` § 5.
 
 ---
 
+## Aşama 8.2 sonucu (2026-09-09)
+
+Panelin ihtiyaç duyduğu eksik uçlar. Plan: `docs/ASAMA8_PLAN.md` § 3'ün 8.2
+maddesi, § 5 uç denetimi sonucu.
+
+### Yapılanlar
+
+| Dosya | Satır | İş |
+|---|---|---|
+| `api/routers/users.py` | 105 | `GET/POST/PUT/DELETE /api/users` — liste pasifler dahil, `admin` rol denetimi (`require_role` zaten `api/auth.py`'de vardı, yenisi yazılmadı). Şifre hash'i `crypt(:password, gen_salt('bf'))` ile DB'de üretilir (Aşama 5 kararı bozulmadı); `PUT`'ta `password` gönderilmezse hash'e dokunulmaz. Kendi kendini pasifleştirme ve son aktif admin'i pasifleştirme 403. `DELETE` gerçek silme değil `is_active=false` — `audit_log.user_id`/`zones.created_by` FK'leri koptuğunda denetim izi kaybolur |
+| `api/routers/audit.py` | 76 | `GET /api/audit` — `user_id`/`action`/`entity`/`from`/`to` filtreleri, `limit`/`offset` sayfalama, `created_at DESC`. `users` LEFT JOIN (audit_log.user_id NULL olabilir — silinmiş/pasif kullanıcı). Dosya adı `api/audit.py` (write_audit yardımcısı) ile karışmasın diye `api/routers/audit.py` |
+| `api/routers/health.py` | 66 | `GET /api/health/cameras` — Mongo `camera_health`'ten kamera başına en son belge, tek `aggregate` ile (N+1 yok). Ham `camera_id` (ad/id metni) gerçek kamera id'sine `resolve_camera_id` (`api/routers/cameras.py`, ikinci kopya açılmadı) ile çözülür. Mongo kaydı olmayan kamera da listede kalır, ölçüm alanları `null`. `age_sec` belge yaşını taşır. Kimlik ister (`/health` istemez) |
+| `api/routers/analytics.py` | +50 | `GET /api/analytics/quality` — 8.1 denetiminde çıkan gerçek eksik: ground-truth yok, recall/F1 hesaplanamaz, **uydurulmadı**. `events.status` geri bildiriminden `confirmed`/`false_positive`/`pending`/`precision` (tip başına), `recall`/`f1` her zaman `null`, `note` alanı nedenini açıklıyor. `/ablation` artık `response_model=list[AblationRowOut]` (davranış aynı) |
+| `api/schemas.py` | +75 | `UserCreate`, `UserUpdate`, `AuditOut`, `AuditListOut`, `CameraHealthOut`, `AblationRowOut`, `QualityRowOut`, `QualityOut` |
+| `api/main.py` | +3 | `users`, `audit`, `health` router'ları `/api/users`, `/api/audit`, `/api/health` altında kayıtlı |
+| `tests/test_asama8_2.py` | 200 | 13 test: `require_role("admin")` kabul/red (users+audit'in ortak geçidi), son-admin/kendi-kendini pasifleştirme guard'ı, `quality` precision hesabı (payda 0 dahil, çoklu tip sıralaması), `health/cameras` Mongo kaydı olmayan/olan kamera, gerçek DB'ye karşı (skip edilebilir) audit filtresi ve boş `camera_health` koleksiyonu |
+
+`events.status` dörtlü değerleri (`new/acknowledged/false_positive/resolved`)
+`infra/postgres/init.sql`'deki CHECK kısıtından doğrulandı (8.1'in notu
+teyit edildi, tahmin edilmedi).
+
+### Doğrulama
+
+- `venv/Scripts/python.exe -m pytest tests -q`: **110 passed, 4 skipped**
+  (önceki 99 passed/2 skipped + 11 yeni saf test geçti, 2 yeni DB-bağımlı
+  test venv dışı ağ erişimi olmadığı için skip edildi)
+- `docker compose up -d --build api` ile konteyner yeniden kuruldu (8.1'in
+  dersi: `--build` şart, kod imaja gömülü)
+- Gerçek jetonla 5 uç: `/api/users`, `/api/health/cameras`,
+  `/api/analytics/quality`, `/api/analytics/ablation`, `/api/audit` — hepsi
+  200, gövdeler beklenen alanları taşıyor. `health/cameras` boş Mongo
+  belgesinde patlamadı (`normal_01`/`police_run` tüm ölçüm alanları `null`)
+- Rol denetimi canlı doğrulandı: jetonsuz istek 401; geçici bir `viewer`
+  kullanıcı oluşturulup onunla `GET /api/users` ve `GET /api/audit` 403,
+  `GET /api/health/cameras` 200 (yalnız kimlik ister, admin değil)
+- Son-admin ve kendi-kendini pasifleştirme guard'ı canlı denendi: admin
+  kendini pasifleştiremedi (403, "kendi hesabinizi pasiflestiremezsiniz");
+  test `viewer`'ı `DELETE` ile pasifleştirildi (204), listede `is_active:false`
+  olarak kaldı (gerçek silme değil)
+- `write_audit` → `GET /api/audit` zinciri: kamera 2'ye `PUT` atıldı, audit
+  satırı (`action:"update", entity:"camera"`) anında göründü; `action`/`entity`
+  filtreleri doğru daraltıyor. Test verisi (geçici viewer, kamera 2'nin
+  `source`/`location` alanları) temizlenip/geri yazıldı
+
+### Sürprizler
+
+- Aşama 7'nin `Decimal` tuzağı bu turda tetiklenmedi: yeni uçların hiçbiri
+  `detection_settings`/`events.confidence` gibi `NUMERIC` sütunlara dokunmuyor
+  (health verisi Mongo'dan geliyor, zaten `float`/`int`; quality/ablation
+  yalnız `count()` ve string kolonlar kullanıyor)
+- `PUT /api/cameras/{id}` tüm gövdeyi ister (kısmi değil, `settings` gibi
+  `Patch` değil) — audit'i tetiklemek için atılan test `PUT`'u kamera 2'nin
+  gerçek `source` yolunu geçici olarak ezdi; fark edilip aynı istekte geri
+  yazıldı. 8.3/8.5 panel tarafı bunu zaten tam gövde olarak gönderecek, ama
+  ileride benzer bir elle test yapılırsa hatırlatma: `cameras.py`'de lost-update
+  koruması yok, `zones.py` de aynı
+
+### Gözden geçirmede bulunan iki eksik (düzeltildi)
+
+- **Son admin'in rolü düşürülebiliyordu.** Guard yalnız `is_active=false`
+  yolunu koruyordu; `PUT /api/users/{id}` ile `role: "viewer"` göndermek aynı
+  sonucu doğuruyordu — sistemde aktif admin kalmazsa panel bir daha
+  yönetilemez. `_yetki_kaybi()` eklendi (pasifleştirme **veya** admin
+  rolünden düşürme), guard `_guard_admin_loss` olarak yeniden adlandırıldı.
+  Canlı doğrulama: `PUT /api/users/1 {"role":"viewer"}` -> 403
+- **Aynı kullanıcı adı 500 dönüyordu.** `users.username` UNIQUE; `IntegrityError`
+  yakalanmıyordu. `POST` ve `PUT` artık 409 + Türkçe mesaj döndürüyor.
+  Canlı doğrulama: aynı adla ikinci `POST` -> 409 "bu kullanici adi zaten kayitli"
+- İki yeni saf test eklendi (`_yetki_kaybi` doğru/yanlış halleri);
+  `tests/test_asama8_2.py` 13 -> 15 test
+- Agent'ın canlı denemelerinden kalan iki kullanıcı satırı
+  (`asama82_test_viewer`, `gecici_8_2_kontrol`) geliştirme veritabanından
+  silindi; `users` tablosunda yalnız `admin` kaldı
+
+---
+
 ## Bir sonraki adım
 
-Aşama 8.2 — eksik uçlar:
+Aşama 8.3 — okuma ekranları. Şablonun sahte satırları gerçek veriyle
+değiştirilir; tasarıma dokunulmaz, `frontend/js/app.js`'teki `rowTemplate()`
+ve `api()` kullanılır:
 
-1. `api/routers/users.py`: kullanıcı listesi/ekleme/güncelleme/pasifleştirme,
-   rol denetimi `admin`, şifre `crypt()` ile veritabanında.
-2. `api/routers/audit.py`: `GET /api/audit` — kullanıcı, eylem, varlık, tarih
-   filtreleri + sayfalama.
-3. `GET /api/health/cameras`: Mongo `camera_health` koleksiyonundan kamera
-   başına son belge (FPS, çıkarım süresi, düşen kare).
-4. Analitik ekranının metrik tablosu: uç mu yazılacak, ekran mı daraltılacak —
-   karar 8.2'de verilir.
+1. Kameralar + kamera detay (`GET /api/cameras`, `/api/events?camera_id=`)
+2. Olaylar: filtreler (kamera/tip/önem/durum/tarih) + sayfalama
+   (`GET /api/events`), olay detay (kanıt karesi, klip, LLM raporu, güven)
+3. Analitik (`/api/analytics/summary`, `/quality`, `/ablation`) — grafikler
+   şablondaki `div` genişlikleriyle çizili, veriden hesaplanan tek şey yüzde
+4. Sistem sağlığı (`/health` + `/api/health/cameras`, `age_sec` ile bayat
+   veri işaretlenir), kullanıcılar (`/api/users`), denetim kaydı (`/api/audit`)
 
-**Onay kriteri:** üç ekranın alanları gerçek veriyle dolabiliyor, her uç için
-`tests/` altında bir kontrol. Sonrası 8.3 (okuma ekranları), 8.4 (canlı
-izleme), 8.5 (yazma ekranları), 8.6 (uçtan uca demo) —
-`docs/ASAMA8_PLAN.md` § 3.
+**Onay kriteri:** her ekran gerçek veritabanı içeriğini gösteriyor, sahte
+satır kalmadı, boş durum (veri yok) ekranı bozmuyor. Sonrası 8.4 (canlı
+izleme), 8.5 (yazma ekranları), 8.6 (uçtan uca demo) — `docs/ASAMA8_PLAN.md` § 3.
 
 Aşama 8'de ilk kez çalışacak yollar: çoklu bildirim alıcısı
 (`users.telegram_chat_id` panelden doldurulunca) ve bildirim bastırma ayarları.
@@ -1557,10 +1631,16 @@ gerektiriyor, kod değişikliği değil.
 | 2026-09-09 | Sayı biçimleme `_sayi()` ile, tür denetimiyle değil | Ham SQL `NUMERIC` sütununu `Decimal` döndürüyor; `isinstance(..., float)` bunu eleyip metne "bilinmiyor" yazdı — düzeltme çağıranda değil ortak yerde |
 | 2026-09-09 | Uçtan uca gecikme ve alarm gecikmesi yalnız canlı kaynakta ölçülür | Dosya kaynağında ikisi de hattın hızını değil, 64 karelik ileri okumayı ve oturumun akış sonuyla kapanmasını ölçüyor |
 | 2026-09-09 | Kanıt satırı eşleşse de yazılır | events tablosunda clip_truncated kolonu yok; satır atlanırsa klibin kırpıldığı bilgisi tamamen kaybolur |
-| 2026-09-09 | `login.html`de "2FA Aktif" rozeti ve "Oturumu 8 saat açık tut" onay kutusu pasif bırakılmadı, silindi | Sistemde iki adımlı doğrulama yok; jeton süresi sunucuda `JWT_EXPIRE_MINUTES` ile sabitlenir, istemci değiştiremez. İkisi de gerçek olmayan bir vaat -- diğer bağlanmayan öğelerin (Parolamı Unuttum, NODE/WSS/FPS altbilgisi) aksine "arayüzde var ama pasif" bırakmak burada yanıltıcı olurdu |
+| 2026-09-09 | `login.html`de "2FA Aktif" rozeti ve "Oturumu 8 saat açık tut" onay kutusu pasif bırakılmadı, silindi | Sistemde iki adımlı doğrulama yok; jeton süresi sunucuda `JWT_EXPIRE_MINUTES` ile sabitlenir, istemci değiştiremez. İkisi de gerçek olmayan bir vaat -- diğer bağlanmayan öğelerin (Parolamı Unuttum, NODE/WSS/FPS altbilgisi) aksine "arayüzde var ama pasif" bırakmak burada yanıltıcı olurdu |
 | 2026-09-09 | Panel React'siz, derleme adımı yok | Şablon düz HTML + Tailwind CDN geldi; React'e taşımak 11 ekranı elle yeniden yazmak, yani "tasarıma dokunulmaz" kuralını fiilen ihlal etmek demekti. Node/bundler zinciri de projeye girmiyor. PLAN.md'deki Recharts maddesi düştü: analitik grafikleri şablonda zaten `div` genişlikleriyle çizili, veriden hesaplanan tek şey yüzde |
 | 2026-09-09 | Panel API ile aynı origin'den, `StaticFiles` ile sunuluyor | Ayrı nginx konteyneri CORS, ikinci port ve ikinci yapılandırma demekti; tek `app.mount` ile jeton, kanıt dosyaları ve göreli yollar tek origin'de kalıyor. Mount router'lardan sonra: `/` tüm yolları yakalar |
 | 2026-09-09 | Şablon `frontend/`e elle değil `build_frontend.py` ile kopyalanıyor | Kullanıcı şablonu güncellerse 12 dosyadaki href ve betik satırı düzeltmesi elle tekrarlanamaz; betik idempotent ve testte "tasarım korunuyor" kanıtının kaynağı |
+| 2026-09-09 | `require_admin` yazılmadı, mevcut `require_role("admin")` kullanıldı | `api/auth.py`'de Aşama 5'ten beri duruyordu, `cameras.py`/`zones.py`/`settings.py` zaten kullanıyor; ikinci bir rol bağımlılığı kod tekrarı olurdu |
+| 2026-09-09 | `GET /api/health/cameras` kamera başına ayrı Mongo sorgusu değil, tek `aggregate` | N kamera için N round-trip yerine `$group` ile en son belgeyi tek seferde çeker; ham `camera_id` -> gerçek kamera id eşlemesi sonra `resolve_camera_id` ile bellek içinde yapılır, ikinci bir ad-veya-id sorgusu yazılmaz |
+| 2026-09-09 | `/api/analytics/quality`'de recall/f1 hesaplanmadı, `null` + `note` | Ground-truth etiketi çalışma zamanında yok, kaçırılan olay bilinmiyor; uydurma bir sayı üretmek yerine gerçek sinyal (`events.status` geri bildirimi) üzerinden yalnız precision döner |
+| 2026-09-09 | Kullanıcı `DELETE` gerçek silme değil `is_active=false` | `audit_log.user_id` ve `zones.created_by` FK'leri var; kullanıcı gerçekten silinirse "kim yaptı" denetim izi kopar |
+| 2026-09-09 | Admin yetkisi kaybı tek yerde denetlenir (`_yetki_kaybi`) | Guard önce yalnız `is_active=false` yolunu koruyordu; `role: "viewer"` aynı sonucu doğuruyor ve sistemi admin'siz bırakıyordu. İki yolu ayrı ayrı korumak yerine "yetkiyi kaldıran değişiklik" tek predikatta toplandı |
+| 2026-09-09 | Tekrar eden kullanıcı adı 409, 500 değil | `users.username` UNIQUE; yakalanmayan `IntegrityError` panele 500 olarak döner ve formda gösterilecek bir mesaj kalmaz |
 
 ## Açık sorular
 
