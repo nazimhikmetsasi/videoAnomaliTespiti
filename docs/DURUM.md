@@ -9,23 +9,23 @@ Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 
 ## Şu an neredeyiz
 
-**Aşama 8.2 — panelin eksik uçları tamamlandı.** 8.1'in ekran-uç denetiminde
-açık kalan dört boşluk kapandı: kullanıcı yönetimi (`/api/users`), denetim
-kaydı (`/api/audit`), kamera başına sağlık (`/api/health/cameras`, Mongo
-`camera_health`'ten) ve analitik ekranının metrik tablosu
-(`/api/analytics/quality`). Metrik kararı: ground-truth etiketi olmadan
-recall ve F1 hesaplanamaz, uydurulmadı — `null` dönüyor ve nedeni yanıtta
-yazıyor; onun yerine operatörün `events.status` geri bildiriminden gerçek
-precision üretiliyor.
+**Aşama 8.3 — okuma ekranları tamamlandı.** Sekiz ekran (kameralar, kamera
+detay, olaylar, olay detay, analitik, sistem sağlığı, kullanıcılar, denetim
+kaydı) gerçek veriyle çalışıyor; şablonun sahte satırları, stok fotoğrafları
+ve uydurma ölçüm değerleri temizlendi. Panelde artık yalnız gerçek veri ya
+da "karşılığı yok" işareti var.
 
-Artık panelin 11 ekranının tamamının veri kaynağı var. Sıradaki iş 8.3:
-okuma ekranlarına gerçek veriyi bağlamak (şu an hepsi hâlâ şablonun sahte
-satırlarını gösteriyor).
+Bu turda bir eksik uç daha çıktı ve yazıldı: `GET /api/notifications` —
+`notifications` tablosu Aşama 7'den beri doluyordu, okuyan uç yoktu.
 
-Gözden geçirmede iki eksik yakalandı ve düzeltildi: son admin'in **rolü**
-düşürülebiliyordu (yalnız pasifleştirme korunuyordu) ve tekrar eden kullanıcı
-adı 500 dönüyordu (artık 409). İkisi de birim testlerin değil, kodu okumanın
-ve canlı istek atmanın yakaladığı hatalar.
+Sıradaki iş 8.4 (canlı izleme): `/ws/live` + `/ws/meta` bağlanması, katman
+aç-kapa, ızgara, `/ws/alerts` kırmızı alarmı. Panelin ilk kez canlı görüntü
+göstereceği aşama.
+
+Aşama 6-7'nin dersi bu turda dört kez tekrar etti: 134 birim testin hiçbiri,
+tarayıcıda ilk açılışta görülen dört gerçek hatayı yakalamadı (yanlış metin
+düğümü, bayt/MB karışıklığı, yanlış öğeye yazan seçici, Türkçe kesme
+işaretinin bozduğu JS dosyası).
 
 ## Aşama durumu
 
@@ -41,7 +41,7 @@ ve canlı istek atmanın yakaladığı hatalar.
 | 5 | Veri katmanı ve API | Tamamlandı |
 | 6 | Canlı görüntü (WebSocket) | Tamamlandı |
 | 7 | LLM ve Telegram | Tamamlandı |
-| 8 | Panel (kullanıcı şablonu) | 8.1–8.2 tamamlandı, 8.3 sırada |
+| 8 | Panel (kullanıcı şablonu) | 8.1–8.3 tamamlandı, 8.4 sırada |
 | 9 | TCN modeli ve yeni sınıflar | Bekliyor |
 | 10 | Ölçek ve tez çıktıları | Bekliyor |
 
@@ -1521,23 +1521,109 @@ teyit edildi, tahmin edilmedi).
 
 ---
 
+## Aşama 8.3 sonucu (2026-09-09)
+
+Sekiz okuma ekranına gerçek veri bağlandı. İş iki paralel ajana bölündü
+(kamera/olay ekranları ve yönetim ekranları); paylaşımlı üç dosyaya
+(`app.js`, `build_frontend.py`, ortak test) yalnızca koordinatör dokundu.
+
+### Yapılanlar
+
+| Dosya | Satır | Ekran |
+|---|---|---|
+| `frontend/js/kameralar.js` | 131 | Kamera listesi, istemci tarafı arama/durum/konum süzgeci, satır -> detay |
+| `frontend/js/kamera-detay.js` | 152 | `?id=` kamera başlığı/çözünürlük/durum + o kameranın olay akışı (gerçek kanıt küçük resimleri) |
+| `frontend/js/olaylar.js` | 194 | Sunucu tarafı filtre (kamera/tip/önem/durum/tarih) + `limit`/`offset` sayfalama, önem renkleri, kanıt küçük resmi |
+| `frontend/js/olay-detay.js` | 254 | Olay özeti, kanıt karesi + klip (`<video>`), LLM raporu, **Ölçülen Değerler tablosu telemetriden** |
+| `frontend/js/analitik.js` | 223 | `summary`/`quality`/`ablation`; çubuk grafik ve ısı haritası şablonun kendi `div`leriyle |
+| `frontend/js/sistem-sagligi.js` | 164 | `/health` + `/api/health/cameras`, `age_sec` ile bayat/çevrimdışı ayrımı |
+| `frontend/js/kullanicilar.js` | 82 | Kullanıcı listesi, pasifler ayrışıyor, 403 durumu |
+| `frontend/js/denetim-kaydi.js` | 131 | İki sekme: bildirim teslim kaydı + denetim kaydı |
+| `api/routers/notifications.py` | 76 | **Yeni uç** `GET /api/notifications` |
+| `frontend/img/placeholder.svg` | 7 | Şablonun uzak görsellerinin yerel karşılığı |
+| `tests/test_frontend_8_3a.py`, `test_frontend_8_3b.py`, `test_notifications.py` | 166 + 92 + 65 | 22 yeni kontrol |
+
+### Bulunan gerçek eksik: bildirim teslim kaydı
+
+8.3b ajanı şablonun "Bildirimler" sekmesini "veri kaynağı yok" durumuna
+çevirmişti; doğru gözlem, yanlış sonuç: `notifications` tablosu Aşama 7'den
+beri doluyor (5 gerçek Telegram satırı), yalnız okuyan uç yoktu.
+`GET /api/notifications` yazıldı (olay + kamera LEFT JOIN, kanal/durum/tarih
+filtreleri, admin) ve sekme bağlandı. Başarısız gönderimde hata metni
+rozetin `title`'ında durur.
+
+### Şablonun sahte verisi temizlendi
+
+- **Uzak görseller.** Şablonun `lh3.googleusercontent.com` bağlantıları
+  (avatar + "kamera görüntüsü" diye konmuş stok fotoğraflar) her sayfada
+  404 dönüyordu. `build_frontend.py` hepsini `img/placeholder.svg` ile
+  değiştiriyor: hem konsol temiz, hem stok fotoğraf kamera karesi gibi
+  görünmüyor. Gerçek kare canlı akıştan 8.4'te gelecek
+- **Olay detayının "Ölçülen Değerler" tablosu** artık gerçek: kaynak
+  `GET /api/events/{id}` yanıtındaki `telemetry` belgesi. Metrik adları
+  kural tipine göre değiştiği için sabit dört satır yerine belgede ne varsa
+  o listeleniyor; eşik karşılaştırması `rule_verdict.thresholds_used`'dan
+  geliyor, eşleşen eşik yoksa durum `—` kalıyor. Örnek (olay 1023):
+  Normalize Hız medyan 0.068 / tepe 0.142 (eşik 1.8), Uzuv Hızı 1.204,
+  Süreklilik 11 sn, Vuruş 333
+- **"Hareket Analizi" eğrisi** kare kare seri ister, API özet metrik
+  döndürüyor: sahte eğri silindi, yerine tek satırlık açıklama kondu
+- **Video üstündeki "İNSAN %94" kutusu** sabit konumlu ve uydurma etiketli:
+  katman gizlendi, gerçek kutu 8.4'te canlı akışta çizilecek
+
+### Tarayıcının yakaladığı, testlerin yakalamadığı dört hata
+
+1. **Metin düğümü seçimi yanlış düğüme yazıyordu.** Şablonda etiketin metni
+   ikon `span`'inin *sonrasında*, boşluk düğümü *öncesinde*; `childNodes`
+   içindeki ilk metin düğümüne yazınca şablon metni satırda kalıyordu
+   ("VADAP Core v4.2..." kalite tablosunda asılı kaldı). Çözüm: tüm metin
+   düğümlerini silip tek yeni düğüm eklemek
+2. **`gpu_mem` bayt, MB değil** (`torch.cuda.memory_reserved()`); ekranda
+   "104857600MB" yazıyordu. Şema alan adı birimi söylemiyor
+3. **Kamera sayacı seçicisi kenar çubuğunun alt başlığını buluyordu** (aynı
+   sınıf üçlüsü); sayaç sessizce yanlış öğeye yazılıyordu
+4. **JS'te Türkçe kesme işareti** (`API'de`) tırnak kaçışı olmadan yazılınca
+   dosya parse edilemedi; ekran şablon verisine geri düştü. Konsol hatası
+   olmasa fark edilmezdi
+
+### API karşılığı olmadığı için boş bırakılanlar
+
+Analitik: ortalama tespit gecikmesi, hafta-üstü-hafta trendi, doğruluk /
+duyarlılık / F1 (`—` + dipnot). Sistem sağlığı: Kafka QPS-kuyruk, Spark iş
+yükü-batch süresi, GPU sıcaklığı ve model adı, kamera başına TREND grafiği.
+Olay detayı: hareket eğrisi. Kamera detayı: gerçek FPS / düşen kare /
+çıkarım süresi (8.4'te canlı akıştan gelecek).
+
+### Doğrulama
+
+- `venv/Scripts/python.exe -m pytest tests -q`: **134 passed, 5 skipped**
+- Sekiz ekran gerçek tarayıcıda, gerçek konteynere karşı açıldı; konsolda
+  hata yok, 404 yok. Boş durum (olayı olmayan kamera), 403 durumu (geçici
+  `viewer` kullanıcıyla kullanıcılar/denetim ekranları) ve eksik `?id=`
+  durumu ayrı ayrı denendi
+- Deneme sırasında yaratılan geçici kullanıcılar geliştirme veritabanından
+  silindi
+
+---
+
 ## Bir sonraki adım
 
-Aşama 8.3 — okuma ekranları. Şablonun sahte satırları gerçek veriyle
-değiştirilir; tasarıma dokunulmaz, `frontend/js/app.js`'teki `rowTemplate()`
-ve `api()` kullanılır:
+Aşama 8.4 — canlı izleme:
 
-1. Kameralar + kamera detay (`GET /api/cameras`, `/api/events?camera_id=`)
-2. Olaylar: filtreler (kamera/tip/önem/durum/tarih) + sayfalama
-   (`GET /api/events`), olay detay (kanıt karesi, klip, LLM raporu, güven)
-3. Analitik (`/api/analytics/summary`, `/quality`, `/ablation`) — grafikler
-   şablondaki `div` genişlikleriyle çizili, veriden hesaplanan tek şey yüzde
-4. Sistem sağlığı (`/health` + `/api/health/cameras`, `age_sec` ile bayat
-   veri işaretlenir), kullanıcılar (`/api/users`), denetim kaydı (`/api/audit`)
+1. `/ws/live/{cam}` ikili JPEG -> `<img>` (blob), `/ws/meta/{cam}` -> üst
+   katman `<canvas>`
+2. Katman aç-kapa: kutu / iskelet / bölge / ID. Bölge katmanı
+   `GET /api/zones` poligonlarını normalize koordinattan çizer
+3. Izgara 1 / 2x2 / 3x3; yalnız görünen kameralar WS açar (Aşama 6'nın
+   `live_clients` kapısı bunun için var)
+4. `/ws/alerts` -> kırmızı toast + sağdaki canlı olay akışı; alarm gelen
+   kamera karesi kırmızıya döner
+5. Kamera detay ekranının FPS / düşen kare / çıkarım süresi kutuları da bu
+   akıştan dolar (8.3'te `—` bırakıldı)
 
-**Onay kriteri:** her ekran gerçek veritabanı içeriğini gösteriyor, sahte
-satır kalmadı, boş durum (veri yok) ekranı bozmuyor. Sonrası 8.4 (canlı
-izleme), 8.5 (yazma ekranları), 8.6 (uçtan uca demo) — `docs/ASAMA8_PLAN.md` § 3.
+**Onay kriteri:** tarayıcıda 20+ FPS, WS koptuğunda yeniden bağlanma,
+alarm geldiğinde ilgili kamera karesi kırmızı. Sonrası 8.5 (yazma ekranları),
+8.6 (uçtan uca demo) — `docs/ASAMA8_PLAN.md` § 3.
 
 Aşama 8'de ilk kez çalışacak yollar: çoklu bildirim alıcısı
 (`users.telegram_chat_id` panelden doldurulunca) ve bildirim bastırma ayarları.
@@ -1641,8 +1727,24 @@ gerektiriyor, kod değişikliği değil.
 | 2026-09-09 | Kullanıcı `DELETE` gerçek silme değil `is_active=false` | `audit_log.user_id` ve `zones.created_by` FK'leri var; kullanıcı gerçekten silinirse "kim yaptı" denetim izi kopar |
 | 2026-09-09 | Admin yetkisi kaybı tek yerde denetlenir (`_yetki_kaybi`) | Guard önce yalnız `is_active=false` yolunu koruyordu; `role: "viewer"` aynı sonucu doğuruyor ve sistemi admin'siz bırakıyordu. İki yolu ayrı ayrı korumak yerine "yetkiyi kaldıran değişiklik" tek predikatta toplandı |
 | 2026-09-09 | Tekrar eden kullanıcı adı 409, 500 değil | `users.username` UNIQUE; yakalanmayan `IntegrityError` panele 500 olarak döner ve formda gösterilecek bir mesaj kalmaz |
+| 2026-09-09 | Şablonun uzak görselleri yerel yer tutucuyla değiştirildi | `lh3.googleusercontent.com` bağlantıları 404 dönüyor; ayrıca "kamera görüntüsü" diye konmuş stok fotoğraflar sahte veridir. Tek `re.sub` ile `build_frontend.py`'de değiştiriliyor, yerleşim ve sınıflar aynı kalıyor |
+| 2026-09-09 | Ölçülen Değerler tablosu sabit satır değil, telemetriden üretiliyor | Metrik kümesi kural tipine göre değişiyor (RUN'da hız, FALL'da eğim); sabit dört satır yazmak, olmayan metriği uydurmak ya da olanı gizlemek demekti. Eşleşen eşik yoksa durum `—` |
+| 2026-09-09 | Sayfa betiği `build_frontend.py`'de dosya varsa eklenir | Sayfa listesini ikinci bir yerde tutmak, betiği ekleyip listeye yazmayı unutmak demekti; olmayan betiğe `<script>` koymak da konsola 404 dökerdi |
+| 2026-09-09 | 8.3 iki paralel ajana bölündü, paylaşımlı dosyalar koordinatörde | `app.js`, `build_frontend.py` ve ortak test iki ajanın da yolunda; ikisine de "dokunma, ihtiyacını raporla" denip birleştirme tek elde toplandı |
 
 ## Açık sorular
+
+- Olay 1023 (RUN) telemetrisinde `norm_speed_max` 0.142, kullanılan eşik 1.8
+  — yani panelde "EŞİK ALTINDA" görünen bir metrikle olay yine de üretilmiş.
+  Kuralın hangi kanıtla tetiklendiği (uzuv hızı 1.204 mü, başka pencere mi)
+  telemetri belgesinden okunamıyor. 8.6 demosunda ya da Aşama 9'da
+  netleştirilmeli; operatöre çelişkili görünen tek yer burası
+- Denetim kaydı ve bildirim sekmelerinin filtre kutuları henüz bağlı değil
+  (8.5). Uçlar filtreleri destekliyor, bağlanmayan yalnız arayüz
+- `app.js`'e taşınması gereken yardımcılar sayfa betiklerinde kopyalandı:
+  `_fetchAuthedBlobUrl` (üç dosyada), `ROLE_ADI`, `DECIDED_BY_ADI`,
+  `CAMERA_STATUS_ADI`, `num()`, `FORBIDDEN_MSG`. Paralel çalışma bitince
+  (8.4 veya 8.5) tek yere alınmalı
 
 - Docker altyapısı ayaktayken görü FPS'i 36.5'ten 12–15'e düşüyor. CPU
   rekabeti olduğu varsayıldı (Spark + Kafka + iki veritabanı + iki Python

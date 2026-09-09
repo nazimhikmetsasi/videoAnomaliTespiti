@@ -72,6 +72,24 @@ class AuditListOut(BaseModel):
     items: list[AuditOut]
 
 
+# ------------------------------------------------------------ notifications
+class NotificationOut(BaseModel):
+    id: int
+    event_id: int
+    anomaly_type: str | None = None
+    camera_name: str | None = None
+    channel: str
+    target: str
+    status: str
+    error: str | None
+    sent_at: datetime.datetime
+
+
+class NotificationListOut(BaseModel):
+    total: int
+    items: list[NotificationOut]
+
+
 # ------------------------------------------------------------------- health
 class CameraHealthOut(BaseModel):
     camera_id: int
