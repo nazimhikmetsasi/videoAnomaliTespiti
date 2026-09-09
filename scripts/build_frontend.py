@@ -51,9 +51,30 @@ NAV_TARGETS = {
     "Ayarlar": "ayarlar.html",
 }
 
+# Sablonun uzak gorselleri (tasarim aracinin urettigi lh3.googleusercontent
+# baglantilari) artik yok: her biri 404 doner ve konsolu kirletir. Ustelik
+# kamera kareleri olarak konulmus stok fotograflar SAHTE VERIDIR -- gercek
+# kare 8.4'te canli akistan gelir. Yerel bir yer tutucuyla degistirilir;
+# yerlesim, boyut ve sinif aynen kalir.
+_REMOTE_IMG = re.compile(r"https://lh3\.googleusercontent\.com/[^\"')]+")
+PLACEHOLDER_IMG = "img/placeholder.svg"
+
+
 _A_HASH = re.compile(r'<a\b[^>]*?href="#"[^>]*?>.*?</a>', re.DOTALL)
 _TAG = re.compile(r"<[^>]+>")
 _SCRIPT_TAG = '<script src="js/app.js" defer></script>\n'
+
+
+def _page_script_tag(out_name: str) -> str:
+    """Sayfaya ozel betik VARSA eklenir (frontend/js/<ad>.js). Dosya yoksa
+    satir da yok -- olmayan betige <script> koymak konsola 404 dokuyor.
+    Boylece 8.3/8.4/8.5 sayfa betiklerini tek tek ekleyebilir, burada
+    tutulacak ikinci bir liste olmadan."""
+    stem = out_name.removesuffix(".html")
+    if not (FRONTEND / "js" / f"{stem}.js").is_file():
+        return ""
+    return f'<script src="js/{stem}.js" defer></script>\n'
+
 
 
 def _nav_target(a_block: str) -> str | None:
@@ -280,10 +301,11 @@ def build() -> None:
         with open(SABLON / src_dir / "code.html", encoding="utf-8", newline="") as f:
             html = f.read()
         html = _rewrite_nav_links(html)
+        html = _REMOTE_IMG.sub(PLACEHOLDER_IMG, html)
         if out_name == "login.html":
             html = _transform_login(html)
         assert "</body>" in html, f"{src_dir}: </body> bulunamadi"
-        html = html.replace("</body>", _SCRIPT_TAG + "</body>", 1)
+        html = html.replace("</body>", _SCRIPT_TAG + _page_script_tag(out_name) + "</body>", 1)
         (FRONTEND / out_name).write_text(html, encoding="utf-8", newline="")
         print(f"yazildi: frontend/{out_name}")
 

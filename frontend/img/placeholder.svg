@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90" width="160" height="90" role="img" aria-label="gorsel yok">
+  <rect width="160" height="90" fill="#111c2d"/>
+  <path d="M0 0h160v90H0z" fill="none" stroke="#2a3548" stroke-width="2"/>
+  <circle cx="80" cy="38" r="12" fill="#2a3548"/>
+  <path d="M56 66c4-11 12-16 24-16s20 5 24 16z" fill="#2a3548"/>
+</svg>

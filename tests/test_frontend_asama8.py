@@ -18,7 +18,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.build_frontend import (  # noqa: E402
-    _LOGIN_REPLACEMENTS, _SCRIPT_TAG, NAV_TARGETS, PAGES, build,
+    _LOGIN_REPLACEMENTS, _REMOTE_IMG, _SCRIPT_TAG, NAV_TARGETS, PAGES,
+    PLACEHOLDER_IMG, build,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,21 +78,25 @@ def test_only_href_and_script_lines_differ_from_template() -> None:
         with open(FRONTEND / out_name, encoding="utf-8", newline="") as f:
             built_lines = f.read().splitlines()
 
-        # Eklenen tek satir: js/app.js script'i (build_frontend.py SS3).
-        assert len(built_lines) == len(template_lines) + 1, out_name
-        script_lines = [i for i, line in enumerate(built_lines) if 'src="js/app.js"' in line]
-        assert len(script_lines) == 1, out_name
-        del built_lines[script_lines[0]]
+        # Eklenen satirlar: js/app.js ve -- varsa -- sayfaya ozel betik
+        # (build_frontend.py _page_script_tag, Asama 8.3'ten beri). Ikisi de
+        # betik satiridir; tasarim kanitindan once ayiklanir.
+        script_lines = [i for i, line in enumerate(built_lines) if 'src="js/' in line]
+        assert len([i for i in script_lines if 'src="js/app.js"' in built_lines[i]]) == 1, out_name
+        assert len(script_lines) <= 2, (out_name, script_lines)
+        assert len(built_lines) == len(template_lines) + len(script_lines), out_name
+        for i in reversed(script_lines):
+            del built_lines[i]
 
         assert len(built_lines) == len(template_lines), out_name
         for t_line, b_line in zip(template_lines, built_lines):
             if t_line == b_line:
                 continue
-            # href="#" -> href="<hedef>.html" disinda fark olmamali.
-            assert 'href="#"' in t_line and re.sub(r'href="#"', 'href="X"', t_line) == \
-                re.sub(r'href="[^"]*\.html"', 'href="X"', b_line), (
-                out_name, t_line, b_line,
-            )
+            # Izinli iki fark: href="#" -> href="<hedef>.html" ve uzak
+            # gorsel baglantisi -> yerel yer tutucu (build_frontend SS1).
+            t_norm = _REMOTE_IMG.sub(PLACEHOLDER_IMG, re.sub(r'href="#"', 'href="X"', t_line))
+            b_norm = re.sub(r'href="[^"]*\.html"', 'href="X"', b_line)
+            assert t_norm == b_norm, (out_name, t_line, b_line)
 
         # Sinif niteliklerinin kumesi (sirali) birebir ayni -- tasarima
         # dokunulmadiginin kaniti.
