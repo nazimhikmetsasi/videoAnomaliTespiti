@@ -18,7 +18,7 @@ import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pymongo.database import Database
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.auth import current_user, require_role
@@ -26,19 +26,10 @@ from api.db.models import Event, Evidence
 from api.db.mongo import get_mongo, link_pose_sequence
 from api.db.postgres import get_db
 from api.matching import tolerance
+from api.routers.cameras import resolve_camera_id
 from api.schemas import EvidenceIn, EvidenceMatchOut, EvidenceOut
 
 router = APIRouter()
-
-
-def _resolve_camera_id(db: Session, raw: str) -> int | None:
-    """Kafka tuketicisindeki (api/workers/consumer.py CameraCache) ayni cozum:
-    sayisal id veya kamera adi kabul edilir."""
-    row = db.execute(
-        text("SELECT id FROM cameras WHERE id::text = :cid OR name = :cid"),
-        {"cid": raw},
-    ).first()
-    return row[0] if row else None
 
 
 def _find_matching_event(db: Session, camera_id: int, anomaly_type: str,
@@ -72,7 +63,7 @@ def create_evidence(
     body: EvidenceIn, db: Session = Depends(get_db), mongo: Database = Depends(get_mongo),
     _: dict = Depends(require_role("admin", "operator")),
 ) -> EvidenceMatchOut:
-    camera_id = _resolve_camera_id(db, body.camera_id)
+    camera_id = resolve_camera_id(db, body.camera_id)
     if camera_id is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "kamera bulunamadi")
 
