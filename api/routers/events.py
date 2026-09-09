@@ -13,26 +13,22 @@ from sqlalchemy.orm import Session
 
 from api.audit import write_audit
 from api.auth import current_user, require_role
-from api.config import STORAGE_DIR
 from api.db.mongo import get_mongo
 from api.db.models import Camera, Event, Zone
 from api.db.postgres import get_db
 from api.schemas import EventDetailOut, EventListOut, EventOut, EventStatusIn
+from api.storage_paths import storage_path
 
 router = APIRouter()
 
-# storage/ koku; kanit yollari veritabaninda bu koke GORELI saklanir
-# (docs/ASAMA6_PLAN.md SS8.1). resolve() burada bir kez yapilir.
-_STORAGE_ROOT = Path(STORAGE_DIR).resolve()
-
 
 def _safe_storage_path(relative: str) -> Path:
-    """relative veritabanindan gelen DIS girdidir -- kok disina cikan yol
-    (`../../etc/passwd` gibi) reddedilir (SS8.3, Path.resolve().is_relative_to)."""
-    candidate = (_STORAGE_ROOT / relative).resolve()
-    if not candidate.is_relative_to(_STORAGE_ROOT):
+    """storage_path() SS8.3 kontrolunu tasir (ASAMA7_PLAN.md SS5) -- burada
+    yalnizca None -> HTTPException(400) donusumu kalir."""
+    path = storage_path(relative)
+    if path is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "gecersiz kanit yolu")
-    return candidate
+    return path
 
 
 @router.get("", response_model=EventListOut)

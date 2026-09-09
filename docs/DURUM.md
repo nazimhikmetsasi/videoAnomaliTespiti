@@ -9,25 +9,22 @@ Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 
 ## Şu an neredeyiz
 
-**Aşama 6 — Canlı görüntü ve kanıt tamamlandı.** Operatör artık olayı
-yalnızca satır olarak okumuyor: canlı kare `vision/`'dan doğrudan tarayıcıya
-akıyor, olayın klibi ve en iyi karesi diske yazılıp veritabanına bağlanıyor,
-kırmızı alarm API'den yayınlanıyor.
+**Aşama 7 — LLM raporu ve Telegram bildirimi tamamlandı.** Zincir uçtan uca
+kapandı: kamera → görü hattı → Kafka → Spark → veritabanı → Türkçe ihbar
+metni → güvenlik personelinin telefonunda fotoğraflı bildirim.
 
-Aşama 5'in beş oturumu **birebir yeniden üretildi** (`fall_01` 33 ms,
-`run_01` 11067 ms, `zone_01` 1800 / 27640 / 1000 ms) ve bu kez altısının da
-`clip_path`, `frame_path`, `mongo_ref` alanları doldu; eşleşmeyen kanıt satırı
-sıfır, `pose_sequences` belgelerinin **%100'ü** olaya bağlandı.
+Gerçek bir Telegram botuyla ve gerçek bir Gemini anahtarıyla ölçüldü: **5
+olay, 5 bildirim, 0 başarısız, hepsi kanıt karesiyle.** Bildirim gecikmesi
+medyan 0.90 sn, rapor üretimi medyan 1148 ms. `GEMINI_API_KEY` boşaltılıp
+tekrarlandığında zincir şablona düşerek sürdü — onay kriterinin ikinci yarısı.
 
-Bu aşamanın esas kazancı ölçümün tasarımı yanlışlaması oldu. Yayın için
-seçilen 5 ms'lik yoklama döngüsü, ölçüldüğünde **sezgiye ters** davrandı:
-daha sık yoklamak daha az kare teslim ediyordu (istemci 1.0 FPS, görü
-18.6 FPS). Sebep, saniyede 400 zamanlayıcı uyanmasının CPU'su zaten dolu görü
-döngüsüyle GIL için yarışmasıydı. Yoklama tamamen kaldırılıp olay güdümlü
-uyandırmaya geçilince istemci 23.6 FPS'e çıktı. Aynı ölçüm iki ölçüm
-yönteminin de geçersiz olduğunu gösterdi: dosya kaynağında hem uçtan uca
-gecikme hem alarm gecikmesi, hattın hızını değil kaynağın ileri okumasını ve
-akış sonunu ölçüyordu (§ Ölçüm 2 ve 4). Sıradaki iş Aşama 7 (LLM ve Telegram).
+Bu aşamanın dersi Aşama 6'nınkinin devamı oldu: **34 birim testin hiçbiri,
+canlı koşunun ilk denemesinde çıkan iki gerçek hatayı yakalamadı.** Rapordaki
+saat 3 saat geri yazılıyordu (container UTC doğuyor, testler UTC'yi UTC ile
+karşılaştırıyordu) ve güven skoru "bilinmiyor" çıkıyordu (ham SQL `NUMERIC`
+sütununu `Decimal` döndürüyor, tür denetimi eliyordu). İkisi de yalnızca
+gerçek veritabanı + gerçek container ile görülebilirdi. Sıradaki iş Aşama 8
+(Panel) — projenin ilk kez baştan sona elle kullanılabileceği aşama.
 
 ## Aşama durumu
 
@@ -42,8 +39,8 @@ akış sonunu ölçüyordu (§ Ölçüm 2 ve 4). Sıradaki iş Aşama 7 (LLM ve 
 | 4 | Kafka ve Spark | Tamamlandı |
 | 5 | Veri katmanı ve API | Tamamlandı |
 | 6 | Canlı görüntü (WebSocket) | Tamamlandı |
-| 7 | LLM ve Telegram | Sırada |
-| 8 | Panel (kullanıcı şablonu) | Bekliyor |
+| 7 | LLM ve Telegram | Tamamlandı |
+| 8 | Panel (kullanıcı şablonu) | Sırada |
 | 9 | TCN modeli ve yeni sınıflar | Bekliyor |
 | 10 | Ölçek ve tez çıktıları | Bekliyor |
 
@@ -1220,22 +1217,178 @@ karenin ön işleme maliyetidir.
 `tests/test_ws_units.py`, `tests/test_evidence_match.py`, ve
 `test_api_units.py`'ye eklenen jeton denetimi.
 
+## Aşama 7 sonucu (2026-09-09)
+
+**LLM raporu ve Telegram bildirimi tamamlandı.** Zincirin son iki halkası
+kapandı: doğrulanan olay artık Türkçe bir ihbar cümlesine dönüşüyor,
+`events.llm_report_tr` doluyor ve kanıt karesiyle birlikte güvenlik
+personelinin telefonuna düşüyor.
+
+Gerçek bir Telegram botuyla ve gerçek bir Gemini anahtarıyla uçtan uca
+koşuldu: **5 olay, 5 bildirim, 0 başarısız, hepsi fotoğraflı.** LLM kapalıyken
+de zincir sürdü.
+
+Aşama 6'nın dersi ("test geçmesi doğrulama değildir") burada iki gerçek hata
+yakalattı — ikisi de yalnızca canlı koşuda görünüyordu, 34 birim testin
+hiçbiri yakalamamıştı: rapordaki saat 3 saat geri çıkıyordu (container UTC
+doğuyor) ve güven skoru "bilinmiyor" yazıyordu (ham SQL `NUMERIC` sütununu
+`Decimal` döndürüyor, tür denetimi eliyordu).
+
+### Yazılan dosyalar
+
+| Dosya | Satır | İş |
+|---|---|---|
+| `api/llm.py` | 193 | `action_phrase`, şablon, Gemini REST, kabul süzgeci, kota soğutması |
+| `api/notify.py` | 231 | kuyruk + worker thread, `sendPhoto`/`sendMessage`, yeniden deneme, `notifications` kaydı |
+| `api/storage_paths.py` | 26 | `storage_path()` — `events.py`'den taşındı, kopya bırakılmadı |
+| `api/config.py` | +12 | `GEMINI_*`, `LLM_*`, `TELEGRAM_*`, `NOTIFY_MIN_INTERVAL_SEC` |
+| `api/workers/consumer.py` | +7 | `notify.start()` / `enqueue(new_id)` / `stop()` |
+| `api/routers/events.py` | −6 | `_safe_storage_path` artık ortak modülü çağırıyor |
+| `docker-compose.yml` | +15 | `consumer`'a LLM/Telegram ortamı, `TZ`, `storage:/storage:ro` |
+| `tests/test_llm.py` | 246 | 21 test |
+| `tests/test_notify.py` | 251 | 13 test |
+
+### Ölçüm 1 — fotoğraflı ihbar (onay kriteri)
+
+Gerçek bot, gerçek telefon. `data/pilot/` klipleri Kafka + Spark + tüketici
+zincirinden geçirildi.
+
+| olay | tip | fotoğraf | durum | gecikme |
+|---|---|---|---|---|
+| 1019 | FALL | var | sent | 1.29 sn |
+| 1020 | RUN | var | sent | 0.75 sn |
+| 1021 | RUN | var | sent | 0.90 sn |
+| 1022 | FALL | var | sent | 0.77 sn |
+| 1023 | RUN | var | sent | 1.06 sn |
+
+`notifications` tablosu: **5 `sent`, 0 `failed`.** Beşinin de `frame_path`'i
+dolu, yani hiçbiri metin-yedeğine düşmedi — Aşama 6'nın "kanıt olaydan önce
+gelir" ölçümü Aşama 7'de de doğrulandı (§ Bilinen sınırlar 1).
+
+### Ölçüm 2 — LLM çökse de zincir sürüyor mu
+
+`GEMINI_API_KEY` boşaltıldı, `consumer` yeniden başlatıldı, `run_01` koşuldu.
+`llm_report_tr` şablonla doldu, bildirim gitti (0.75 sn), hiçbir HTTP isteği
+kurulmadı. **Onay kriterinin ikinci yarısı sağlandı.**
+
+Bu koşu iki hatayı da ortaya çıkardı (§ Yol boyunca bulunan hatalar).
+
+### Ölçüm 3 — rapor üretim süresi
+
+`gemini-flash-lite-latest`, beş farklı olay tipi, tek çağrı:
+
+| tip | mod | süre |
+|---|---|---|
+| FALL | llm | 1256 ms |
+| RUN | llm | 1188 ms |
+| ZONE_VIOLATION | llm | 1062 ms |
+| FIGHT | llm | 1148 ms |
+| LOITERING | llm | 968 ms |
+
+**Medyan 1148 ms, 5/5 LLM, şablona düşen 0.** Devam turu (v1'in
+`_gemini_complete`'i) yazılmadığı halde hiçbir cümle yarım kalmadı — tek
+cümlelik ihbar 300 jetona rahat sığıyor.
+
+Asıl doğrulama metinlerin içeriğinde: bölgesiz `RUN` olayının cümlesinde
+**"yasaklı" kelimesi geçmiyor**, bölgeli `ZONE_VIOLATION`'da bölge adı
+geçiyor. v1'in gerçek yanlış ihbarı (`reporter.py::_build_prompt` yorumu)
+tekrarlamadı; `action_phrase()`'in tek doğruluk kaynağı olması işe yaradı.
+
+### Ölçüm 4 — bildirim gecikmesi
+
+`events.created_at` → `notifications.sent_at`, 5 olay: **medyan 0.90 sn**
+(en düşük 0.75, en yüksek 1.29). Bunun ~1.1 sn'si Gemini çağrısı, kalanı
+Telegram `sendPhoto` yüklemesi; ikisi paralel değil ardışık.
+
+**Ölçümün sınırı Aşama 6 § Ölçüm 2/4 ile aynıdır:** dosya kaynağında
+`started_at` → `created_at` arası (9.55 sn ölçüldü) hattın hızı değil, Spark
+oturumunun akış sonuyla kapanmasıdır. Buradaki 0.90 sn ise bildirim
+halkasının kendi maliyetidir ve bu ölçüm geçerlidir — iki uç da aynı
+process'in saatinden gelir.
+
+### Ölçüm 5 — tüketici yavaşladı mı
+
+Bildirim için tüketici döngüsünün ödediği tek maliyet `enqueue()`'dur:
+1000 çağrıda **medyan 2.90 µs, en kötü 12.90 µs.** Gemini + Telegram turu
+(~1.4 sn) worker thread'de kalıyor, offset commit'i beklemiyor.
+
+Kuyruk taşma davranışı da doğrulandı: `maxsize=200` kuyruğa 1000 öğe
+atıldığında 800'ü **en eskiden** düşürüldü, `enqueue` hiç bloklamadı.
+
+### Yol boyunca bulunan hatalar (hepsi düzeltildi)
+
+1. **Rapordaki saat 3 saat geri.** `_format_zaman` `astimezone()` kullanıyor,
+   container UTC doğduğu için 10:32'lik olay "07:32" yazıldı. Kod değil ortam
+   hatası: `docker-compose.yml`'de `consumer` servisine
+   `TZ: ${TZ:-Europe/Istanbul}` eklendi (imajda tzdata zaten var, doğrulandı).
+   Birim testleri yakalayamazdı — testler UTC ile UTC'yi karşılaştırıyordu.
+2. **"güven skoru bilinmiyor".** `_process_event` olayı ham SQL ile okuyor;
+   `NUMERIC(4,3)` sütunu `Decimal` dönüyor (ORM'deki `asdecimal=False` ham
+   sorguda geçerli değil) ve `template_report`'un `isinstance(..., float)`
+   denetimi bunu eleyip metne "bilinmiyor" yazıyordu. Düzeltme `_sayi()`
+   yardımcısıyla `api/llm.py`'de yapıldı — çağıran tarafta değil, çünkü aynı
+   tuzağa her çağıran düşerdi. Regresyon testi eklendi.
+3. **Şablonda sabit `'te` eki.** "10:29:42'te" — kesme işaretli ek saniye
+   rakamına göre `'te / 'de / 'da` olarak değişir, sabit yazılınca cümlelerin
+   çoğu yanlış çıkıyordu. `saatinde` ile ekin gerekliliği ortadan kaldırıldı.
+
+### Plandan sapmalar
+
+1. **`api/llm.py` ve `api/notify.py`**, `PLAN.md`'nin dediği gibi
+   `api/workers/` altında değil. `api/workers/` çalıştırılabilir servisleri
+   barındırıyor (`python -m api.workers.consumer`); bu ikisi kütüphanedir.
+2. **`api/notify.py` 231 satır** (bütçe ~180). Fazlalık yeniden deneme
+   tablosunun üç dalı ve orkestrasyon; spekülatif soyutlama yok.
+3. **Hız sınırı olay başına**, aynı olayın birden fazla alıcısı arasında
+   değil. Kodda `ponytail:` yorumuyla işaretli; çoklu alıcı senaryosu
+   ölçülmedi.
+4. **`TZ` ortam değişkeni** planda yoktu, Ölçüm 2'de ortaya çıktı.
+
+### Bilinen sınırlar (kapatılmadı)
+
+1. **Kanıt olaydan sonra gelirse bildirim fotoğrafsız gider.** Tetik
+   `consumer.py`'dedir ve kanıtın zaten bağlanmış olmasına dayanır. Beş
+   ölçümün beşinde de kanıt önce geldi, ama bu yön garantili değil.
+   `api/routers/evidence.py` tarafına ikinci tetik konmadı: çift gönderme
+   riskini ve bir tekilleştirme mekanizmasını birlikte getirirdi.
+2. **429 / kota soğutması gerçek koşulda tetiklenmedi.** Kod yolu yalnızca
+   `MockTransport` ile test edildi; gerçek bir kota aşımı görülmedi.
+3. **Çoklu alıcı denenmedi.** `users.telegram_chat_id` boş olduğu için
+   `.env`'deki `TELEGRAM_CHAT_ID` yedeği kullanıldı. Panelden kullanıcı
+   eklenince (Aşama 8) çoklu alıcı yolu ilk kez çalışacak.
+4. **Bildirim bastırma yok.** Evde/Koruma modu, bilinen kişi listesi, sessiz
+   saat, severity süzgeci — hepsi bilinçli olarak Aşama 8/9'a bırakıldı.
+   Şu an doğrulanmış her olay telefona gidiyor.
+
+### Testler
+
+`pytest tests/ -q` → **93 passed, 2 skipped**. Yeni: `tests/test_llm.py`
+(21 test), `tests/test_notify.py` (13 test). Hiçbiri ağa çıkmıyor, hiçbiri
+gerçek `time.sleep` çağırmıyor.
+
+---
+
 ## Bir sonraki adım
 
-Aşama 7 — LLM ve Telegram:
+Aşama 8 — Panel:
 
-1. Doğrulanan olay için Türkçe ihbar metni üretimi (`llm/`), `events.llm_report_tr`
-   sütununa yazım.
-2. Telegram bildirimi: metin + en iyi kare (`storage/frames/`), `notifications`
-   tablosuna kayıt.
-3. LLM erişilemezse olayın kaybolmaması: bildirim kuyruğu ve yeniden deneme.
+1. Kullanıcının Tailwind şablonu (`sablon/` altındaki 12 ekran) `frontend/`
+   içine yerleştirilir. **Tasarıma dokunulmaz**, yalnızca veri bağlanır.
+2. Canlı grid + Canvas katmanları (kutu / iskelet / bölge / ID aç-kapa),
+   `/ws/live` ve `/ws/meta` bağlanması.
+3. ROI poligon çizimi, eşik ayar formu, olay geçmişi ve filtreler,
+   Recharts yoğunluk grafikleri, `/ws/alerts` kırmızı alarm bildirimi.
 
-**Onay kriteri:** doğrulanan bir olay için Telegram'a kare + Türkçe metin
-düşüyor; LLM kapalıyken olay yine de bildiriliyor.
+**Onay kriteri:** uçtan uca demo — panelden kamera açılır, canlı görüntü akar,
+olay listelenir, kanıt klibi oynatılır, eşik panelden değiştirilir.
 
-Aşama 6'dan devralınan ve Aşama 7'de kapatılmayacak ölçümler: canlı kaynakta
-alarm gecikmesi (§ Ölçüm 4) ve webcam'de 20+ FPS (§ Ölçüm 1) — ikisi de
-donanım ve senaryo gerektiriyor, kod değişikliği değil.
+Aşama 8'de ilk kez çalışacak yollar: çoklu bildirim alıcısı
+(`users.telegram_chat_id` panelden doldurulunca) ve bildirim bastırma ayarları.
+
+Önceki aşamalardan devralınan ve Aşama 8'de kapatılmayacak ölçümler: canlı
+kaynakta alarm gecikmesi (Aşama 6 § Ölçüm 4), webcam'de 20+ FPS (Aşama 6
+§ Ölçüm 1), gerçek kota aşımında LLM soğutması — hepsi donanım/senaryo
+gerektiriyor, kod değişikliği değil.
 
 ---
 
@@ -1313,6 +1466,12 @@ donanım ve senaryo gerektiriyor, kod değişikliği değil.
 ---
 | 2026-09-09 | WS yayını yoklama değil olay güdümlü | 5 ms yoklama iki bağlantıda saniyede 400 uyanma demekti; CPU'su dolu görü döngüsüyle GIL yarışı teslimi 1 FPS'e düşürdü — daha sık yoklamak daha az kare teslim ediyordu |
 | 2026-09-09 | Kalp atışı ucu ad **veya** id kabul eder | vision/ kamerayı adıyla tanır; int bekleyen uç her atımda 422 döndü ve cameras.status hiç güncellenmedi |
+| 2026-09-09 | Bildirim tetiği `consumer.py`'de, kuyruk + tek worker thread | Olay kimliği ve kanıt yolu yalnız orada birlikte var; gönderim inline olsaydı 3–8 sn'lik LLM+Telegram turu offset commit'i ve arkadaki olayların yazımını geciktirirdi (ölçüldü: `enqueue` 2.90 µs) |
+| 2026-09-09 | Eylem ifadesi kodda (`action_phrase`), üslup LLM'de | v1'de model, bölgeyle ilgisi olmayan RUN olayına "yasaklı alana giriş yaptı" yazdı — güvenlik sisteminde gerçeğe aykırı ihbar kabul edilemez |
+| 2026-09-09 | Gemini/Telegram için yeni bağımlılık yok, ham REST | `httpx` zaten kurulu; iki servisin de tek uç noktası var, SDK bakım yükü getirirdi |
+| 2026-09-09 | Ayrı `TELEGRAM_ENABLED`/`LLM_ENABLED` bayrağı yok | Token boşsa kanal kapalıdır; v1'de bayrak ile token ayrı ayrı yanlış ayarlanabiliyordu |
+| 2026-09-09 | `consumer` container'ına `TZ: Europe/Istanbul` | Rapordaki saat operatörün yerel saatidir; container UTC doğduğu için 3 saat geri yazıyordu |
+| 2026-09-09 | Sayı biçimleme `_sayi()` ile, tür denetimiyle değil | Ham SQL `NUMERIC` sütununu `Decimal` döndürüyor; `isinstance(..., float)` bunu eleyip metne "bilinmiyor" yazdı — düzeltme çağıranda değil ortak yerde |
 | 2026-09-09 | Uçtan uca gecikme ve alarm gecikmesi yalnız canlı kaynakta ölçülür | Dosya kaynağında ikisi de hattın hızını değil, 64 karelik ileri okumayı ve oturumun akış sonuyla kapanmasını ölçüyor |
 | 2026-09-09 | Kanıt satırı eşleşse de yazılır | events tablosunda clip_truncated kolonu yok; satır atlanırsa klibin kırpıldığı bilgisi tamamen kaybolur |
 
