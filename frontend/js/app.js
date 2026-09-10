@@ -86,6 +86,34 @@ const DURUM_ADI = {
     new: "Yeni", acknowledged: "Görüldü", false_positive: "Yanlış Alarm", resolved: "Çözüldü",
 };
 
+// CameraHeartbeatIn (api/schemas.py): online/offline/error -- baglanti durumu,
+// ac/pasif degil. 8.3'te kameralar.js ve kamera-detay.js'de ayri ayri (ve
+// birbirinden FARKLI: "Aktif/Devre Dışı" vs "Çevrimiçi/Çevrimdışı) kopyalanmisti;
+// ikinci metin yanlisti (kamera durumu baglanti anlamina gelir, ac/pasif degil).
+const CAMERA_STATUS_ADI = { online: "Çevrimiçi", offline: "Çevrimdışı", error: "Hata" };
+
+const ROLE_ADI = { admin: "Yönetici", operator: "Operatör", viewer: "Görüntüleyici" };
+
+const DECIDED_BY_ADI = { rule: "Kural Motoru", model: "Model", hybrid: "Hibrit (Kural+Model)" };
+
+// api/auth.py require_role() tek yerde bu metni dondurur -- 403'u ayirt
+// etmenin tek yolu budur, api() durum kodunu disari vermiyor.
+const FORBIDDEN_MSG = "bu islem icin yetkiniz yok";
+
+function num(x) {
+    return x == null ? null : Number(x);
+}
+
+// Kimlik dogrulamali binary (jpeg/mp4) indirme -- api()'nin JSON/metin
+// varsayimi kanit dosyalari icin uygun degil (Authorization basligi olmadan
+// <img src=...> 401 doner). 8.3'te uc dosyada ayri ayri kopyalanmisti.
+async function _fetchAuthedBlobUrl(path) {
+    const res = await fetch(path, { headers: { Authorization: "Bearer " + token() } });
+    if (!res.ok) throw new Error("kanit alinamadi (" + res.status + ")");
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+}
+
 // container'in ilk cocugunu satir sablonu olarak soker, sahte satirlari siler,
 // her cagrida sablonun temiz bir klonunu doner. Veri doldurma 8.3'in isi.
 function rowTemplate(container) {

@@ -82,11 +82,15 @@ def test_analytics_never_computes_recall_or_f1() -> None:
 
 
 def test_forbidden_role_message_matches_backend() -> None:
-    """api/auth.py require_role() 403'te sabit bir metin dondurur; kullanicilar.js
-    ve denetim-kaydi.js bunu Turkce yetki mesajina cevirmek icin ayni sabiti
-    kullanmali (metin backend'de degisirse burada da fark edilsin)."""
+    """api/auth.py require_role() 403'te sabit bir metin dondurur. Sabit
+    Asama 8.4'te app.js'e tasindi (DURUM.md "Acik sorular" -- kopyalanmis
+    yardimcilar); kullanicilar.js/denetim-kaydi.js artik FORBIDDEN_MSG'i
+    KULLANIR, yeniden TANIMLAMAZ."""
     forbidden = "bu islem icin yetkiniz yok"
     auth_src = (ROOT / "api" / "auth.py").read_text(encoding="utf-8")
     assert forbidden in auth_src
+    app_src = (FRONTEND / "js" / "app.js").read_text(encoding="utf-8")
+    assert forbidden in app_src
     for name in ("kullanicilar", "denetim-kaydi"):
-        assert forbidden in _script_source(name), name
+        assert "FORBIDDEN_MSG" in _script_source(name), name
+        assert "const FORBIDDEN_MSG" not in _script_source(name), name

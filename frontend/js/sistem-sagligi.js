@@ -7,10 +7,6 @@ requireAuth();
 
 const STALE_SEC = 60; // ASAMA8_PLAN.md SS3.8.3: age_sec bu esigi gecince "canli" degil
 
-function num(x) {
-    return x == null ? null : Number(x);
-}
-
 function ageText(ageSec) {
     if (ageSec == null) return "";
     const s = Math.round(ageSec);

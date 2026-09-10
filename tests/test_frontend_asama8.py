@@ -18,8 +18,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.build_frontend import (  # noqa: E402
-    _LOGIN_REPLACEMENTS, _REMOTE_IMG, _SCRIPT_TAG, NAV_TARGETS, PAGES,
-    PLACEHOLDER_IMG, build,
+    _LOGIN_REPLACEMENTS, _REMOTE_IMG, _SCRIPT_TAG, LIVE_PAGES, NAV_TARGETS,
+    PAGES, PLACEHOLDER_IMG, build,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,12 +78,14 @@ def test_only_href_and_script_lines_differ_from_template() -> None:
         with open(FRONTEND / out_name, encoding="utf-8", newline="") as f:
             built_lines = f.read().splitlines()
 
-        # Eklenen satirlar: js/app.js ve -- varsa -- sayfaya ozel betik
-        # (build_frontend.py _page_script_tag, Asama 8.3'ten beri). Ikisi de
-        # betik satiridir; tasarim kanitindan once ayiklanir.
+        # Eklenen satirlar: js/app.js, -- LIVE_PAGES'te ise -- js/live.js, ve
+        # -- varsa -- sayfaya ozel betik (build_frontend.py _page_script_tag,
+        # Asama 8.3'ten beri). Uc de betik satiridir; tasarim kanitindan once
+        # ayiklanir.
         script_lines = [i for i, line in enumerate(built_lines) if 'src="js/' in line]
         assert len([i for i in script_lines if 'src="js/app.js"' in built_lines[i]]) == 1, out_name
-        assert len(script_lines) <= 2, (out_name, script_lines)
+        max_scripts = 3 if out_name in LIVE_PAGES else 2
+        assert len(script_lines) <= max_scripts, (out_name, script_lines)
         assert len(built_lines) == len(template_lines) + len(script_lines), out_name
         for i in reversed(script_lines):
             del built_lines[i]

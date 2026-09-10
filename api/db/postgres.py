@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from api.config import DATABASE_URL
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=5)
+# connect_timeout: veritabani ayakta degilken (Docker kapali) baglanti
+# denemesi isletim sisteminin varsayilan zaman asimini bekliyordu; saglik
+# ucu ve testler dakikalarca asili kaliyordu. 3 sn hem yerelde hem Docker
+# aginda fazlasiyla yeterli.
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=5,
+                       connect_args={"connect_timeout": 3})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

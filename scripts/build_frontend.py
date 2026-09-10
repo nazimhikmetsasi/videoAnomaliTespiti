@@ -64,16 +64,27 @@ _A_HASH = re.compile(r'<a\b[^>]*?href="#"[^>]*?>.*?</a>', re.DOTALL)
 _TAG = re.compile(r"<[^>]+>")
 _SCRIPT_TAG = '<script src="js/app.js" defer></script>\n'
 
+# index.js (izgara) ve kamera-detay.js (tekli) canli goru baglantisini/cizimini
+# js/live.js'ten paylasir (Asama 8.4, DURUM.md "Acik sorular" -- kopyalanmis
+# yardimci onlenir). Bu iki sayfa 3 betik yukler: app.js + live.js + kendi
+# betigi. _page_script_tag'in "sayfa basina tek betik" kurali burada genisler.
+LIVE_PAGES = {"index.html", "kamera-detay.html"}
+
 
 def _page_script_tag(out_name: str) -> str:
     """Sayfaya ozel betik VARSA eklenir (frontend/js/<ad>.js). Dosya yoksa
     satir da yok -- olmayan betige <script> koymak konsola 404 dokuyor.
     Boylece 8.3/8.4/8.5 sayfa betiklerini tek tek ekleyebilir, burada
-    tutulacak ikinci bir liste olmadan."""
+    tutulacak ikinci bir liste olmadan. LIVE_PAGES'teki sayfalar ayrica
+    js/live.js'i kendi betiklerinden ONCE yukler (live.js'in tanimladigi
+    fonksiyonlara sayfa betigi bagimlidir)."""
     stem = out_name.removesuffix(".html")
-    if not (FRONTEND / "js" / f"{stem}.js").is_file():
-        return ""
-    return f'<script src="js/{stem}.js" defer></script>\n'
+    tags = ""
+    if out_name in LIVE_PAGES and (FRONTEND / "js" / "live.js").is_file():
+        tags += '<script src="js/live.js" defer></script>\n'
+    if (FRONTEND / "js" / f"{stem}.js").is_file():
+        tags += f'<script src="js/{stem}.js" defer></script>\n'
+    return tags
 
 
 

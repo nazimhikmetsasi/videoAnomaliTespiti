@@ -9,23 +9,21 @@ Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 
 ## Şu an neredeyiz
 
-**Aşama 8.3 — okuma ekranları tamamlandı.** Sekiz ekran (kameralar, kamera
-detay, olaylar, olay detay, analitik, sistem sağlığı, kullanıcılar, denetim
-kaydı) gerçek veriyle çalışıyor; şablonun sahte satırları, stok fotoğrafları
-ve uydurma ölçüm değerleri temizlendi. Panelde artık yalnız gerçek veri ya
-da "karşılığı yok" işareti var.
+**Aşama 8.4 — canlı izleme tamamlandı.** Panel artık gerçek kareyi
+gösteriyor: ızgara (1 / 2x2 / 3x3), kutu / iskelet / bölge / ID katmanları,
+kopmada kendiliğinden yeniden bağlanma ve `/ws/alerts` kırmızı alarmı.
 
-Bu turda bir eksik uç daha çıktı ve yazıldı: `GET /api/notifications` —
-`notifications` tablosu Aşama 7'den beri doluyordu, okuyan uç yoktu.
+Onay kriteri ölçüldü: **tarayıcıda 25.2 FPS** (v1: 0.67; hedef 20+).
+Tarayıcı sunucunun ürettiği her kareyi çiziyor — istemci darboğaz değil.
+Tam hat (Kafka + Spark + consumer + Telegram) aynı makinede çalışırken
+görü döngüsünün kendisi ~10 FPS'e iniyor; bu, kayıtlı CPU rekabeti açık
+sorusunun tazelenmiş kanıtı.
 
-Sıradaki iş 8.4 (canlı izleme): `/ws/live` + `/ws/meta` bağlanması, katman
-aç-kapa, ızgara, `/ws/alerts` kırmızı alarmı. Panelin ilk kez canlı görüntü
-göstereceği aşama.
+Alarm zinciri uçtan uca çalıştı: 11 yeni olay, 11 gerçek Telegram
+bildirimi, panelde toast + kırmızı kutu.
 
-Aşama 6-7'nin dersi bu turda dört kez tekrar etti: 134 birim testin hiçbiri,
-tarayıcıda ilk açılışta görülen dört gerçek hatayı yakalamadı (yanlış metin
-düğümü, bayt/MB karışıklığı, yanlış öğeye yazan seçici, Türkçe kesme
-işaretinin bozduğu JS dosyası).
+Sıradaki iş 8.5 (yazma ekranları): kamera ekle/düzenle/sil, bölge poligon
+çizimi, eşik ayar formu, olay durumu güncelleme, kullanıcı yönetimi.
 
 ## Aşama durumu
 
@@ -41,7 +39,7 @@ işaretinin bozduğu JS dosyası).
 | 5 | Veri katmanı ve API | Tamamlandı |
 | 6 | Canlı görüntü (WebSocket) | Tamamlandı |
 | 7 | LLM ve Telegram | Tamamlandı |
-| 8 | Panel (kullanıcı şablonu) | 8.1–8.3 tamamlandı, 8.4 sırada |
+| 8 | Panel (kullanıcı şablonu) | 8.1–8.4 tamamlandı, 8.5 sırada |
 | 9 | TCN modeli ve yeni sınıflar | Bekliyor |
 | 10 | Ölçek ve tez çıktıları | Bekliyor |
 
@@ -1606,32 +1604,121 @@ Olay detayı: hareket eğrisi. Kamera detayı: gerçek FPS / düşen kare /
 
 ---
 
+## Aşama 8.4 sonucu (2026-09-09)
+
+Panel ilk kez canlı görüntü gösteriyor: `/ws/live` ikili JPEG akışı,
+`/ws/meta` üzerinden kutu/iskelet/bölge/ID katmanları ve `/ws/alerts`
+kırmızı alarmı.
+
+### Yapılanlar
+
+| Dosya | Satır | İş |
+|---|---|---|
+| `frontend/js/live.js` | 185 | Ortak WS bağlantısı, üstel geri çekilmeli yeniden bağlanma (1 -> 15 sn), canvas overlay çizimi, blob URL serbest bırakma, FPS sayacı |
+| `frontend/js/index.js` | 313 | Canlı izleme ızgarası (1 / 2x2 / 3x3), kamera kutusu çoğaltma, `/ws/alerts` toast + olay kartı + kırmızı kutu |
+| `frontend/js/kamera-detay.js` | 247 | Tekli canlı görüntü, katman düğmeleri, gerçek FPS / düşen kare / çıkarım süresi (8.3'te `—` bırakılmıştı) |
+| `frontend/js/app.js` | 140 | Kopyalanmış yardımcılar tek yere alındı: `_fetchAuthedBlobUrl`, `ROLE_ADI`, `DECIDED_BY_ADI`, `CAMERA_STATUS_ADI`, `num()`, `FORBIDDEN_MSG` |
+| `scripts/build_frontend.py` | +11 | `LIVE_PAGES`: canlı sayfalara `live.js` de eklenir (app.js sonrası) |
+
+Ölçek dönüşümü iki farklı uzayı birleştiriyor: `bbox` işlenen kare uzayında
+piksel, `zones` 0-1 normalize, canvas ekrandaki kutu boyutunda. Kare
+"contain" ile yerleştiği için letterbox payı da hesaba katılıyor.
+
+### Ölçüm: tarayıcı FPS'i
+
+Onay kriteri "tarayıcıda 20+ FPS" (v1: 0.67). İstemci tarafında
+`performance.now()` ile son 100 kare sayılarak ölçüldü:
+
+| Koşu | Sunucu döngü FPS | Tarayıcı FPS |
+|---|---|---|
+| `fall_01`, Spark durdurulmuş | 25.1 | **25.2** |
+| `zone_01`, Spark durdurulmuş | ~23 | **22.8 – 23.6** |
+| `zone_01`, Spark ayakta (boşta) | 19.9 | **20.2** |
+| `run_01`, tam hat (`--kafka`, Spark + consumer + Telegram aktif) | 10.2–19 | 9.9 |
+
+**Sonuç: kriter karşılanıyor, darboğaz panel değil.** Tarayıcı, sunucunun
+ürettiği her kareyi çiziyor — iki sayı neredeyse birebir örtüşüyor, istemci
+kare atlamıyor ve gecikme eklemiyor. Tam hat çalışırken düşen şey görü
+döngüsünün kendisi: aynı klipte ön işleme medyanı Spark ayaktayken 38.6 ms,
+Spark durdurulunca 1.9 ms. Bu, DURUM'da zaten kayıtlı olan "Docker altyapısı
+ayaktayken FPS 36.5'ten 12-15'e düşüyor" açık sorusunun tazelenmiş kanıtı —
+yeni bir gerileme değil, aynı CPU rekabeti. `docker stats` sırasında
+`anomaly-kafka` boştayken bile %150 CPU yakıyor.
+
+### Alarm zinciri uçtan uca çalıştı
+
+`vision.run --kafka --rules` -> Kafka -> Spark -> consumer -> `/ws/alerts`:
+üstte kırmızı toast, sağda olay kartı, ilgili kamera kutusu "İHLAL"
+durumuna geçti. Bağımsız doğrulama: `notifications` tablosu 5 satırdan 16
+satıra çıktı (11 gerçek Telegram bildirimi), son 3 saatte 11 yeni olay.
+
+Kopma testi: `vision.run` süreci defalarca durdurulup başlatıldı; kutular
+"Bağlantı Yok"a düşüp süreç dönünce kendiliğinden bağlandı.
+
+### Tarayıcının yakaladığı altı hata (hepsi düzeltildi)
+
+1. Alarm toast'ı açılışta şablonun sahte "Depo A - 14:32:05" verisiyle
+   görünüyordu -> varsayılan gizli
+2. Çevrimdışı kutunun "Son Görülme" saati şablonun sabit değeriydi ->
+   `cameras.last_seen_at`
+3. **En ciddisi:** `ws_server` jeton ve yol doğruysa yayıncı olmayan bir
+   `camera_id`'ye de bağlantıyı kabul ediyor; kutu `onopen`'da "AKTİF"
+   yazınca hiç yayın olmayan kameralar yeşil görünüyordu. "AKTİF" artık
+   yalnız ilk gerçek kare gelince yazılıyor
+4. Tailwind'in `.flex` sınıfı tarayıcının `[hidden]` kuralını eziyor;
+   `element.hidden = true` görsel olarak hiçbir şey yapmıyordu -> `style.display`
+5. Her gelen kare durum metnini koşulsuz "AKTİF"e çeviriyor, alarmın kırmızı
+   durumunu ≤150 ms içinde siliyordu -> `alarming` bayrağı
+6. `visibilitychange` dinleyicisi ikinci bir `connect()` çağırınca ilk soket
+   referanssız kalıp yayın almaya devam ediyordu; kareler çiftlenip FPS'i
+   29.3 gibi yanlış yüksek gösteriyordu -> `connect()` idempotent
+
+Ayrıca `kameralar.js` ile `kamera-detay.js`'in kamera durumu sözlükleri
+birbirinden farklıydı ("Aktif/Devre Dışı" vs "Çevrimiçi/Çevrimdışı"); alan
+bağlantı durumudur (`online/offline/error`), kanonik karşılık
+"Çevrimiçi / Çevrimdışı / Hata" oldu.
+
+### Kalan sınırlar
+
+- Alarm kartındaki "İncele" bağlantısı olay listesine gidiyor, tek olaya
+  değil: Kafka `anomaly-events` mesajı veritabanı `events.id`'sini taşımıyor
+  (id ancak consumer yazarken atanıyor)
+- `--settings-url` ile metin `--camera-id` kullanılınca eşik sıcak yükleme
+  422 veriyor (bilinen kısıt, yeni değil)
+- Canlı kamerada alarm gecikmesi hâlâ ölçülmedi; dosya kaynağında ölçmek
+  hattın hızını değil akışın bitişini ölçüyor (Aşama 6'dan devreden açık soru)
+
+---
+
 ## Bir sonraki adım
 
-Aşama 8.4 — canlı izleme:
+Aşama 8.5 — yazma ekranları:
 
-1. `/ws/live/{cam}` ikili JPEG -> `<img>` (blob), `/ws/meta/{cam}` -> üst
-   katman `<canvas>`
-2. Katman aç-kapa: kutu / iskelet / bölge / ID. Bölge katmanı
-   `GET /api/zones` poligonlarını normalize koordinattan çizer
-3. Izgara 1 / 2x2 / 3x3; yalnız görünen kameralar WS açar (Aşama 6'nın
-   `live_clients` kapısı bunun için var)
-4. `/ws/alerts` -> kırmızı toast + sağdaki canlı olay akışı; alarm gelen
-   kamera karesi kırmızıya döner
-5. Kamera detay ekranının FPS / düşen kare / çıkarım süresi kutuları da bu
-   akıştan dolar (8.3'te `—` bırakıldı)
+1. Kamera ekle / düzenle / sil (`POST/PUT/DELETE /api/cameras`)
+2. Bölge poligon çizimi: canlı kare üzerine tıklayarak nokta ekleme, 0-1
+   normalize kayıt, düzenleme ve silme (`/api/zones`)
+3. Ayarlar formu: global / kamera bazlı, kısmi `PUT`, `restart_required`
+   alanı kullanıcıya gösterilir
+4. Olay durumu: görüldü / yanlış alarm, toplu işaretleme (`PATCH /api/events/{id}`)
+5. Kullanıcı ekleme/düzenleme/pasifleştirme (`/api/users`), denetim ve
+   bildirim ekranlarının filtre kutularının bağlanması
+6. **Demo kaynağı: kamera donanımı yok, `data/pilot/` videoları kullanılacak.**
+   Panelde stok/sahte görüntü bırakılmaz (uzak görseller 8.3'te temizlendi);
+   canlı kare videolardan gelir. Birden çok kamerayı tek komutla başlatan
+   `scripts/run_pilot_cameras.py` yardımcısı yazılır — her pilot klip için
+   `--ws --rules --camera-id <ad>`, klipler kısa olduğu için döngü seçeneğiyle
 
-**Onay kriteri:** tarayıcıda 20+ FPS, WS koptuğunda yeniden bağlanma,
-alarm geldiğinde ilgili kamera karesi kırmızı. Sonrası 8.5 (yazma ekranları),
-8.6 (uçtan uca demo) — `docs/ASAMA8_PLAN.md` § 3.
+**Onay kriteri:** panelden değiştirilen eşik, `vision/` yeniden
+başlatılmadan davranışı değiştiriyor (sıcak yükleme Aşama 5'te yazıldı,
+panelden ilk kez tetikleniyor). Sonrası 8.6 (uçtan uca demo) —
+`docs/ASAMA8_PLAN.md` § 3.
 
 Aşama 8'de ilk kez çalışacak yollar: çoklu bildirim alıcısı
 (`users.telegram_chat_id` panelden doldurulunca) ve bildirim bastırma ayarları.
 
 Önceki aşamalardan devralınan ve Aşama 8'de kapatılmayacak ölçümler: canlı
-kaynakta alarm gecikmesi (Aşama 6 § Ölçüm 4), webcam'de 20+ FPS (Aşama 6
-§ Ölçüm 1), gerçek kota aşımında LLM soğutması — hepsi donanım/senaryo
-gerektiriyor, kod değişikliği değil.
+kaynakta alarm gecikmesi (Aşama 6 § Ölçüm 4), gerçek kota aşımında LLM
+soğutması — donanım/senaryo gerektiriyor, kod değişikliği değil.
 
 ---
 
@@ -1730,7 +1817,12 @@ gerektiriyor, kod değişikliği değil.
 | 2026-09-09 | Şablonun uzak görselleri yerel yer tutucuyla değiştirildi | `lh3.googleusercontent.com` bağlantıları 404 dönüyor; ayrıca "kamera görüntüsü" diye konmuş stok fotoğraflar sahte veridir. Tek `re.sub` ile `build_frontend.py`'de değiştiriliyor, yerleşim ve sınıflar aynı kalıyor |
 | 2026-09-09 | Ölçülen Değerler tablosu sabit satır değil, telemetriden üretiliyor | Metrik kümesi kural tipine göre değişiyor (RUN'da hız, FALL'da eğim); sabit dört satır yazmak, olmayan metriği uydurmak ya da olanı gizlemek demekti. Eşleşen eşik yoksa durum `—` |
 | 2026-09-09 | Sayfa betiği `build_frontend.py`'de dosya varsa eklenir | Sayfa listesini ikinci bir yerde tutmak, betiği ekleyip listeye yazmayı unutmak demekti; olmayan betiğe `<script>` koymak da konsola 404 dökerdi |
-| 2026-09-09 | 8.3 iki paralel ajana bölündü, paylaşımlı dosyalar koordinatörde | `app.js`, `build_frontend.py` ve ortak test iki ajanın da yolunda; ikisine de "dokunma, ihtiyacını raporla" denip birleştirme tek elde toplandı |
+| 2026-09-09 | 8.3 iki paralel ajana bölündü, paylaşımlı dosyalar koordinatörde |
+| 2026-09-10 | Canlı kutu "AKTİF"i `onopen`'da değil ilk karede yazar | `ws_server` jeton ve yol geçerliyse yayıncısı olmayan bir `camera_id`'ye de bağlanmayı kabul ediyor; açılışa güvenmek hiç yayın olmayan kamerayı yeşil gösteriyordu |
+| 2026-09-10 | Görünürlük/gizlenme yönetimi `element.hidden` ile değil `style.display` ile | Tailwind'in `.flex` sınıfı tarayıcının `[hidden]` kuralını eziyor; `hidden = true` sessizce hiçbir şey yapmıyordu |
+| 2026-09-10 | Ortak canlı akış mantığı `live.js`'te, sayfa betiklerinde değil | Canlı izleme ve kamera detay aynı WS + çizim işini yapıyor; iki kopya, ölçek dönüşümü gibi ince bir hatayı iki kez düzeltmek demekti. `build_frontend.py` canlı sayfalara ikinci betiği ekliyor |
+| 2026-09-10 | Panel FPS'i hedefin altına düşerse önce görü döngüsüne bakılır | Ölçüm: tarayıcı FPS'i sunucu döngü FPS'iyle örtüşüyor (25.2 / 25.1). İstemci kare atlamıyor; düşüş her seferinde hattın kendisinde (CPU rekabeti) |
+| 2026-09-10 | Postgres `connect_timeout=3`, Mongo `serverSelectionTimeoutMS=3000` | Docker kapalıyken test paketi 8 sn yerine 5+ dakika sürüyordu: her canlı-veritabanı testi işletim sisteminin varsayılan bağlantı zaman aşımını bekliyordu. Sağlık ucu da aynı sebeple asılı kalırdı | `app.js`, `build_frontend.py` ve ortak test iki ajanın da yolunda; ikisine de "dokunma, ihtiyacını raporla" denip birleştirme tek elde toplandı |
 
 ## Açık sorular
 

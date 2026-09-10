@@ -4,16 +4,7 @@
 
 requireAuth();
 
-// api/auth.py require_role() tek yerde bu metni dondurur -- 403'u ayirt
-// etmenin tek yolu budur, api() durum kodunu disari vermiyor.
-const FORBIDDEN_MSG = "bu islem icin yetkiniz yok";
-
-const DECIDED_BY_ADI = { rule: "kural", model: "model", hybrid: "hibrit" };
 const DAY_NAMES = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
-
-function num(x) {
-    return x == null ? null : Number(x);
-}
 
 function pct(part, total) {
     return total ? (part / total) * 100 : null;
