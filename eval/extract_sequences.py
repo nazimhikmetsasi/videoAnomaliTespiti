@@ -23,6 +23,7 @@ buna dayanir.
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 from pathlib import Path
 
@@ -37,6 +38,30 @@ from vision.stages.tracker import Tracker
 
 # Pencere duzeni ve kanal sayisi modelin sozlesmesidir, burada kopyalanmaz.
 from models.tcn import CHANNELS, CLASSES, MIN_POSE_RATIO, STRIDE, WINDOW, frame_vector
+
+
+URFD_LABELS = "_urfd_cam0_labels.csv"
+URFD_FALL_LABELS = {"0", "1"}      # 0 = dusme ani (gecis), 1 = yerde
+
+
+def load_urfd_labels(path: Path) -> dict[str, set[int]]:
+    """klip adi -> FALL sayilan kare indeksleri (0 tabanli).
+
+    URFD klip basina kare bazli etiket veriyor: -1 ayakta, 0 dusme ani,
+    1 yerde. Bu dosya olmadan klibin ~%40'i (dusme ONCESI yuruyus) FALL
+    etiketi aliyordu ve model yuruyusu dusme saniyordu (olculdu: FALL
+    kesinlik 0.300). CASIA dusme kliplerinde boyle bir anotasyon yok,
+    onlar klip etiketiyle kalir — kabul edilen gurultu.
+    """
+    if not path.exists():
+        return {}
+    out: dict[str, set[int]] = {}
+    with path.open(encoding="utf-8") as handle:
+        for row in csv.reader(handle):
+            if len(row) < 3 or row[2] not in URFD_FALL_LABELS:
+                continue
+            out.setdefault(f"urfd_{row[0]}-cam0", set()).add(int(row[1]) - 1)
+    return out
 
 
 def clip_tracks(path: Path, detector: PoseDetector) -> tuple[float, dict[int, list[tuple]]]:
@@ -82,13 +107,22 @@ def split_runs(samples: list[tuple]) -> list[list[tuple]]:
     return runs
 
 
-def clip_windows(samples: list[tuple], fps: float) -> tuple[np.ndarray, int]:
-    """(N, 50, 53) pencere yigini ve DUSURULEN pencere sayisi."""
+def clip_windows(samples: list[tuple], fps: float, stride: int = STRIDE,
+                 event_frames: set[int] | None = None) -> tuple[np.ndarray, int]:
+    """(N, 50, 53) pencere yigini ve DUSURULEN pencere sayisi.
+
+    `event_frames` verilirse pencere yalnizca olayin GERCEKTEN gectigi kareyi
+    iceriyorsa tutulur (URFD kare bazli etiketi).
+    """
     kept, dropped = [], 0
     for run in split_runs(samples):
-        for start in range(0, max(len(run) - WINDOW + 1, 0), STRIDE):
+        for start in range(0, max(len(run) - WINDOW + 1, 0), stride):
             chunk = run[start:start + WINDOW]
             if sum(kp is not None for _, _, kp in chunk) / WINDOW < MIN_POSE_RATIO:
+                dropped += 1
+                continue
+            if event_frames is not None and not any(idx in event_frames
+                                                    for idx, _, _ in chunk):
                 dropped += 1
                 continue
             prev_idx, prev_bbox = None, None
@@ -107,11 +141,14 @@ def main() -> int:
     parser.add_argument("--out", default="data/sequences", help="npz hedefi")
     parser.add_argument("--classes", default=",".join(CLASSES))
     parser.add_argument("--limit", type=int, default=0, help="sinif basina klip siniri (deneme)")
+    parser.add_argument("--stride", type=int, default=STRIDE,
+                        help="pencere kaydirmasi; ince sinifta dusurulur")
     parser.add_argument("--weights", default=DEFAULT_WEIGHTS)
     args = parser.parse_args()
 
     root, out_root = Path(args.clips), Path(args.out)
     detector = PoseDetector(args.weights)
+    urfd = load_urfd_labels(root / URFD_LABELS)
     print(f"{'sinif':8} {'klip':>5} {'pencere':>8} {'dusen':>7} {'izsiz klip':>11}")
     for name in [c.strip().upper() for c in args.classes.split(",") if c.strip()]:
         clips = sorted((root / name).glob("*.mp4"))
@@ -126,17 +163,21 @@ def main() -> int:
                 total += int(np.load(target)["x"].shape[0])
                 continue
             windows, dropped = [], 0
+            event_frames = urfd.get(clip.stem) if name == "FALL" else None
             fps, per_track = clip_tracks(clip, detector)
             for samples in per_track.values():
-                stack, drop = clip_windows(samples, fps)
+                stack, drop = clip_windows(samples, fps, args.stride, event_frames)
                 dropped += drop
                 if stack.shape[0]:
                     windows.append(stack)
             dropped_total += dropped
-            if not windows:
-                empty += 1
-                continue
-            stacked = np.concatenate(windows)
+            # Pencere cikmayan klip icin de BOS npz yazilir: yoksa dosya
+            # olusmaz, betik her yeniden calistirildiginda o klip bastan
+            # islenirdi (yarim kalan bir kosuda 213 klip bosuna tekrar
+            # ediliyordu). load_split bos diziyi zaten atliyor.
+            stacked = (np.concatenate(windows) if windows
+                       else np.empty((0, WINDOW, CHANNELS), np.float32))
+            empty += 0 if windows else 1
             np.savez_compressed(target, x=stacked)
             total += int(stacked.shape[0])
         print(f"{name:8} {len(clips):5d} {total:8d} {dropped_total:7d} {empty:11d}")

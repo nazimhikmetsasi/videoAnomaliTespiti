@@ -32,11 +32,16 @@ TOLERANCE_SEC = 1.0
 
 
 def run_clip(path: Path, detector: PoseDetector, zones_path: str,
-             max_frames: int = 0) -> list[Candidate]:
-    """Tek klip icin hatti bastan sona kosar, ham aday listesini dondurur."""
+             max_frames: int = 0, *, clahe: bool = True,
+             with_reid: bool = True) -> list[Candidate]:
+    """Tek klip icin hatti bastan sona kosar, ham aday listesini dondurur.
+
+    `clahe` / `with_reid`: Asama 10.4 dugme tablosu icin. Hizin bedeli
+    dogrulukta olculmeden bir yapilandirma secilmez.
+    """
     zones = load_zones(zones_path, path.stem) if zones_path else []
-    preprocess = Preprocessor()
-    tracker = Tracker(device=detector.device)
+    preprocess = Preprocessor(clahe=clahe)
+    tracker = Tracker(device=detector.device, with_reid=with_reid)
     smoother = Smoother()
     features = FeatureEngine()
     rules = RuleEngine(zones=zones)
@@ -124,6 +129,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--zones", default="eval/zones.json")
     parser.add_argument("--tolerance-sec", type=float, default=TOLERANCE_SEC)
     parser.add_argument("--max-frames", type=int, default=0, help="0 = sinirsiz")
+    parser.add_argument("--weights", default=DEFAULT_WEIGHTS)
+    parser.add_argument("--no-clahe", action="store_true")
+    parser.add_argument("--no-reid", action="store_true")
+    parser.add_argument("--imgsz", type=int, default=FRAME_W)
     return parser.parse_args(argv)
 
 
@@ -135,7 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  HATA: {clips_dir} icinde klip yok")
         return 1
 
-    detector = PoseDetector(DEFAULT_WEIGHTS, device="cuda", conf=0.25, imgsz=FRAME_W)
+    detector = PoseDetector(args.weights, device="cuda", conf=0.25, imgsz=args.imgsz,
+                            reid_feats=not args.no_reid)
 
     tp: dict[str, int] = defaultdict(int)
     fp: dict[str, int] = defaultdict(int)
@@ -145,7 +155,8 @@ def main(argv: list[str] | None = None) -> int:
 
     for clip in clip_paths:
         print(f"  kosuluyor: {clip.name}")
-        candidates = run_clip(clip, detector, args.zones, args.max_frames)
+        candidates = run_clip(clip, detector, args.zones, args.max_frames,
+                              clahe=not args.no_clahe, with_reid=not args.no_reid)
         raw_counts[clip.stem] = len(candidates)
 
         ann_path = ann_dir / f"{clip.stem}.json"

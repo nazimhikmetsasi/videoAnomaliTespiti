@@ -96,16 +96,22 @@ def wants_loop(source_type: str, loop_requested: bool) -> bool:
     return loop_requested and source_type == "file"
 
 
-def build_run_command(name: str, source: str, port: int, *, settings_url: str,
-                       settings_token: str, loop: bool,
+def build_run_command(names: list[str], sources: list[str], port: int, *,
+                       settings_url: str, settings_token: str, loop: bool,
                        kafka: str = KAFKA_BOOTSTRAP) -> list[str]:
+    """TEK surec, N kamera (Asama 10.3).
+
+    Onceden kamera basina bir surec aciliyordu ve her surec kendi model
+    kopyasini VRAM'e yukluyordu; 4 GB'ta bu 3 kamerada tikandi. Tek surecte
+    tek model, TEK toplu cikarim cagrisi ve TEK WS portu var.
+    """
     cmd = [
         # -u: cikti dosyaya yonlendirildiginde Python blok tamponlar ve
-        # logs/<ad>.log demo boyunca BOS gorunur (8.6 dogrulamasinda "Kafka:"
-        # banner satiri bu yuzden gorunmedi). Tamponsuz yaz, log canli aksin.
+        # logs/vision.log demo boyunca BOS gorunur (8.6 dogrulamasinda
+        # "Kafka:" banner satiri bu yuzden gorunmedi). Tamponsuz yaz.
         sys.executable, "-u", "-m", "vision.run",
-        "--source", source,
-        "--camera-id", name,
+        "--source", ",".join(sources),
+        "--camera-id", ",".join(names),
         "--ws", "--ws-port", str(port),
         "--rules",
         # Aday olaylar Kafka'ya BASILMAZSA Spark'a hicbir sey gitmez: olay
@@ -120,6 +126,8 @@ def build_run_command(name: str, source: str, port: int, *, settings_url: str,
         "--heartbeat-sec", "5",
     ]
     if loop:
+        # Yalnizca dosya kaynagini sarar; VideoSource canli kaynakta loop'u
+        # zaten yok sayar, karisik listede guvenli.
         cmd.append("--loop")
     return cmd
 
@@ -258,25 +266,25 @@ def main(argv: list[str] | None = None) -> int:
     log_dir.mkdir(parents=True, exist_ok=True)
 
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-    procs: list[subprocess.Popen] = []
-    log_files = []
-    for name in chosen:
-        cam_id, source, source_type = by_name[name]
-        port = ws_port_for(cam_id)
-        cmd = build_run_command(name, source, port, settings_url=args.settings_url,
-                                 settings_token=token,
-                                 loop=wants_loop(source_type, not args.no_loop),
-                                 kafka=args.kafka)
-        log_path = log_dir / f"{name}.log"
-        log_file = open(log_path, "w", encoding="utf-8")
-        log_files.append(log_file)
-        proc = subprocess.Popen(cmd, cwd=str(ROOT), env=child_env,
-                                 stdout=log_file, stderr=subprocess.STDOUT,
-                                 creationflags=creationflags)
-        procs.append(proc)
-        print(f"  baslatildi: {name} (id={cam_id}, port={port}, pid={proc.pid}) -> {log_path}")
+    sources = [by_name[name][1] for name in chosen]
+    types = [by_name[name][2] for name in chosen]
+    port = ws_port_for(by_name[chosen[0]][0])
+    cmd = build_run_command(chosen, sources, port, settings_url=args.settings_url,
+                             settings_token=token,
+                             loop=any(wants_loop(t, not args.no_loop) for t in types),
+                             kafka=args.kafka)
+    log_path = log_dir / "vision.log"
+    log_file = open(log_path, "w", encoding="utf-8")
+    log_files = [log_file]
+    proc = subprocess.Popen(cmd, cwd=str(ROOT), env=child_env,
+                             stdout=log_file, stderr=subprocess.STDOUT,
+                             creationflags=creationflags)
+    procs = [proc]
+    print(f"  baslatildi: tek surec, {len(chosen)} kamera "
+          f"({', '.join(chosen)}), port={port}, pid={proc.pid} -> {log_path}")
 
-    print(f"\n  {len(procs)} kamera baslatiliyor, model yuklemesi ~25 sn/surec surer...")
+    print(f"\n  {len(chosen)} kamera tek surecte, "
+          f"model yuklemesi ~25 sn surer...")
     wait_ready(args.settings_url, token, chosen, timeout=READY_TIMEOUT_SEC)
 
     print("\n  Ctrl+C ile hepsini durdur.")
