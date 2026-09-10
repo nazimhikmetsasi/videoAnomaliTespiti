@@ -46,7 +46,7 @@ def _to_health_out(cam: Camera, doc: dict | None, now: datetime.datetime) -> Cam
         camera_id=cam.id, name=cam.name,
         fps_actual=doc.get("fps_actual"), dropped=doc.get("dropped"),
         infer_ms=doc.get("infer_ms"), gpu_mem=doc.get("gpu_mem"),
-        queue_depth=doc.get("queue_depth"),
+        queue_depth=doc.get("queue_depth"), ws_port=doc.get("ws_port"),
         # Belgenin yasi -- panel bayat veriyi canli sanmasin.
         age_sec=(now - ts).total_seconds(),
     )

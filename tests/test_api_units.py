@@ -46,13 +46,22 @@ def _fake_row(camera_id: int | None, **overrides) -> SimpleNamespace:
 
 class _FakeDB:
     """.scalar() cagrisi basina siradaki sonucu doner -- gercek SQLAlchemy
-    Session yerine gecer, sorgu govdesini incelemez."""
+    Session yerine gecer, sorgu govdesini incelemez. execute() ise
+    settings.py -> resolve_camera_id() (api/routers/cameras.py, 8.6'da
+    settings.py da ad/id kimlik cozumune baglandi) icindir: verilen degeri
+    OLDUGU GIBI sayisal id'ye cevirip doner -- ad/id ayrimi resolve_camera_id
+    kendi testinde (test_asama8_6.py) ayrica dogrulanir, burada saf gecis
+    yeterli."""
 
     def __init__(self, results: list) -> None:
         self._results = list(results)
 
     def scalar(self, _stmt) -> object:
         return self._results.pop(0) if self._results else None
+
+    def execute(self, _stmt, params: dict | None = None):
+        cid = (params or {}).get("cid")
+        return SimpleNamespace(first=lambda: (int(cid),))
 
 
 # --------------------------------------------------------------------- jwt

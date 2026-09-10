@@ -63,11 +63,15 @@ class VideoSource:
         *,
         buffer_frames: int = BUFFER_FRAMES,
         reconnect_max_sec: float = RECONNECT_MAX_SEC,
+        loop: bool = False,
     ) -> None:
         self.source = source
         self.source_type = classify_source(source)
         self.is_live = self.source_type != "file"
         self.reconnect_max_sec = reconnect_max_sec
+        # Canli kaynakta anlami yok (akis zaten hic bitmez) -- sessizce yok
+        # sayilir, cagiran taraf her kaynak turu icin ayri kontrol yazmasin.
+        self.loop = loop and not self.is_live
         # Ozniteliklerin zaman kaynagi budur (PLAN.md Asama 3): klip 25 FPS
         # kayitken hat 37 FPS calisirsa duvar saati hizlari 1.5 kat sisirir.
         # Canlida gercek FPS onemsiz, duvar saati (frame.ts) kullanilacak.
@@ -198,6 +202,20 @@ class VideoSource:
 
             ok, image = cap.read()
             if not ok:
+                if self.loop:
+                    # Basa sar -- idx SIFIRLANMAZ, surekli artan sayac olarak
+                    # kalir. Boylece Smoother/FeatureEngine/RuleEngine'in iz
+                    # kimlikleri ve kural pencereleri (Asama 3) sarim aninda
+                    # bozulmaz; ts = idx/fps (vision/run.py) hep ileri gider.
+                    # Pilot klipler 8-60 sn -- demo boyunca kamera "olmemeli".
+                    # Daha onemlisi: dosya kaynagi _EOS ile bittiginde Spark
+                    # oturumu OLAYIN degil AKISIN bitisiyle kapaniyordu ve
+                    # Asama 6'da olculen 13.9-54.8 sn "alarm gecikmesi" bu
+                    # yuzden hattin hizini DEGIL akisin bitisini olcuyordu
+                    # (docs/DURUM.md acik sorusu). Dongude akis hic bitmez,
+                    # olcum anlamli hale gelir.
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    continue
                 cap.release()
                 cap = None
                 if not self.is_live:

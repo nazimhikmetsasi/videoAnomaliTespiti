@@ -1812,27 +1812,142 @@ ve eşik değişikliklerinin tamamı geri alındı.
 
 ---
 
+## Aşama 8.6 sonucu (2026-09-10)
+
+Uçtan uca demo altyapısı ve panel ölçümleri. Demo kaynakları: `data/pilot/`
+klipleri **ve dizüstünün kendi kamerası** (`webcam_01`, panelden eklendi —
+8.5'in kamera ekleme formu ilk gerçek işini yaptı).
+
+### Çözülen mimari çatal: çoklu kamerada canlı görü portu
+
+Plan "her kamera için bir `vision.run` süreci" diyordu ama canlı görü WS
+sunucusu tek port dinliyor ve `frontend/js/live.js`'de `LIVE_WS_PORT = 8001`
+sabitti. 8.4/8.5'te tek kamera çalıştığı için ortaya çıkmamıştı; N süreç aynı
+porta bağlanamaz.
+
+Değerlendirilen üç yol: (a) türetilmiş port `8001 + kamera_id` — iki satır ama
+formül iki yere gömülür ve kamera başka makinede çalışırsa yalan söyler,
+(b) `cameras` tablosuna `ws_port` kolonu — `init.sql` yalnızca ilk kurulumda
+çalışıyor, elle migration gerekir, 1032 olay riske girer, (c) portu kamera
+sağlığı üzerinden bildirmek.
+
+**(c) seçildi.** Gerekçe: `GET /api/health/cameras` zaten var ve kamera başına
+çalışma-zamanı telemetrisi taşıyor (FPS, düşen kare, GPU); port da o cinsten
+bir bilgi. Mongo belgesi şemasız — migration yok. Üstelik kalp atışının Mongo
+yazımı zaten bozuktu (`gonderilen 9 hata 9`, "A password is required"):
+host'tan çalışırken `.env` ortama geçmiyordu. Sistem Sağlığı ekranı demoda bu
+düzeltme olmadan boş kalacaktı, yani iş zaten yapılacaktı — port ona bedavaya
+bindi.
+
+Yan kazanç: panel artık sağlık kaydı olmayan ya da bayat olan kameraya soket
+**açmıyor**. Önceden görünen her kameraya körlemesine bağlanıyor, tarayıcı
+konsolu başarısız WebSocket hatalarıyla doluyordu.
+
+### Yapılanlar
+
+- `vision/source.py` + `run.py`: `--loop`. Dosya bitince başa sarar, `idx`
+  SIFIRLANMAZ — `ts = idx/fps` hep ileri gider, iz kimlikleri ve kural
+  pencereleri sarımda bozulmaz. İkinci ve daha önemli gerekçe: dosya kaynağı
+  `_EOS` ile bittiğinde Spark oturumu olayın değil akışın bitişiyle
+  kapanıyordu (Aşama 6'nın 13.9–54.8 sn "gecikme" ölçümü bu yüzden hattın
+  hızını değil akışın bitişini ölçüyordu). Döngüde akış hiç bitmez
+- `vision/health_client.py` + `api/schemas.py` + `api/routers/health.py`:
+  `ws_port` sağlık belgesine yazılır ve `CameraHealthOut` ile dışarı verilir.
+  Port yalnızca StreamServer GERÇEKTEN açıldıysa yazılır (JWT_SECRET yoksa
+  açılmıyor) — panel olmayan porta bağlanmaya çalışmasın
+- `frontend/js/live.js`: sabit port kalktı; kamera adı → port eşlemesi sağlık
+  ucundan, **tek paylaşılan yoklayıcı** ile (ızgarada N kutu N istek atmaz).
+  `ws_port` yoksa ya da kayıt 60 sn'den bayatsa soket açılmaz, kamera ayağa
+  kalkınca kendiliğinden bağlanır. `index.js`, `kamera-detay.js`, `bolgeler.js`
+  ortak `liveUrlFn()`'i kullanır
+- `api/routers/settings.py`: `GET/PUT /api/settings/{camera_id}` artık ad ya da
+  sayısal id kabul ediyor (`resolve_camera_id`, cameras.py'deki tek çözücü).
+  Bu, "`--settings-url` ile metin `--camera-id` 422 veriyor" bilinen kısıtını
+  kapatır — `vision/run.py`'ye ikinci bir kimlik argümanı eklemeye gerek kalmadı
+- `scripts/run_pilot_cameras.py` (yeni): `.env`'i okuyup alt süreçlere geçirir,
+  admin jetonu alır, veritabanından kameraları çeker (`file` ve `webcam`),
+  varsayılan ilk 3 kamera (4 GB VRAM), port `8001 + id`, kamera başına
+  `logs/<ad>.log`, sağlık ucunu yoklayarak "hazır" bildirir, Ctrl+C hepsini
+  durdurur (Windows'ta `CTRL_BREAK_EVENT`)
+- `scripts/build_frontend.py`: betik etiketleri artık içerik özetiyle
+  sürümleniyor (`js/live.js?v=fb50e8e3`)
+
+### Ölçümler (Docker yığını ayakta, 3 kamera eşzamanlı, tek 4 GB kart)
+
+| Ölçüm | Değer |
+|---|---|
+| Panel canlı FPS | run_01 9.3 · zone_01 13.7 · webcam_01 15.1 — toplam 38.1 |
+| Panel canlı FPS, tek kutu (1x1) | 8.5 |
+| Canlı İzleme açılışı | DOM 861 ms · load 1.63 sn · ilk canlı kare 3.8–5.2 sn |
+| Olaylar ekranı (1033 olay) | DOM 551 ms · load 781 ms · 20 kanıt küçük resmiyle veri ekranda 1.63 sn |
+| Sağlık yoklaması | ~3 sn'de tek paylaşılan istek |
+| Alarmın panele ulaşması | 09:02:03.855 — veritabanı yazımından (09:02:04.107) ~250 ms ÖNCE |
+
+Izgarayı 1x1'e düşürmek FPS'i değiştirmedi (8.5 → 8.5): **darboğaz panel
+değil, tek kartı paylaşan üç görü süreci.** v1'in 0.67'sine karşı en düşük
+kamera bile 9.3. Hedef olan ≥ 20'ye kamera başına ulaşılamadı; tek kamerayla
+tek başına ölçüm yapılmadı (o koşuda üç süreç birden açıktı).
+
+Alarmın veritabanı yazımından ÖNCE panele düşmesi tasarım gereğidir:
+`/ws/alerts` ve tüketici aynı Kafka konusunu ayrı grup kimlikleriyle bağımsız
+okur.
+
+### Tarayıcı/gerçek koşunun yakaladığı dört kusur (hepsi düzeltildi)
+
+1. **`run_pilot_cameras.py` `--kafka` ve `--evidence` vermiyordu.** Üç kamera
+   20 dakika çalıştı, **tek olay üretilmedi**: aday olaylar Kafka'ya
+   basılmayınca Spark'a hiçbir şey gitmiyor, olay yazılmıyor, `/ws/alerts`
+   sessiz kalıyor, Telegram bildirimi de gitmiyor — zincirin tamamı sessizce
+   kopuk. Eklendikten sonra yeni olay (#1035) geldi. Testler bunu göremezdi:
+   komut kurulumu doğruydu, EKSİK olan bayraktı
+2. **Tarayıcı eski JS'i önbellekten sunuyordu.** `index.js` yeni, `live.js`
+   eski geldi ve panel `liveUrlFn is not defined` ile tek kutuda takıldı.
+   FastAPI `StaticFiles` `Cache-Control` göndermiyor, tarayıcı sezgisel
+   önbellekliyor — yani bu her dağıtımda tekrarlanacak gerçek bir kusurdu.
+   `build_frontend.py` artık içerik özetiyle sürümlüyor
+3. **Izgara ilk N kamerayı id sırasıyla alıyordu.** Çalışan üç kamera
+   listenin sonundaydı, ekran baştan aşağı "Bağlantı Yok" görünüyordu.
+   Yayında olan kameralar öne alınıyor (sıra içinde id sırası korunur)
+4. **Alt süreç logları tamponluydu**, `logs/*.log` demo boyunca boş
+   görünüyordu (`Kafka:` banner satırı bu yüzden görünmedi) — `python -u`
+
+Ayrıca: `api` konteyneri `build: ./api` ile imaja gömülü, `api/` bağlanmıyor.
+8.6'nın şema değişikliği (`ws_port`) çalışan konteynerde görünmedi;
+`docker compose up -d --build api` gerekti. Kod değişince API'nin yeniden
+inşası şart.
+
+### Kalan sınırlar
+
+- **Canlı kaynakta uçtan uca alarm gecikmesi hâlâ ölçülmedi.** Dosya
+  kaynağında `started_at` duvar saati değil (epoch tabanı 0), bu yüzden
+  gecikme yalnızca canlı kameradan ölçülebilir ve kameranın önünde gerçek bir
+  olay gerektirir. Aşama 8'in kapsamı dışında bırakılmıştı
+- Kamera başına ≥ 20 FPS hedefine ulaşılamadı (3 eşzamanlı süreç, tek kart).
+  Tek kamerayla yalnız başına ölçüm yapılmadı; çoklu kamera toplu çıkarım
+  (tek süreç, tek model) zaten Aşama 10'un işi
+- `CTRL_BREAK_EVENT` ile düzgün kapanma gerçek koşuda denenmedi; süreçler
+  ölçüm sonunda `Stop-Process` ile kapatıldı
+- Webcam görüntüsü karanlık geldi (kamera kapağı/ortam ışığı) — akış ve
+  iskelet çizimi çalışıyor, görüntü kalitesi ayrı konu
+
+---
+
 ## Bir sonraki adım
 
-Aşama 8.6 — uçtan uca demo (`docs/ASAMA8_PLAN.md` § 3):
+Aşama 9 — TCN modeli ve yeni sınıflar (`docs/PLAN.md` § Aşama 9):
 
-1. Kamera donanımı yok; demo kaynağı `data/pilot/` videolarıdır. Kameralar
-   veritabanında `source_type='file'` olarak tanımlı
-2. `scripts/run_pilot_cameras.py`: her pilot klip için `--ws --rules
-   --camera-id <ad>` ile süreç başlatır, Ctrl+C ile hepsini durdurur.
-   Klipler kısa (8-60 sn) olduğu için **döngü seçeneği şart** — bu aşamada
-   her doğrulama koşusunda video bitişi zaman baskısı yarattı
-3. Ölçülecek: panel canlı FPS (hedef ≥ 20, v1: 0.67), alarmın ekranda
-   görünme gecikmesi, ekran açılış süresi
-4. **Onay kriteri:** PLAN.md § 8 tablosundaki panel satırları gerçek ölçümle
-   doldurulur
+1. `telemetry` koleksiyonundan etiketli veri seti üretimi
+2. `models/tcn.py`: keypoint dizisi sınıflandırıcı eğitimi
+3. `HybridArbiter`: model güveni `tcn_min_conf` altındaysa kural motoruna düşer
+4. FIGHT ve LOITERING sınıflarının açılması (bu iki kuralın gerçek doğruluğu
+   hiç ölçülmedi — pilot kliplerde bu olaylar yok)
+5. **Onay kriteri:** `decided_by` üzerinden kural / model / hibrit ablation
+   tablosu
 
-Aşama 8'de ilk kez çalışacak yollar: çoklu bildirim alıcısı
-(`users.telegram_chat_id` panelden doldurulunca) ve bildirim bastırma ayarları.
-
-Önceki aşamalardan devralınan ve Aşama 8'de kapatılmayacak ölçümler: canlı
-kaynakta alarm gecikmesi (Aşama 6 § Ölçüm 4), gerçek kota aşımında LLM
-soğutması — donanım/senaryo gerektiriyor, kod değişikliği değil.
+Aşama 10'a devreden ölçümler: çoklu kamera toplu çıkarım (tek süreç, tek
+model) ve kamera başına ≥ 20 FPS hedefi, 4 kamera 8 saat kesintisiz koşu.
+Canlı kaynakta alarm gecikmesi ve gerçek kota aşımında LLM soğutması donanım/
+senaryo gerektiriyor, kod değişikliği değil.
 
 ---
 

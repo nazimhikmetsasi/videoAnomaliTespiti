@@ -115,13 +115,13 @@ function _startLiveView(cam) {
         // kadar yayin almaya devam eder (gercek kare CIFTLENIR). Idempotent
         // yapmak icin zaten bagliysa cik.
         if (liveSock) return;
-        liveSock = openReconnectingSocket(() => liveWsUrl("live", cam.name), {
+        liveSock = openReconnectingSocket(liveUrlFn("live", cam.name), {
             onMessage(blob) {
                 _noteFrame(cam.name);
                 setFrameImage(videoArea, blob);
             },
         });
-        metaSock = openReconnectingSocket(() => liveWsUrl("meta", cam.name), {
+        metaSock = openReconnectingSocket(liveUrlFn("meta", cam.name), {
             onMessage(data) {
                 lastMeta = JSON.parse(data);
                 if (fpsSpan) fpsSpan.textContent = lastMeta.fps;

@@ -475,16 +475,31 @@ Kullanıcı commit atar, `/clear` çeker, sonraki aşamadan devam edilir.
 
 ## 8. Ölçülebilir Hedefler (v1 karşılaştırması)
 
-| Metrik | v1 | v2 hedefi |
-|---|---|---|
-| Panel canlı FPS | 0.67 | ≥ 20 |
-| GPU çıkarım / kare | 2 model geçişi | 1 geçiş, model `n` → `s` |
-| Eşik değişimi | `.env` düzenle + restart | panelden anında |
-| Kanıt | 1 JPEG | mp4 klip + JPEG |
-| Anomali sınıfı sayısı | 4 | 7 |
-| Eşik taşınabilirliği | kameraya bağımlı (piksel) | ölçek-normalize |
-| 4 GB VRAM'de kamera | 1–2 | 3–4 |
-| En büyük dosya | `pipeline.py` 435 satır | aşama başına < 150 satır |
+| Metrik | v1 | v2 hedefi | v2 ölçülen |
+|---|---|---|---|
+| Panel canlı FPS | 0.67 | ≥ 20 | 9.3–15.1 (3 kamera eşzamanlı, toplam 38.1) |
+| GPU çıkarım / kare | 2 model geçişi | 1 geçiş, model `n` → `s` | 1 geçiş (Aşama 2) |
+| Eşik değişimi | `.env` düzenle + restart | panelden anında | panelden, ~1 sn (Aşama 8.5) |
+| Kanıt | 1 JPEG | mp4 klip + JPEG | mp4 + JPEG (Aşama 6) |
+| Anomali sınıfı sayısı | 4 | 7 | 7 tanımlı; FIGHT/LOITERING doğruluğu ölçülmedi |
+| Eşik taşınabilirliği | kameraya bağımlı (piksel) | ölçek-normalize | ölçek-normalize (Aşama 3) |
+| 4 GB VRAM'de kamera | 1–2 | 3–4 | 3 eşzamanlı çalıştı (Aşama 8.6) |
+| En büyük dosya | `pipeline.py` 435 satır | aşama başına < 150 satır | — |
+
+Panel satırlarının ölçümü (Aşama 8.6, 2026-09-10; ayrıntı `docs/DURUM.md`):
+
+| Ölçüm | Değer |
+|---|---|
+| Panel canlı FPS, 3 kamera eşzamanlı | run_01 9.3 · zone_01 13.7 · webcam_01 15.1 |
+| Panel canlı FPS, tek kutu (1x1 ızgara) | 8.5 — ızgaradakiyle aynı, darboğaz panel değil |
+| Canlı İzleme açılışı | DOM 861 ms · load 1.63 sn · ilk canlı kare 3.8–5.2 sn |
+| Olaylar ekranı (1033 olay, 20 kanıt küçük resmi) | DOM 551 ms · load 781 ms · veri ekranda 1.63 sn |
+| Alarmın panele ulaşması | veritabanı yazımından ~250 ms ÖNCE (ayrı Kafka tüketicisi) |
+
+Canlı kaynakta uçtan uca alarm gecikmesi (olayın gerçekleşmesi → ekranda
+kırmızı) hâlâ ölçülmedi: dosya kaynağında `started_at` duvar saati değildir,
+gerçek sayı için kameranın önünde gerçek bir olay gerekir. Bu ölçüm Aşama
+8'in kapsamı dışında bırakılmıştı (bkz. `docs/DURUM.md` § Bir sonraki adım).
 
 ---
 

@@ -53,11 +53,11 @@ def test_build_frontend_wires_each_page_script() -> None:
     davranis) -- her sayfa hem app.js hem kendi betigini yuklemeli."""
     for js_name, html_name in _PAGE_SCRIPTS.items():
         html = (FRONTEND / html_name).read_text(encoding="utf-8")
-        assert 'src="js/app.js"' in html, f"{html_name}: js/app.js eksik"
-        assert f'src="js/{js_name}"' in html, f"{html_name}: js/{js_name} eksik"
+        assert 'src="js/app.js?v=' in html, f"{html_name}: js/app.js eksik"
+        assert f'src="js/{js_name}?v=' in html, f"{html_name}: js/{js_name} eksik"
         # app.js her zaman sayfa betiginden ONCE yuklenir (TIP_ADI/api/
         # requireAuth gibi globaller sayfa betigi calisirken hazir olmali).
-        assert html.index('src="js/app.js"') < html.index(f'src="js/{js_name}"')
+        assert html.index('src="js/app.js?v=') < html.index(f'src="js/{js_name}?v=')
 
 
 # ------------------------------------------------------------------- requireAuth

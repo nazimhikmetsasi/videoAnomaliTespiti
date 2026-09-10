@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.build_frontend import (  # noqa: E402
-    _LOGIN_REPLACEMENTS, _REMOTE_IMG, _SCRIPT_TAG, LIVE_PAGES, NAV_TARGETS,
+    _LOGIN_REPLACEMENTS, _REMOTE_IMG, _script_tag, LIVE_PAGES, NAV_TARGETS,
     PAGES, PLACEHOLDER_IMG, build,
 )
 
@@ -67,7 +67,7 @@ def test_no_dangling_hash_href_for_sidebar_labels() -> None:
 def test_every_page_includes_app_js() -> None:
     for out_name in PAGES.values():
         html = (FRONTEND / out_name).read_text(encoding="utf-8")
-        assert 'src="js/app.js"' in html, f"{out_name}: js/app.js eklenmemis"
+        assert 'src="js/app.js?v=' in html, f"{out_name}: js/app.js eklenmemis"
 
 
 # --------------------------------------------------- tasarim korunuyor kaniti
@@ -83,7 +83,7 @@ def test_only_href_and_script_lines_differ_from_template() -> None:
         # Asama 8.3'ten beri). Uc de betik satiridir; tasarim kanitindan once
         # ayiklanir.
         script_lines = [i for i, line in enumerate(built_lines) if 'src="js/' in line]
-        assert len([i for i in script_lines if 'src="js/app.js"' in built_lines[i]]) == 1, out_name
+        assert len([i for i in script_lines if 'src="js/app.js?v=' in built_lines[i]]) == 1, out_name
         max_scripts = 3 if out_name in LIVE_PAGES else 2
         assert len(script_lines) <= max_scripts, (out_name, script_lines)
         assert len(built_lines) == len(template_lines) + len(script_lines), out_name
@@ -117,8 +117,11 @@ def test_login_diff_is_only_declared_changes() -> None:
     with open(FRONTEND / "login.html", encoding="utf-8", newline="") as f:
         built = f.read()
 
-    assert built.count(_SCRIPT_TAG) == 1
-    reconstructed = built.replace(_SCRIPT_TAG, "", 1)
+    # Betik etiketi 8.6'dan beri icerik ozetiyle surumleniyor
+    # (js/app.js?v=<hash>) -- onbellek sorunu icin, bkz. build_frontend._versioned
+    app_tag = _script_tag("js/app.js")
+    assert built.count(app_tag) == 1
+    reconstructed = built.replace(app_tag, "", 1)
     # Ileri sirada geri al: iki quickFill() cagrisi ayni metne sadelesiyor
     # (onclick="quickFill()"), sirali replace(..., 1) soldan sagadir --
     # belgedeki soldan-saga sirayla ayni sirada geri almak konumu korur.

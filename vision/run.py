@@ -165,6 +165,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--conf", type=float, default=0.25)
     parser.add_argument("--imgsz", type=int, default=FRAME_W)
     parser.add_argument("--max-frames", type=int, default=0, help="0 = sinirsiz")
+    parser.add_argument("--loop", action="store_true",
+                        help="dosya kaynagi bitince basa sarar (canlida yok sayilir); "
+                             "--max-frames verilmisse yine ona uyar")
     parser.add_argument("--no-clahe", action="store_true")
     parser.add_argument("--gmc", default=OVERRIDES["gmc_method"],
                         help="kamera hareketi telafisi: none|sparseOptFlow|orb|sift|ecc")
@@ -270,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
     health_client: HealthClient | None = None
     jpeg_quality = args.jpeg_quality
 
-    with VideoSource(args.source) as source:
+    with VideoSource(args.source, loop=args.loop) as source:
         print(f"  kaynak: {args.source} ({source.source_type}), model: {args.model}")
         camera_id = ""
         if args.kafka or args.settings_url or args.ws or args.evidence:
@@ -311,10 +314,14 @@ def main(argv: list[str] | None = None) -> int:
             evidence_writer.start()
             print(f"  kanit uretimi: acik (storage_dir={args.storage_dir})")
         if args.heartbeat_sec > 0 and args.settings_url and camera_id:
+            # ws_port yalniz StreamServer GERCEKTEN acildiysa yazilir (JWT_SECRET
+            # yoksa acilmaz, bkz. yukarida) -- panel olmayan bir porta korlemesine
+            # baglanmaya calismasin (ASAMA8_PLAN.md 8.6 SS3).
             health_client = HealthClient(
                 args.settings_url, camera_id, source,
                 interval=args.heartbeat_sec, token=args.settings_token or None,
-                mongo_url=default_mongo_url())
+                mongo_url=default_mongo_url(),
+                ws_port=args.ws_port if (stream_server is not None and stream_server.opened) else None)
             health_client.start()
             print(f"  kalp atisi: {args.settings_url} (interval={args.heartbeat_sec}s)")
         while True:

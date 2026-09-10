@@ -18,11 +18,28 @@ from api.audit import write_audit
 from api.auth import current_user, require_role
 from api.db.models import DetectionSettings
 from api.db.postgres import get_db
+from api.routers.cameras import resolve_camera_id
 from api.schemas import SettingsIn, SettingsOut, SettingsPatch
 
 router = APIRouter()
 
 _FIELDS = list(SettingsIn.model_fields)
+
+
+def _resolve_or_404(db: Session, raw_camera_id: str) -> int:
+    """Sayisal id VEYA kamera adi kabul eder (ADI TEK yerde cozen fonksiyon
+    api/routers/cameras.py'de -- ikinci bir ad-veya-id sorgusu acilmaz).
+
+    vision/run.py'nin `--camera-id` argumani TEK kimliktir: WS anahtari da
+    (ws_server.py) bu deger, esik sicak yukleme de (settings_client.py) ayni
+    degeri kullanir. Bu uc onceden yalniz int kabul ediyordu, `--camera-id`
+    ada verilince (ornegin klip adi) 422 donuyordu -- bilinen kisit
+    (docs/DURUM.md). Ayri bir `--settings-camera-id` argumani EKLEMEK yerine
+    burasi genisletildi: tek kimlik kavrami korunur, cozum tek yerde kalir."""
+    resolved = resolve_camera_id(db, raw_camera_id)
+    if resolved is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "kamera bulunamadi")
+    return resolved
 
 
 def _to_out(row: DetectionSettings, source: str) -> SettingsOut:
@@ -45,8 +62,9 @@ def get_global_settings(db: Session = Depends(get_db), _: dict = Depends(current
 
 @router.get("/{camera_id}", response_model=SettingsOut)
 def get_camera_settings(
-    camera_id: int, db: Session = Depends(get_db), _: dict = Depends(current_user),
+    camera_id: str, db: Session = Depends(get_db), _: dict = Depends(current_user),
 ) -> SettingsOut:
+    camera_id = _resolve_or_404(db, camera_id)
     row = db.scalar(select(DetectionSettings).where(DetectionSettings.camera_id == camera_id))
     if row is not None:
         return _to_out(row, "camera")
@@ -70,9 +88,10 @@ def put_global_settings(
 
 @router.put("/{camera_id}", response_model=SettingsOut)
 def put_camera_settings(
-    camera_id: int, body: SettingsPatch, db: Session = Depends(get_db),
+    camera_id: str, body: SettingsPatch, db: Session = Depends(get_db),
     user: dict = Depends(require_role("admin")),
 ) -> SettingsOut:
+    camera_id = _resolve_or_404(db, camera_id)
     row = db.scalar(select(DetectionSettings).where(DetectionSettings.camera_id == camera_id))
     if row is None:
         # Yeni kamera satiri GLOBALDEN miras alir; sutun varsayilanlarina
