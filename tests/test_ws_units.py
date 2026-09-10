@@ -17,7 +17,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from vision.run import (  # noqa: E402
+from vision.camera import (  # noqa: E402
     JPEG_QUALITY_MAX, JPEG_QUALITY_MIN, build_meta, next_jpeg_quality,
 )
 from vision.rules.engine import Zone  # noqa: E402

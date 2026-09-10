@@ -30,12 +30,24 @@ CLAHE_TILE = (8, 8)
 CLAHE_MIN_STD = 45.0
 
 
+# Kucultme yontemi -- Asama 10.2'de OLCULDU, tahmin degil (docs/DURUM.md).
+# INTER_AREA agir kucultmede dogru secimdir (aliasing'i onler) ve bu yuzden
+# bastan o secilmisti; 4 kamera butcesinde tur basina ~22 ms tutuyordu.
+# Bes pilot klipte (4K run_01 dahil) iki yontem karsilastirildi:
+#   INTER_AREA    on isleme medyan 7.73 ms   pozlu kare %70.9   benzersiz ID 4
+#   INTER_LINEAR  on isleme medyan 1.75 ms   pozlu kare %70.9   benzersiz ID 4
+# pilot_eval TP/FP/FN tablosu da BIREBIR ayni cikti (3/5/1). Yani bu kliplerde
+# aliasing korkusunun olculebilir bir bedeli yok, hiz farki 4.4 kat.
+# Daha buyuk kucultme oraninda (or. 8K kaynak) tekrar olculmeli.
+DOWNSCALE_INTERP = cv2.INTER_LINEAR
+
+
 def letterbox(image: np.ndarray, width: int = FRAME_W, height: int = FRAME_H) -> np.ndarray:
     """En-boy oranini koruyarak olceklendirir, kalani gri ile doldurur."""
     h, w = image.shape[:2]
     scale = min(width / w, height / h)
     new_w, new_h = max(1, round(w * scale)), max(1, round(h * scale))
-    interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
+    interp = DOWNSCALE_INTERP if scale < 1 else cv2.INTER_LINEAR
     resized = cv2.resize(image, (new_w, new_h), interpolation=interp)
 
     if (new_w, new_h) == (width, height):

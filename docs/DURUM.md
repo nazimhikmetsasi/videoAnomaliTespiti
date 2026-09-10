@@ -40,8 +40,8 @@ Sıradaki iş 8.5 (yazma ekranları): kamera ekle/düzenle/sil, bölge poligon
 | 6 | Canlı görüntü (WebSocket) | Tamamlandı |
 | 7 | LLM ve Telegram | Tamamlandı |
 | 8 | Panel (kullanıcı şablonu) | Tamamlandı (8.1–8.6) |
-| 9 | TCN modeli ve yeni sınıflar | 9.1 tamam; 9.2–9.4 kod hazır, ölçüm bekliyor |
-| 10 | Ölçek ve tez çıktıları | Bekliyor |
+| 9 | TCN modeli ve yeni sınıflar | Tamamlandı (9.1–9.5) |
+| 10 | Ölçek ve tez çıktıları | 10.1–10.4 tamam; 10.5 (8 saat) ve 10.6 sırada |
 
 ---
 
@@ -2006,58 +2006,301 @@ Aşama 10'a not: toplu çıkarım ölçüldü, kare başına **27.5 ms → 16.8 
 (batch 4); batch 8 ve 16 ek kazanç vermiyor. Dizi çıkarımında toplu hâle
 getirilmedi — tüm döngüdeki kazanç ~1.3x ve toplu çıkarım Aşama 10'un işi.
 
-### 9.2 çıkarım durumu — yarıda durduruldu (2026-09-10, 16:25)
+### 9.2 dizi çıkarımı sonucu
 
-Çıkarım elle durduruldu, **yeniden çalıştırılabilir**: var olan `.npz`
-atlanır, kaldığı yerden devam eder.
-
-```bash
-venv/Scripts/python.exe -m eval.extract_sequences
-```
-
-| Sınıf | İşlenen klip | `.npz` | Pencere | Durum |
+| Sınıf | Klip | Pencere | İzsiz klip | Kaydırma |
 |---|---|---|---|---|
-| NORMAL | 600 / 600 | 415 | 2726 | bitti |
-| FALL | 66 / 66 | 38 | 128 | bitti |
-| RUN | ~60 / 144 | 12 | 21 | yarım |
-| FIGHT | 0 / 270 | 2 | 14 | başlamadı |
+| NORMAL | 600 | 2726 | 185 | 25 |
+| FALL | 66 | 262 | 28 | **10** |
+| RUN | 144 | 195 | 65 | 25 |
+| FIGHT | 270 | 1236 | 40 | 25 |
 
-Hız: **7 klip/dakika**. Kalan ~350 klibin çoğu FIGHT ve 2–3 saniyelik
-(`bitint`, `utint`), yani kalan süre klip sayısının ima ettiğinden kısa.
+Toplam **4419 pencere**. Hız 7–10 klip/dakika.
 
-İki şey şimdiden görünüyor, ikisi de eğitimden önce karara bağlanmalı:
+**38 klip hiç açılmıyor** (FIGHT 13, NORMAL 24, RUN 1): `moov atom not found`
+/ `non-existing PPS`. Yerel dosya boyutları SPHAR deposundakiyle birebir aynı
+— indirme kesilmemiş, dosyalar kaynakta bozuk.
 
-1. **FALL ince: 66 klipten 128 pencere.** NORMAL 2726 pencere üretti.
-   Ağırlıklı kayıp dengesizliği kısmen kapatır ama 128 pencere az; FALL
-   için `STRIDE` düşürülüp (25 → 10) örtüşme artırılabilir. Ölçülmeden
-   karar verilmeyecek.
-2. **38 klip hiç açılmıyor** (FIGHT 13, NORMAL 24, RUN 1): `moov atom not
-   found` / `non-existing PPS`. Yerel dosya boyutları SPHAR deposundaki
-   boyutlarla **birebir aynı** — indirme kesilmemiş, dosyalar kaynakta
-   bozuk. Yapılacak bir şey yok, bu klipler pencere üretmeden atlanıyor.
+İki düzeltme yapıldı, ikisi de ölçümle:
+
+1. **URFD kare bazlı etiketi kullanılıyor.** İlk eğitimde FALL kesinliği
+   0.300 çıktı. Kök neden: URFD düşme klibinin **~%40'ı düşme öncesi
+   yürüyüş** (1192 kare `-1`, 900 kare `0` geçiş, 903 kare `1` yerde) ama
+   hepsi FALL etiketi alıyordu — model yürüyüşü düşme sanıyordu. Kaynak
+   kendi kare etiketini `urfall-cam0-falls.csv` ile veriyor; pencere artık
+   yalnızca gerçekten düşme geçen kareyi içeriyorsa tutuluyor (31 pencere
+   elendi). CASIA düşme kliplerinde böyle anotasyon yok, onlar klip
+   etiketiyle kalıyor — kabul edilen gürültü.
+2. **FALL için `--stride 10`.** Sınıf ince (66 klip); yarım pencere
+   kaydırma yerine %80 örtüşme. Bölme klip bazlı olduğu için sızıntı yok.
+   FALL 128 → 262 pencere.
+
+Ayrıca pencere üretmeyen klip için de boş `.npz` yazılıyor: yoksa dosya
+oluşmuyordu ve betik her yeniden başlatıldığında o klip baştan işleniyordu
+(yarım kalan bir koşuda 213 klip boşuna tekrar edildi).
+
+## Aşama 9.3 sonucu — TCN eğitimi (2026-09-10)
+
+66 116 parametre, klip bazlı %80/%20 bölme, ağırlıklı `CrossEntropyLoss`,
+erken durdurma. **Pencere başına çıkarım 1.20 ms.**
+
+| Sınıf | Kesinlik | Duyarlılık | F1 | Doğrulama penceresi |
+|---|---|---|---|---|
+| NORMAL | 0.802 | 0.722 | 0.760 | 540 |
+| FALL | 0.524 | 0.620 | 0.568 | 71 |
+| RUN | 0.704 | 0.974 | 0.817 | 39 |
+| FIGHT | 0.615 | 0.686 | 0.649 | 226 |
+| **makro F1** | | | **0.698** | |
+
+Karışıklık matrisi (satır = gerçek, sütun = tahmin):
+
+| | NORMAL | FALL | RUN | FIGHT |
+|---|---|---|---|---|
+| **NORMAL** | 390 | 40 | 13 | 97 |
+| **FALL** | 27 | 44 | 0 | 0 |
+| **RUN** | 1 | 0 | 38 | 0 |
+| **FIGHT** | 68 | 0 | 3 | 155 |
+
+Etiket düzeltmesinin etkisi ölçüldü: FALL kesinlik 0.300 → **0.524**, FALL
+F1 0.333 → **0.568**, makro F1 0.672 → **0.698**. RUN F1 0.892'den 0.817'ye
+düştü — FALL artık rekabet ediyor, beklenen bir takas.
+
+En büyük kalan zayıflık NORMAL ↔ FIGHT karışması (97 + 68 pencere). Kaynağı
+muhtemelen `ucarg` boks klipleri: tek kişilik gölge boks, kol hareketi
+normal harekete yakın.
+
+## Aşama 9.5 sonucu — ablation tablosu (2026-09-10)
+
+**Aşamanın onay kriteri.** `eval/tcn_eval.py`, üç mod × iki küme, tek
+ortalama verilmedi.
+
+### Holdout klipler (eğitim dışı, klip bazlı)
+
+| Mod | TP | FP | FN | Kesinlik | Duyarlılık | F1 |
+|---|---|---|---|---|---|---|
+| kural | 13 | 6 | 31 | 0.68 | 0.30 | 0.41 |
+| model | 13 | **1** | 31 | **0.93** | 0.30 | 0.45 |
+| hibrit | **17** | 7 | **27** | 0.71 | **0.39** | **0.50** |
+
+Tip bazında F1:
+
+| Tip | kural | model | hibrit |
+|---|---|---|---|
+| FALL | 0.53 | 0.67 | **0.78** |
+| RUN | 0.50 | **0.55** | 0.48 |
+| FIGHT | 0.12 | 0.00 | 0.12 |
+
+**Hibrit kazanıyor** (F1 0.41 → 0.50), model tek başına en kesin olan
+(0.93) ama duyarlılığı kuralla aynı. FALL'da model gerçekten katkı veriyor:
+0.53 → 0.78. Model FIGHT'ta 0.00 çünkü tasarım gereği tek başına FIGHT
+üretmiyor (ikili eşleştirme kuralda).
+
+### Pilot klipler (üretim alanı, 1080p)
+
+| Mod | TP | FP | FN | Kesinlik | Duyarlılık | F1 |
+|---|---|---|---|---|---|---|
+| kural | 3 | 24 | 1 | 0.11 | 0.75 | 0.19 |
+| model | 1 | 15 | 3 | 0.06 | 0.25 | 0.10 |
+| hibrit | 4 | 39 | 0 | 0.09 | **1.00** | 0.17 |
+
+**Alan farkı burada görünüyor ve tam da beklendiği gibi:** holdout'ta
+kesinliği 0.93 olan model, pilot kliplerde 12 sahte FALL üretiyor. 320x240
+güvenlik kaydıyla eğitilmiş model 1080p pilot görüntüde yanılıyor. Tek
+ortalama alınsaydı bu görünmezdi.
+
+Pilot FP'lerinin çoğu ZONE_VIOLATION (20 adet) ve bu Aşama 3'ten beri
+bilinen davranış: bölge kuralı koşul sürdükçe her karede aday üretiyor.
+Tablodaki sayılar **Spark öncesi ham adaylardır**; üretimde `min_hits` +
+`min_sec` süzgeci bu gürültüyü eliyor (Aşama 4 ölçümü).
+
+### FIGHT ve LOITERING — ilk gerçek ölçüm
+
+- **FIGHT duyarlılığı 0.07** (15 holdout klibinin 1'i). PLAN.md risk 3
+  kural tabanlı kavga için ~%70 bekliyordu; ölçülen bunun çok altında.
+  Kural ikili yakınlık + karşılıklı uzuv hızı istiyor, `bitint`/`utint`
+  klipleri 2-3 saniye ve pencere 2 saniye — çoğu klipte şart üç kare
+  (`HOLD`) üst üste sağlanmıyor. Model penceresi de aynı sebeple zor
+  doluyor.
+- **LOITERING hiçbir kümede tek aday üretmedi.** Yanlış pozitif oranı
+  sıfır; duyarlılık **ölçülmedi** — olumlu örnek hiçbir kümede yok, tahmin
+  edilmiyor. Aşama 10'a devrediyor.
+
+## Aşama 10.1-10.4 sonucu (2026-09-10)
+
+### 10.1 — `CameraPipeline` çıkarımı
+
+`vision/run.py`'nin `main()` gövdesindeki kamera başına durum
+`vision/camera.py`'ye taşındı. `run.py` artık **sürücü**: N adet
+`CameraPipeline` kurar, hepsinden birer kare toplar, **tek**
+`detector(images)` çağrısı yapar, sonuçları sahibine dağıtır. N=1 ve N=4
+aynı koddan geçer — tek kameralık davranış ayrı bir yol değil, dolayısıyla
+sessizce ayrışamaz.
+
+İkinci bir `run_multi.py` yazılmadı: canlı yayın, kanıt, kalp atışı, JPEG
+kalite denetleyicisi ve rapor mantığı iki kopyada yaşardı (v1'in 435
+satırlık `pipeline.py`'sinin tekrarı). `run.py` 582 → 303 satır,
+`camera.py` 421 satır.
+
+Davranış korunumu ölçüldü — `mixed_01`, 300 kare, refactor öncesi/sonrası:
+
+| | Önce | Sonra |
+|---|---|---|
+| aday olay | RUN 14, iz 1, ilk tetik 4.8 sn | **aynı** |
+| benzersiz ID | 1 | **aynı** |
+| pozsuz iz | 0 / 300 | **aynı** |
+| FPS | 33.5 | 32.7 (ölçüm gürültüsü) |
+
+Refactor sırasında iki hata yapıldı ve yakalandı: `build_meta` elle yeniden
+yazılınca `schema`, `width/height`, `kp` ve `pre_alarms` alanları değişmişti
+(test yakaladı, paneli sessizce bozardı) ve `load_zones` taşınırken `json` /
+`datetime` importları düşmüştü. İkisi de git'teki özgün gövde **birebir**
+kopyalanarak düzeltildi. Ders: taşırken yeniden yazma, kopyala.
+
+Ayrıca bir ölçüm hatası düzeltildi: kamera kendi klibini bitirdikten sonra da
+`elapsed` turun sonuna kadar sayıyordu, kısa klipli kameranın FPS'i yanlış
+düşük çıkıyordu. Süre artık kaynak bitince durur.
+
+### 10.2 — Ön işleme küçültme yöntemi
+
+4K karede `letterbox` maliyetinin tamamı `cv2.resize`. Beş pilot klipte
+(4K `run_01` dahil) ölçüldü:
+
+| Yöntem | Ön işleme medyan | Pozlu kare | Benzersiz ID | `pilot_eval` TP/FP/FN |
+|---|---|---|---|---|
+| INTER_AREA (eski) | 7.73 ms | %70.9 | 4 | 3 / 5 / 1 |
+| **INTER_LINEAR** | **1.75 ms** | %70.9 | 4 | 3 / 5 / 1 |
+| INTER_NEAREST | 1.49 ms | %70.9 | 4 | — |
+
+Doğruluk tablosu birebir aynı çıktı, hız 4.4 kat. INTER_LINEAR seçildi
+(`vision/stages/preprocess.py` `DOWNSCALE_INTERP`).
+
+**Ama uçtan uca kazanç yok denecek kadar az: 4 kamera 45.2 → 45.6 FPS.**
+Sebep ölçülebilir: `zone_01` (640x360) ve `mixed_01` (898x506) küçültülmüyor,
+**büyütülüyor**; onların 8-9 ms'i resize değil CLAHE. Turun kritik yolu
+orası. Kritik yolda olmayan bir aşamayı hızlandırmak uçtan uca hiçbir şey
+kazandırmıyor — ölçmeden yapılsaydı "iyileştirdik" denirdi.
+
+### 10.3 — Tek süreç, 4 kamera, toplu çıkarım
+
+`--source a.mp4,b.mp4,c.mp4,d.mp4`. Toplu çağrının tek sahibi sürücüdür.
+Çıkarım kare başına **14.45 → 10.5 ms** (batch 4).
+
+Gerçek eşzamanlı ölçüm `--loop --max-frames` ile alınır: kameralar farklı
+anlarda biterse son kalan tek başına hızlanır ve toplam şişer (ilk ölçümde
+59.0 FPS çıkmıştı, gerçek eşzamanlı değer 45.2).
+
+| Kurulum | Kamera başına FPS | Toplam |
+|---|---|---|
+| Aşama 8.6, **3 kamera ayrı süreç** | 9.3 / 13.7 / 15.1 | 38.1 |
+| Aşama 10.3, **4 kamera tek süreç** | 11.4 × 4 | 45.6 |
+
+### 10.4 — Düğme tablosu (4 kamera, aynı klipler)
+
+Hız **ve** doğruluk birlikte ölçüldü; hızlı olanı doğruluk bakmadan seçmek
+bu tablonun varlık sebebini yok ederdi.
+
+| Yapılandırma | Kamera başına FPS | `pilot_eval` FALL F1 | Toplam F1 |
+|---|---|---|---|
+| `s` + ReID + CLAHE (taban) | 11.7 | 1.00 | 0.50 |
+| `s` + ReID kapalı | 15.2 | 1.00 | 0.50 |
+| `s` + CLAHE kapalı | — | 1.00 | 0.50 |
+| `s` + ReID/CLAHE kapalı | 17.6 | 1.00 | 0.50 |
+| **`s` + ReID/CLAHE kapalı + `imgsz 640`** | **26.3** | **1.00** | **0.50** |
+| `n` + ReID | 13.4 | **0.00** | 0.36 |
+| `n` + ReID kapalı | 19.2 | **0.00** | — |
+| `n` + ReID/CLAHE kapalı | 27.2 | **0.00** | 0.40 |
+
+**`yolo26n-pose` FALL'ı tamamen kaybediyor** (F1 1.00 → 0.00). PLAN.md risk 1
+"çoklu kamerada `yolo26n-pose`'a düşülür" diyordu; ölçüm bunu **çürüttü** —
+düşülemez, düşülürse sistemin ana anomali sınıfı ölür. Hız `n`'den değil
+ReID + CLAHE + `imgsz`'den alınmalı.
+
+ReID ve CLAHE kapatmanın pilot kümede ölçülebilir doğruluk bedeli **yok**
+(TP/FP/FN birebir aynı). ReID için bu, Aşama 2'de `--no-reid` ile ID
+sayılarının hiç değişmemesi bulgusuyla tutarlı.
+
+`imgsz 640` küçük/uzak insanı kaçırır mı diye ayrıca ölçüldü — CASIA
+kliplerinde (kişi kare yüksekliğinin ~%24'ü) **kaçırmıyor, tersine artırıyor**:
+pozlu kare %47.6 → %54.1.
+
+**Onay kriteri (kamera başına ≥ 20 FPS, 4 kamera) karşılandı: 26.3 FPS.**
+Ölçülen doğruluk bedeli sıfır.
+
+Üç uyarı, üçü de bu kümenin sınırı:
+
+1. **ReID kapalı** — pilot kliplerde en fazla 1-2 kişi var; kalabalıkta ID
+   değişimi hiç ölçülmedi (Aşama 2'den beri açık soru)
+2. **CLAHE kapalı** — pilot klipler karanlık değil. Gerçekten düşük ışıkta
+   CLAHE'nin kapalı olması tespiti düşürebilir
+3. Bu yüzden **varsayılanlar değiştirilmedi**; bunlar `vision/run.py`
+   bayrakları olarak kalıyor. 4 kamera profili: `--no-reid --no-clahe
+   --imgsz 640`
+
+### 10.3 devamı — tek süreçli başlatıcı ve uçtan uca açılış (2026-09-10)
+
+`scripts/run_pilot_cameras.py` artık **kamera başına bir süreç değil tek
+süreç** açıyor: kaynaklar ve adlar virgülle birleşip `vision.run`'a veriliyor,
+tek model, tek toplu çıkarım, tek WS portu. Önceden her süreç kendi model
+kopyasını VRAM'e yüklüyordu ve 4 GB'ta 3 kamerada tıkanıyordu.
+
+`--camera-id` de artık virgülle ayrılabiliyor ve kaynaklarla aynı sırada
+eşleşiyor; sayı tutmuyorsa ad kaynaktan türer (tek kameralı eski davranış).
+
+Tüm sistem açılıp panelden doğrulandı: 6 konteyner sağlıklı, 4 kamera
+(dizüstü kamerası + 3 pilot klip) tek süreçte, kamera başına ~5.9 FPS. Bu
+sayı 10.4'teki 26.3'ün altında çünkü burada tam zincir açık (Kafka + kanıt +
+WebSocket + TCN) ve Spark/tüketici aynı makinede CPU paylaşıyor.
+
+**Bulunan gerçek hata: canlı kaynak kalıcı olarak ölü sayılıyordu.**
+
+Webcam açılışta 30 saniyeyi aşınca `LIVE_WAIT_SEC` doluyor ve hat kamerayı
+`finished` işaretliyordu — bir daha hiç okunmuyordu. Kuyruğu dolu kaldığı
+için düşen kare durmadan arttı (**ölçülen: 955**) ve `VideoSource`'un üstel
+geri çekilmeli yeniden bağlanma mantığı hiç devreye giremedi.
+
+Tek kamerada bu görünmezdi: eski kodda aynı durum tüm koşuyu bitiriyordu,
+yani "normal son" sayılıyordu. Çoklu kamerada bir kamera sessizce ölürken
+diğerleri koştuğu için ortaya çıktı — `docs/ASAMA10_PLAN.md` § 2'nin "kamera
+biri düşerse diğerleri devam eder" sözünün fiilen tutmadığı yer.
+
+Düzeltme: canlı kaynak **asla** kalıcı bitmiş sayılmaz. Kesinti sayılır
+(`outages`), uyarı basılır, okumaya devam edilir; yeniden bağlanma ancak
+böyle çalışabilir. Dosya kaynağı gerçekten biter (EOF), canlı kaynak bitmez.
+Düzeltmeden sonra webcam 4.7 FPS'te çalıştı. `tests/test_asama8_6.py` içinde
+regresyon testi var.
+
+Canlı kaynakta yüksek `dropped` **normaldir**: kamera ~30 FPS üretir, hat ~5
+tüketir, gerisi tasarım gereği atılır (kuyruk derinliği 1, "gecikme yerine
+tazelik").
 
 ## Bir sonraki adım
 
-Aşama 9, kaldığı yer: **dizi çıkarımı yarıda** (RUN yarım, FIGHT
-başlamadı). Sıra:
+Aşama 10, kalan iki alt aşama:
 
-1. `venv/Scripts/python.exe -m eval.extract_sequences` — kaldığı yerden
-   devam eder, ~50 dakika
-2. FALL'ın pencere sayısına bakılır; 128 pencere azsa FALL için `STRIDE`
-   düşürülür (ölçülmeden değiştirilmeyecek)
-3. `venv/Scripts/python.exe -m models.tcn --train` — 9.3, karışıklık
-   matrisi + sınıf başına F1
-4. `venv/Scripts/python.exe -m eval.tcn_eval --limit 15` — 9.5 ablation.
-   `--limit` şart: holdout sınıf başına sınırlanmazsa 216 klip x 3 mod
-   ~90 dakika sürer
-5. **Onay kriteri:** `decided_by` kırılımıyla kural / model / hibrit
-   tablosu, pilot ve holdout kümeleri için AYRI
+1. **10.5 — 4 kamera 8 saat kesintisiz koşu** (aşamanın onay kriteri).
+   Ölçülecek: FPS sapması, RAM/VRAM sızıntısı, düşen kare, yeniden bağlanma,
+   Kafka teslim hatası, Spark checkpoint büyümesi. `scripts/soak_test.py`
+   henüz yazılmadı — koşuyu tekrarlamadan tablo üretilebilsin diye periyodik
+   ölçüm satırını `logs/` altına yazmalı
+2. **10.6 — Tez çıktıları:** ablation raporu + gecikme dağılımı + v1/v2
+   karşılaştırma tablosu tek belgede; README; veri kümesi atıfları (SPHAR ve
+   alt kaynakları — CASIA yazar izni, BIT-Interaction ticari olmayan,
+   UT-Interaction MIT, UCF-ARG yalnız araştırma — ve UR Fall Detection)
 
-Aşama 10'a devreden ölçümler: çoklu kamera toplu çıkarım (tek süreç, tek
-model) ve kamera başına ≥ 20 FPS hedefi, 4 kamera 8 saat kesintisiz koşu.
-Canlı kaynakta alarm gecikmesi ve gerçek kota aşımında LLM soğutması
-donanım/senaryo gerektiriyor, kod değişikliği değil. Toplu çıkarımın kare
-başına maliyeti 9.2 sırasında ölçüldü: 27.5 ms → 16.8 ms (batch 4).
+Sistemi açmak için:
+
+```bash
+docker compose up -d
+venv/Scripts/python.exe scripts/run_pilot_cameras.py --cameras webcam_01,zone_01,run_01,fall_01
+```
+
+Panel `http://localhost:8000`, kullanıcı `admin`, şifre `.env`'deki
+`ADMIN_PASSWORD`.
+
+Aşama 9'dan devreden açık sorular: FIGHT duyarlılığı 0.07, modelin pilot
+alanda 12 sahte FALL üretmesi, LOITERING duyarlılığının hiç ölçülmemiş
+olması. Canlı kaynakta alarm gecikmesi ve gerçek kota aşımında LLM soğutması
+donanım/senaryo gerektiriyor, kod değişikliği değil.
 
 ---
 

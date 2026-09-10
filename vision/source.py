@@ -124,11 +124,20 @@ class VideoSource:
     # --- tuketici tarafi -------------------------------------------------
 
     def read(self, timeout: float = 2.0) -> Frame | None:
-        """Siradaki kareyi verir. Kaynak bittiyse veya sure dolduysa None."""
+        """Siradaki kareyi verir. Kaynak bittiyse veya sure dolduysa None.
+
+        Bekleme SURESI `timeout`u asmaz. Once sabit 0.1 sn'lik parcalarla
+        beklenirdi; coklu kamerada (Asama 10.3) bu, kare hazir olmayan
+        webcam'in TUM turu 0.1 sn bloklamasi demekti ve dosya kameralari
+        11.4'ten 7.1 FPS'e dusuyordu. timeout=0 artik gercekten bloklamaz.
+        """
         deadline = time.monotonic() + timeout
         while True:
+            wait = min(0.1, deadline - time.monotonic())
             try:
-                return self._queue.get(timeout=0.1)
+                if wait > 0:
+                    return self._queue.get(timeout=wait)
+                return self._queue.get_nowait()
             except queue.Empty:
                 if self.eof.is_set() or self._stop.is_set():
                     return None

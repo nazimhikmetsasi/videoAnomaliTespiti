@@ -260,7 +260,7 @@ def test_load_env_file_missing_file_returns_empty() -> None:
 def test_build_run_command_includes_identity_port_and_loop() -> None:
     from scripts.run_pilot_cameras import build_run_command
 
-    cmd = build_run_command("fall_01", "data/pilot/fall_01.mp4", 8003,
+    cmd = build_run_command(["fall_01"], ["data/pilot/fall_01.mp4"], 8003,
                              settings_url="http://localhost:8000", settings_token="tok", loop=True)
     assert "--camera-id" in cmd and "fall_01" in cmd
     assert "--ws-port" in cmd and "8003" in cmd
@@ -271,7 +271,7 @@ def test_build_run_command_includes_identity_port_and_loop() -> None:
 def test_build_run_command_no_loop_flag_omitted() -> None:
     from scripts.run_pilot_cameras import build_run_command
 
-    cmd = build_run_command("fall_01", "data/pilot/fall_01.mp4", 8003,
+    cmd = build_run_command(["fall_01"], ["data/pilot/fall_01.mp4"], 8003,
                              settings_url="http://localhost:8000", settings_token="tok", loop=False)
     assert "--loop" not in cmd
 
@@ -290,8 +290,53 @@ def test_wants_loop_yalniz_dosyada() -> None:
 def test_build_run_command_webcamde_loop_vermez() -> None:
     from scripts.run_pilot_cameras import build_run_command, wants_loop
 
-    cmd = build_run_command("webcam_01", "0", 8010, settings_url="http://x",
+    cmd = build_run_command(["webcam_01"], ["0"], 8010, settings_url="http://x",
                             settings_token="t", loop=wants_loop("webcam", True))
     assert "--loop" not in cmd
     assert cmd[cmd.index("--source") + 1] == "0"
     assert cmd[cmd.index("--camera-id") + 1] == "webcam_01"
+
+
+# ------------------------------------------- Asama 10.3: tek surec, N kamera
+def test_build_run_command_tek_surecte_tum_kameralari_birlestirir() -> None:
+    """Kamera basina ayri surec yerine TEK surec: kaynaklar ve adlar ayni
+    sirada, virgulle. Her surecin kendi model kopyasini yuklemesi 4 GB
+    VRAM'de 3 kamerada tikaniyordu."""
+    from scripts.run_pilot_cameras import build_run_command
+
+    cmd = build_run_command(["webcam_01", "fall_01"], ["0", "data/pilot/fall_01.mp4"],
+                            8010, settings_url="http://x", settings_token="t", loop=True)
+    assert cmd[cmd.index("--source") + 1] == "0,data/pilot/fall_01.mp4"
+    assert cmd[cmd.index("--camera-id") + 1] == "webcam_01,fall_01"
+    assert cmd.count("--ws-port") == 1
+
+
+# --------------------------------------- Asama 10.3: canli kaynak olmez
+def test_canli_kaynak_sessiz_kalinca_bitmis_sayilmaz() -> None:
+    """Webcam acilista gec kalirsa hat onu KALICI olarak olu saymamali.
+
+    Olculen hata: 30 sn sessizlikten sonra kamera bir daha hic okunmadi,
+    kuyrugu dolu kaldigi icin dusen kare 955'e cikti ve VideoSource'un
+    yeniden baglanma mantigi hic devreye giremedi. Dosya kaynagi gercekten
+    biter (eof), canli kaynak bitmez.
+    """
+    import time as _time
+    from vision.camera import CameraPipeline
+
+    pipe = CameraPipeline.__new__(CameraPipeline)   # __init__ kaynak acar
+    pipe.finished, pipe.outages, pipe.frames = False, 0, 0
+    pipe.idle_since = _time.monotonic() - 999
+    pipe.camera_id, pipe.source_arg = "webcam_01", "0"
+
+    class _Source:
+        last_error = ""
+        def read(self, timeout=2.0): return None
+        class _Eof:
+            @staticmethod
+            def is_set(): return False
+        eof = _Eof()
+    pipe.source = _Source()
+
+    assert CameraPipeline.read(pipe, timeout=0.0) is None
+    assert pipe.finished is False        # OLU SAYILMAZ
+    assert pipe.outages == 1

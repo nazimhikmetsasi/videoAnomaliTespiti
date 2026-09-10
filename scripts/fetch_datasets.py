@@ -35,6 +35,11 @@ REPO = "AlexanderMelde/SPHAR-Dataset"
 TREE_URL = f"https://api.github.com/repos/{REPO}/git/trees/master:videos/"
 RAW_URL = f"https://raw.githubusercontent.com/{REPO}/master/videos/"
 URFD_URL = "http://fenix.ur.edu.pl/~mkepski/ds/data/"
+# URFD kare bazli etiket tasiyor: -1 ayakta, 0 gecis (dusme ani), 1 yerde.
+# Dusme klibinin ~%40'i dusme ONCESI yuruyustur; bu dosya olmadan o kareler de
+# FALL etiketi alir ve model yuruyusu dusme sanir (olculdu: FALL F1 0.333).
+URFD_LABELS = ("urfall-cam0-falls.csv", "urfall-cam0-adls.csv")
+LABELS_NAME = "_urfd_cam0_labels.csv"
 
 # Kaynak secimi klipler GORULEREK yapildi (docs/ASAMA9_PLAN.md SS1, elle
 # denetim). Elenenler ve gerekceleri:
@@ -101,6 +106,24 @@ def crop_right_half(path: Path) -> None:
     tmp.replace(path)
 
 
+def fetch_urfd_labels(root: Path) -> None:
+    """Iki CSV'yi tek dosyada birlestirir: data/train/_urfd_cam0_labels.csv."""
+    target = root / LABELS_NAME
+    if target.exists() and target.stat().st_size > 0:
+        return
+    parts = []
+    for name in URFD_LABELS:
+        try:
+            with urllib.request.urlopen(URFD_URL + name, timeout=TIMEOUT) as resp:
+                parts.append(resp.read().decode("utf-8", "replace"))
+        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+            print(f"  [HATA] {name}: {exc}")
+            return
+    root.mkdir(parents=True, exist_ok=True)
+    target.write_text("".join(parts), encoding="utf-8")
+    print(f"  URFD kare etiketleri: {target.name}")
+
+
 def plan_class(name: str) -> list[tuple[str, str, int]]:
     folders, prefixes, reject = SPHAR[name]
     files: list[tuple[str, str, int]] = []
@@ -155,6 +178,8 @@ def main() -> int:
         return 2
 
     root = Path(__file__).resolve().parent.parent / args.out
+    if not args.dry_run:
+        fetch_urfd_labels(root)
     total_failed = 0
     print(f"{'sinif':8} {'klip':>6} {'MB':>9}  durum")
     for name in wanted:
