@@ -74,8 +74,10 @@ def test_kameralar_js_uses_cameras_endpoint_once() -> None:
     src = _source("kameralar.js")
     assert '"/api/cameras"' in src
     # Gorev tanimi: veri tek istekte gelir, filtreler sunucuya ikinci istek
-    # atmaz -- kaynakta ikinci bir api("/api/cameras...") cagrisi olmamali.
-    assert src.count('api("/api/cameras"') == 1
+    # atmaz -- LISTE cagrisi (secenek almayan api("/api/cameras")) tek olmali.
+    # 8.5'te ayni URL'ye POST eklendi; o cagri liste istegi degildir, bu
+    # nedenle sayim yalnizca argumansiz bicimi hedefler.
+    assert src.count('api("/api/cameras")') == 1
 
 
 def test_kameralar_js_filters_client_side_and_links_to_detail() -> None:

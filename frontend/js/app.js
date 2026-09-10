@@ -29,6 +29,19 @@ function logout() {
     location.href = "login.html";
 }
 
+// FastAPI'nin 422 govdesi metin DEGIL, [{loc, msg, type}, ...] listesidir --
+// dogrudan Error(detail) yazilinca kullaniciya "[object Object]" gorunuyordu
+// (8.5b'de bolge poligonu dogrulamasinda yakalandi). Tek yer burasi: tum
+// ekranlar api() uzerinden gectigi icin duzeltme de tek yerde.
+function _detailText(detail) {
+    if (detail == null) return null;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+        return detail.map((d) => (d && d.msg) ? d.msg : JSON.stringify(d)).join("; ");
+    }
+    return typeof detail === "object" ? JSON.stringify(detail) : String(detail);
+}
+
 async function api(path, opts = {}) {
     const headers = Object.assign({}, opts.headers);
     if (token()) headers["Authorization"] = "Bearer " + token();
@@ -46,7 +59,7 @@ async function api(path, opts = {}) {
     if (!res.ok) {
         let detail = res.statusText;
         try {
-            detail = (await res.json()).detail || detail;
+            detail = _detailText((await res.json()).detail) || detail;
         } catch (_e) { /* govde JSON degil */ }
         throw new Error(detail);
     }
@@ -114,6 +127,13 @@ async function _fetchAuthedBlobUrl(path) {
     return URL.createObjectURL(blob);
 }
 
+// innerHTML ile kurulan satirlarda kullanici verisi (kamera/bolge adi)
+// once kacislanir -- 8.5b'de bolgeler.js ve ayarlar.js'de ayri ayri
+// kopyalanmisti (live.js'in "kopyalanmis yardimci" notuyla ayni gerekce).
+function _escXml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 // container'in ilk cocugunu satir sablonu olarak soker, sahte satirlari siler,
 // her cagrida sablonun temiz bir klonunu doner. Veri doldurma 8.3'in isi.
 function rowTemplate(container) {
@@ -122,6 +142,122 @@ function rowTemplate(container) {
     return function (_veri) {
         return tpl.cloneNode(true);
     };
+}
+
+// Kamera ve kullanici formlarinin ortak diyaloğu (8.5, iki tuketicisi var --
+// ucuncu bir soyutlama katmani eklenmedi). Kaydedilirse alan degerlerini
+// iceren nesne, iptalde/Esc'te null doner. Yazma istegini BURASI atmaz --
+// hata olursa diyalog kapanip girdi kaybolmamali, o yuzden cagiran taraf
+// hata mesajini `values.error` ile onceki degerlere ekleyip fonksiyonu
+// tekrar cagirir (bkz. kameralar.js/kullanicilar.js).
+//
+// Toast/bildirim katmani bilincli olarak yazilmadi -- satir islemlerindeki
+// (silme/pasiflestirme) hatalar icin native alert(), onay icin native
+// confirm() yeterli (ASAMA8_PLAN.md 8.5 gorev tanimi, "bilincli sadelestirme").
+async function openFormDialog({ title, fields, values = {} }) {
+    return new Promise((resolve) => {
+        const dialog = document.createElement("dialog");
+        dialog.className = "bg-surface-container border border-outline-variant rounded-lg p-6";
+
+        const form = document.createElement("form");
+        form.className = "flex flex-col gap-4 w-[22rem] max-w-full";
+
+        const heading = document.createElement("h3");
+        heading.className = "font-title-sm text-title-sm text-on-surface";
+        heading.textContent = title;
+        form.appendChild(heading);
+
+        if (values.error) {
+            const err = document.createElement("p");
+            err.className = "font-body-sm text-body-sm text-error";
+            err.textContent = values.error;
+            form.appendChild(err);
+        }
+
+        const inputs = {};
+        for (const f of fields) {
+            const wrap = document.createElement("div");
+            wrap.className = "flex flex-col gap-1";
+
+            if (f.type === "checkbox") {
+                const label = document.createElement("label");
+                label.className = "flex items-center gap-2 font-body-sm text-body-sm text-on-surface-variant";
+                const input = document.createElement("input");
+                input.type = "checkbox";
+                input.checked = values[f.name] != null ? !!values[f.name] : !!f.value;
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(f.label));
+                wrap.appendChild(label);
+                inputs[f.name] = input;
+            } else {
+                const label = document.createElement("label");
+                label.className = "font-body-sm text-body-sm text-on-surface-variant";
+                label.textContent = f.label;
+                wrap.appendChild(label);
+
+                let input;
+                if (f.type === "select") {
+                    input = document.createElement("select");
+                    for (const [val, lbl] of f.options || []) {
+                        const opt = document.createElement("option");
+                        opt.value = val;
+                        opt.textContent = lbl;
+                        input.appendChild(opt);
+                    }
+                } else {
+                    input = document.createElement("input");
+                    input.type = f.type || "text";
+                    if (f.step != null) input.step = f.step;
+                }
+                input.className = "w-full bg-surface-container-lowest border border-outline-variant rounded px-3 py-2 font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-secondary";
+                if (f.required) input.required = true;
+                const val = values[f.name] != null ? values[f.name] : f.value;
+                if (val != null) input.value = val;
+                wrap.appendChild(input);
+                inputs[f.name] = input;
+            }
+            form.appendChild(wrap);
+        }
+
+        const actions = document.createElement("div");
+        actions.className = "flex justify-end gap-2 pt-2";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "px-4 py-2 rounded border border-outline-variant text-on-surface";
+        cancelBtn.textContent = "İptal";
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "submit";
+        saveBtn.className = "px-4 py-2 rounded bg-secondary-container text-on-secondary-container font-title-sm text-title-sm";
+        saveBtn.textContent = "Kaydet";
+        actions.appendChild(cancelBtn);
+        actions.appendChild(saveBtn);
+        form.appendChild(actions);
+
+        dialog.appendChild(form);
+        document.body.appendChild(dialog);
+
+        function cleanup(result) {
+            dialog.close();
+            dialog.remove();
+            resolve(result);
+        }
+
+        cancelBtn.addEventListener("click", () => cleanup(null));
+        dialog.addEventListener("cancel", () => cleanup(null)); // Esc tusu
+        form.addEventListener("submit", (e) => {
+            e.preventDefault();
+            const out = {};
+            for (const f of fields) {
+                const input = inputs[f.name];
+                if (f.type === "checkbox") out[f.name] = input.checked;
+                else if (f.type === "number") out[f.name] = Number(input.value);
+                else out[f.name] = input.value;
+            }
+            cleanup(out);
+        });
+
+        dialog.showModal();
+    });
 }
 
 // Ust cubuktaki profil dugmesi sablonda her sayfada ayni yerde degil --

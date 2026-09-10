@@ -1690,28 +1690,142 @@ bağlantı durumudur (`online/offline/error`), kanonik karşılık
 
 ---
 
+## Aşama 8.5 sonucu (2026-09-10)
+
+Yazma ekranları. Şablon HTML'i `scripts/build_frontend.py` tarafından
+üretildiği için hiçbir yeni DOM elle eklenmedi: diyaloglar, saat alanları,
+kamera seçici ve "Sil" düğmesi çalışma zamanında JavaScript'le kuruluyor.
+Tek build değişikliği `LIVE_PAGES`'e `bolgeler.html` eklenmesi (çizim arka
+planında canlı kare için `js/live.js` gerekiyor).
+
+### Yapılanlar
+
+- `app.js`: `openFormDialog()` — native `<dialog>` + `showModal()`, kütüphane
+  yok. Yazma isteğini kendisi atmaz; hata olursa çağıran taraf diyaloğu önceki
+  değerlerle yeniden açar, girdi kaybolmaz. `_escXml()` de buraya taşındı
+  (iki yeni betikte kopyalanmıştı)
+- `kameralar.js`: ekle / düzenle (`PUT` tam `CameraIn` gövdesi) / sil
+- `kullanicilar.js`: ekle / düzenle / pasifleştir. Düzenlemede şifre alanı boş
+  gelir, boş bırakılırsa gövdeye hiç konmaz (hash'e dokunulmaz)
+- `olaylar.js`: başlık onay kutusu = sayfadaki tüm satırlar; "Seçilenleri
+  Görüldü Yap" seçili her olay için ayrı `PATCH` atar (toplu uç yok)
+- `olay-detay.js`: üç durum düğmesi `PATCH`, rozet yanıttan güncellenir,
+  mevcut duruma karşılık gelen düğme devre dışı
+- `bolgeler.js` (yeni): kamera listesi, canlı kare arka planı, tıklayarak
+  poligon çizimi, mevcut bölgeyi tıklayarak seçme (ray-casting), kaydet /
+  sil, `restricted_hours` için saat aralığı alanları
+- `ayarlar.js` (yeni): global / kamera bazlı kapsam, yalnızca değişen alanları
+  gönderen kısmi `PUT`, `restart_required` uyarısı, "Varsayılana Dön" kamera
+  kapsamında global değerleri forma yükler
+
+### Doğrulama — tarayıcıda, gerçek yığın üzerinde
+
+Testler ağsız kaynak-deseni kontrolü; asıl kanıt aşağıdaki koşu (Docker
+yığını ayakta, gerçek Postgres, gerçek JWT):
+
+1. **Kamera CRUD:** `test_cam_85` eklendi (6 → 7 kamera), `target_fps` 25 → 30
+   ve konum düzenlendi (`PUT` tam gövde, hiçbir alan kaybolmadı), silindi
+   (7 → 6). Diyalog koyu temada okunur çıktı
+2. **Kullanıcı CRUD:** `test_op_85` eklendi; ad değiştirilip şifre alanı boş
+   bırakılarak kaydedildi, ardından **eski şifreyle `POST /api/auth/login`
+   200 döndü** — hash'e gerçekten dokunulmadı; sonra pasifleştirildi
+   (`is_active=false`, satır soluklaştı)
+3. **Hata yolu:** admin'in rolü `viewer` yapılmak istendiğinde sunucu
+   "kendi hesabinizin yetkisini kaldiramazsiniz" döndü; diyalog açık kaldı,
+   girilen ad ve rol korundu
+4. **Toplu işaretleme:** sayfadaki 20 olay seçildi, tek tıkla hepsi
+   `acknowledged` oldu (`acked_by=1`, `acked_at` doldu)
+5. **Olay detayı:** #1034 "Yanlış Alarm" düğmesiyle `false_positive` oldu,
+   rozet "YANLIŞ ALARM"a döndü, düğme devre dışı kaldı
+6. **Bölge çizimi — koordinat isabeti ölçüldü.** `zone_01` kamerası seçildi,
+   canlı kare geldi (durum "CANLI ÇİZİM MODU", arka plan blob URL'e döndü).
+   Hedeflenen 0.2/0.8 normalize noktalarına tıklandı; panelin yazdığı ve
+   veritabanına giden değerler **0.201 / 0.204 / 0.799 / 0.802** — sapma
+   ≤ 0.002 (tıklamanın tam sayı ekran koordinatına yuvarlanmasından).
+   Letterbox dönüşümü doğru. Bölge poligona tıklanarak seçildi ve silindi
+7. **Kısmi PUT:** yalnızca eğim açısı değiştirildiğinde gövde tam olarak
+   `{"fall_tilt_deg": 55}` gitti
+
+### Onay kriteri geçti: sıcak yükleme panelden tetiklendi
+
+`vision/run.py --camera-id 7 --settings-url http://localhost:8000
+--settings-interval 3` çalışırken panelin "Kamera Bazlı" sekmesinden
+`zone_01` seçilip eğim açısı 45 → 62 yapıldı:
+
+```
+[11:14:00] esik guncellendi: fall_tilt_deg=45.0, ...   <- ilk yoklama (taban)
+[11:14:30] esik guncellendi: fall_tilt_deg=62.0, ...   <- panelden PUT 11:14:29
+```
+
+Süreç yeniden başlatılmadı; uygulama gecikmesi ~1 sn (yoklama aralığı 3 sn).
+
+**Yol boyunca öğrenilen:** aynı deneme önce global kapsamdan yapıldı ve
+hiçbir şey olmadı. Sebep kusur değil kapsam: `zone_01` (camera_id=7) Aşama
+5'ten kalan **kendi** `detection_settings` satırına sahip, `GET
+/api/settings/7` global satırı hiç okumuyor. Global sekmeden yapılan
+değişiklik, kendi satırı olan bir kamerayı etkilemez — panelde bu ayrımı
+gösteren tek işaret `source` alanına bağlı ipucu metni.
+
+### Tarayıcının yakaladığı gerçek hata: `window_frames` sessizce 0'a düşüyordu
+
+Şablonun "Kayan Pencere Boyutu" `<select>`'i yalnızca 15/30/60/90 sunuyor;
+veritabanı varsayılanı ise **50** (`infra/postgres/init.sql`). Listede
+olmayan bir değeri `select.value`'ya atamak seçimi boş bırakır, `Number("")`
+= 0 olur ve fark hesabı bunu "değişmiş" sayardı. Sonuç: **eşik formunda
+hangi alan değiştirilirse değiştirilsin gövdeye `window_frames: 0`
+ekleniyordu** ve global satır gerçekten 50'den 0'a düştü. Testler bunu
+yakalayamazdı — hata yalnızca gerçek veritabanı değeri seçenek listesinde
+yokken ortaya çıkıyor.
+
+Düzeltme (`_setWindowFrames`): gerçek değer listede yoksa seçenek olarak
+eklenir; hem görünür kalır hem fark hesabı doğru çalışır. Regresyon testi
+`tests/test_frontend_8_5b.py` içinde. Bozulan iki satır (global ve kamera 7)
+özgün değerlerine geri yazıldı.
+
+Aynı koşuda düzeltilen ikinci kusur: FastAPI'nin 422 gövdesi metin değil
+`[{loc, msg, type}, ...]` listesi; `api()` bunu doğrudan `Error()`'a verince
+kullanıcı "[object Object]" görüyordu. `app.js` `_detailText()` ile tek yerde
+düzeltildi — bölge poligonu doğrulaması tam bu yoldan geçiyor.
+
+### Bilinçli sınırlar
+
+- **`zone_type="direction"` arayüzde yok:** `vision/rules/` altında ters yön
+  kuralı yazılmadı (`fall/fight/loiter/run/zone` var). O tipte bölge hiçbir
+  kuralı beslemezdi. Şablonun "Ters Yön Tespiti" seçeneği karşılıksız
+- **Ayarlar formunda 13 eşikten 6'sı bağlı** (`pose_conf`, `fall_tilt_deg`,
+  `spark_min_sec.FALL`, `run_norm_speed`, `spark_min_sec.FIGHT`,
+  `window_frames`) — kalanların şablonda kontrolü yok, uydurulmadı. Kısmi
+  `PUT` sayesinde dokunulmuyorlar. `spark_min_sec` gönderilirken sözlüğün
+  tamamı kopyalanıyor: kısmi güncelleme alan bazında çalışıyor, sözlük içi
+  anahtar bazında değil
+- **"Varsayılana Dön" sıfırlama ucu yok:** kamera kapsamında global değerleri
+  forma yükler (kaydedilene kadar sunucuya dokunmaz), global kapsamda devre
+  dışı ve nedeni `title`'da
+- **Toplu durum ucu yok:** seçili her olay için ayrı `PATCH`
+- **Bildirim katmanı yazılmadı:** hata için `alert()`, onay için `confirm()`
+
+### Kalan iz
+
+Doğrulama koşusundan `test_op_85` kullanıcısı pasif durumda kaldı
+(`DELETE /api/users/{id}` soft delete, kalıcı silme ucu yok). Kamera, bölge
+ve eşik değişikliklerinin tamamı geri alındı.
+
+---
+
 ## Bir sonraki adım
 
-Aşama 8.5 — yazma ekranları:
+Aşama 8.6 — uçtan uca demo (`docs/ASAMA8_PLAN.md` § 3):
 
-1. Kamera ekle / düzenle / sil (`POST/PUT/DELETE /api/cameras`)
-2. Bölge poligon çizimi: canlı kare üzerine tıklayarak nokta ekleme, 0-1
-   normalize kayıt, düzenleme ve silme (`/api/zones`)
-3. Ayarlar formu: global / kamera bazlı, kısmi `PUT`, `restart_required`
-   alanı kullanıcıya gösterilir
-4. Olay durumu: görüldü / yanlış alarm, toplu işaretleme (`PATCH /api/events/{id}`)
-5. Kullanıcı ekleme/düzenleme/pasifleştirme (`/api/users`), denetim ve
-   bildirim ekranlarının filtre kutularının bağlanması
-6. **Demo kaynağı: kamera donanımı yok, `data/pilot/` videoları kullanılacak.**
-   Panelde stok/sahte görüntü bırakılmaz (uzak görseller 8.3'te temizlendi);
-   canlı kare videolardan gelir. Birden çok kamerayı tek komutla başlatan
-   `scripts/run_pilot_cameras.py` yardımcısı yazılır — her pilot klip için
-   `--ws --rules --camera-id <ad>`, klipler kısa olduğu için döngü seçeneğiyle
-
-**Onay kriteri:** panelden değiştirilen eşik, `vision/` yeniden
-başlatılmadan davranışı değiştiriyor (sıcak yükleme Aşama 5'te yazıldı,
-panelden ilk kez tetikleniyor). Sonrası 8.6 (uçtan uca demo) —
-`docs/ASAMA8_PLAN.md` § 3.
+1. Kamera donanımı yok; demo kaynağı `data/pilot/` videolarıdır. Kameralar
+   veritabanında `source_type='file'` olarak tanımlı
+2. `scripts/run_pilot_cameras.py`: her pilot klip için `--ws --rules
+   --camera-id <ad>` ile süreç başlatır, Ctrl+C ile hepsini durdurur.
+   Klipler kısa (8-60 sn) olduğu için **döngü seçeneği şart** — bu aşamada
+   her doğrulama koşusunda video bitişi zaman baskısı yarattı
+3. Ölçülecek: panel canlı FPS (hedef ≥ 20, v1: 0.67), alarmın ekranda
+   görünme gecikmesi, ekran açılış süresi
+4. **Onay kriteri:** PLAN.md § 8 tablosundaki panel satırları gerçek ölçümle
+   doldurulur
 
 Aşama 8'de ilk kez çalışacak yollar: çoklu bildirim alıcısı
 (`users.telegram_chat_id` panelden doldurulunca) ve bildirim bastırma ayarları.

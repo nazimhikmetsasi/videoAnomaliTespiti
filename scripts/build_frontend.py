@@ -64,11 +64,12 @@ _A_HASH = re.compile(r'<a\b[^>]*?href="#"[^>]*?>.*?</a>', re.DOTALL)
 _TAG = re.compile(r"<[^>]+>")
 _SCRIPT_TAG = '<script src="js/app.js" defer></script>\n'
 
-# index.js (izgara) ve kamera-detay.js (tekli) canli goru baglantisini/cizimini
-# js/live.js'ten paylasir (Asama 8.4, DURUM.md "Acik sorular" -- kopyalanmis
-# yardimci onlenir). Bu iki sayfa 3 betik yukler: app.js + live.js + kendi
-# betigi. _page_script_tag'in "sayfa basina tek betik" kurali burada genisler.
-LIVE_PAGES = {"index.html", "kamera-detay.html"}
+# index.js (izgara), kamera-detay.js (tekli) ve bolgeler.js (cizim arka
+# planinda canli kare) canli goru baglantisini/cizimini js/live.js'ten
+# paylasir (Asama 8.4/8.5b, DURUM.md "Acik sorular" -- kopyalanmis yardimci
+# onlenir). Bu sayfalar 3 betik yukler: app.js + live.js + kendi betigi.
+# _page_script_tag'in "sayfa basina tek betik" kurali burada genisler.
+LIVE_PAGES = {"index.html", "kamera-detay.html", "bolgeler.html"}
 
 
 def _page_script_tag(out_name: str) -> str:
