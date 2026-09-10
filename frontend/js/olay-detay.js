@@ -1,6 +1,7 @@
-// Olay detay ekrani (ASAMA8_PLAN.md SS3, 8.3 ilk yarisi). ?id= -> GET
-// /api/events/{id}. Kanit: /frame (gorsel), /clip (video, yoksa metin).
-// LLM raporu, durum degistirme dugmeleri 8.5'in isi -- yalnizca goruntuleme.
+// Olay detay ekrani (ASAMA8_PLAN.md SS3, 8.3 ilk yarisi + 8.5 durum degistirme).
+// ?id= -> GET /api/events/{id}. Kanit: /frame (gorsel), /clip (video, yoksa
+// metin). LLM raporu goruntuleme 8.3'te yapildi (_fillReport). 8.5: sag
+// panelin uc durum dugmesi (Görüldü/Yanlış Alarm/Kapat) PATCH atar.
 
 requireAuth();
 
@@ -16,17 +17,63 @@ function _params() {
     return new URLSearchParams(location.search);
 }
 
+// Rozet elemani (header'daki durum etiketi) hem ilk yuklemede hem PATCH
+// sonrasinda ayni yerden guncellenir -- renk sabit kaliyor (sablonun tek
+// varyanti "bg-error/20" idi, 8.3'ten devralindi), yalniz metin degisiyor.
+function _setStatusBadge(status) {
+    const statusBadge = document.querySelector("header .rounded.bg-error\\/20.text-error");
+    if (!statusBadge) return;
+    // toUpperCase() Turkce "i" -> "I" yapar (dogrusu "İ") -- tr-TR yerel kurali kullanilir.
+    const label = (DURUM_ADI[status] || status).toLocaleUpperCase("tr-TR");
+    statusBadge.childNodes[statusBadge.childNodes.length - 1].textContent = " " + label;
+}
+
+// Sag paneldeki "Müdahale Aksiyonları" karti icindeki uc dugme: her biri
+// EventStatusIn'in kabul ettigi tek bir hedefe PATCH atar ('new' kasten yok).
+// Hedef durum zaten mevcut durumsa dugme devre disi gosterilir.
+const _STATUS_BUTTON_ICON = { acknowledged: "visibility", false_positive: "block", resolved: "done_all" };
+
+function _wireStatusButtons(ev) {
+    const heading = [...document.querySelectorAll("main h3")].find((h) => h.textContent.includes("Müdahale Aksiyonları"));
+    const panel = heading ? heading.parentElement : null;
+    if (!panel) return;
+    let current = ev.status;
+
+    function refreshDisabled() {
+        for (const [target, icon] of Object.entries(_STATUS_BUTTON_ICON)) {
+            const iconEl = panel.querySelector('[data-icon="' + icon + '"]');
+            const btn = iconEl ? iconEl.closest("button") : null;
+            if (btn) btn.disabled = current === target;
+        }
+    }
+
+    for (const [target, icon] of Object.entries(_STATUS_BUTTON_ICON)) {
+        const iconEl = panel.querySelector('[data-icon="' + icon + '"]');
+        const btn = iconEl ? iconEl.closest("button") : null;
+        if (!btn) continue;
+        btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            try {
+                const updated = await api("/api/events/" + ev.id, { method: "PATCH", body: { status: target } });
+                current = updated.status;
+                _setStatusBadge(current);
+                refreshDisabled();
+            } catch (e) {
+                // Bildirim katmani yok -- native alert() (app.js'teki not).
+                alert(e.message === FORBIDDEN_MSG ? FORBIDDEN_MSG : e.message);
+                refreshDisabled();
+            }
+        });
+    }
+    refreshDisabled();
+}
+
 function _fillSummary(ev) {
     document.title = "Olay Detayı #" + ev.id + " - VADAP";
     const idHeading = document.querySelector("header h2.font-title-sm");
     if (idHeading) idHeading.textContent = "Olay Detayı #" + ev.id;
 
-    const statusBadge = document.querySelector("header .rounded.bg-error\\/20.text-error");
-    if (statusBadge) {
-        // toUpperCase() Turkce "i" -> "I" yapar (dogrusu "İ") -- tr-TR yerel kurali kullanilir.
-        const label = (DURUM_ADI[ev.status] || ev.status).toLocaleUpperCase("tr-TR");
-        statusBadge.childNodes[statusBadge.childNodes.length - 1].textContent = " " + label;
-    }
+    _setStatusBadge(ev.status);
 
     const summaryCols = document.querySelectorAll("main .flex.gap-stack-md.flex-wrap.items-center > .flex.flex-col");
     // 0: Olay Tipi, 1: Tarih/Saat, 2: Bolge/Kamera (madde sirasi sablonda sabit)
@@ -259,6 +306,7 @@ async function _load() {
     _fillMeasured(ev);
     _clearMotionChart();
     _hideFakeOverlay();
+    _wireStatusButtons(ev);
     await _fillEvidence(ev);
 }
 

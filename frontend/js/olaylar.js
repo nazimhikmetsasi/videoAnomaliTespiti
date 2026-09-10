@@ -22,6 +22,7 @@ let _offset = 0;
 let _total = 0;
 let _fillRow = null;
 let _cameras = [];
+let _selected = new Set(); // yalniz o an gorunen sayfadaki secili olay id'leri
 
 const _tbody = document.querySelector("table tbody");
 const _filterBar = document.querySelector(".flex.flex-wrap.gap-4.items-end");
@@ -35,6 +36,14 @@ const _pageInfo = document.querySelector(".p-3.border-t.border-outline-variant s
 const _pagerButtons = document.querySelectorAll(".p-3.border-t.border-outline-variant button");
 const _prevBtn = _pagerButtons[0];
 const _nextBtn = _pagerButtons[_pagerButtons.length - 1];
+const _selectAllCb = document.querySelector("thead input[type=\"checkbox\"]");
+// data-icon="done_all" sayfada tek yerde geciyor (grep ile dogrulandi).
+const _bulkAckBtn = document.querySelector('[data-icon="done_all"]').closest("button");
+_bulkAckBtn.disabled = true;
+
+function _updateBulkBtn() {
+    _bulkAckBtn.disabled = _selected.size === 0;
+}
 
 function _fillSelect(select, entries, allLabel) {
     select.innerHTML = "";
@@ -131,8 +140,57 @@ function _fillEventRow(row, ev) {
     const inceleBtn = tds[8].querySelector("button");
     if (inceleBtn) inceleBtn.addEventListener("click", (e) => { e.stopPropagation(); location.href = "olay-detay.html?id=" + ev.id; });
     const checkbox = tds[0].querySelector('input[type="checkbox"]');
-    if (checkbox) checkbox.addEventListener("click", (e) => e.stopPropagation());
+    if (checkbox) {
+        checkbox.addEventListener("click", (e) => e.stopPropagation());
+        // DOM sirasina degil olay id'sine gore eslenir (gorev tanimi notu).
+        checkbox.dataset.eventId = String(ev.id);
+        checkbox.checked = _selected.has(ev.id);
+        checkbox.addEventListener("change", () => {
+            if (checkbox.checked) _selected.add(ev.id);
+            else _selected.delete(ev.id);
+            const all = [..._tbody.querySelectorAll('input[type="checkbox"]')];
+            _selectAllCb.checked = all.length > 0 && all.every((cb) => cb.checked);
+            _updateBulkBtn();
+        });
+    }
 }
+
+// Basliktaki onay kutusu = o an gorunen (bu sayfadaki) tum satirlari sec/birak.
+_selectAllCb.addEventListener("change", () => {
+    const checked = _selectAllCb.checked;
+    _tbody.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+        cb.checked = checked;
+        const id = Number(cb.dataset.eventId);
+        if (checked) _selected.add(id);
+        else _selected.delete(id);
+    });
+    _updateBulkBtn();
+});
+
+// Toplu uc yok -- istemci tarafinda N tekil PATCH. Promise.all kullanilir;
+// her istek kendi .catch()'i ile basari/hata nesnesine cevrilir ki tek
+// reddedilen istek digerlerini iptal etmesin, kac tanesinin basarisiz
+// oldugu sayilabilsin (gorev tanimi notu). Bildirim katmani yok -- native alert().
+_bulkAckBtn.addEventListener("click", async () => {
+    const ids = [..._selected];
+    if (ids.length === 0) return;
+    _bulkAckBtn.disabled = true;
+    const outcomes = await Promise.all(
+        ids.map((id) =>
+            api("/api/events/" + id, { method: "PATCH", body: { status: "acknowledged" } })
+                .then(() => ({ ok: true }))
+                .catch((err) => ({ ok: false, err }))
+        )
+    );
+    const failed = outcomes.filter((o) => !o.ok);
+    if (failed.length > 0) {
+        const firstErr = failed[0].err;
+        const msg = firstErr && firstErr.message === FORBIDDEN_MSG ? FORBIDDEN_MSG : (firstErr ? firstErr.message : "bilinmeyen hata");
+        alert(failed.length + " / " + ids.length + " olay güncellenemedi: " + msg);
+    }
+    _selected.clear();
+    _load();
+});
 
 function _buildQuery() {
     const params = new URLSearchParams();
@@ -153,6 +211,9 @@ async function _load() {
         _showError("Olaylar yüklenemedi: " + e.message);
         return;
     }
+    _selected.clear();
+    _selectAllCb.checked = false;
+    _updateBulkBtn();
     _total = result.total;
     _tbody.innerHTML = "";
     if (result.items.length === 0) {
