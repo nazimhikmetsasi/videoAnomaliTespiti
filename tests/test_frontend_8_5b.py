@@ -46,16 +46,16 @@ def test_scripts_exist() -> None:
 def test_build_frontend_injects_page_script_tag() -> None:
     for name, out_name in PAGES.items():
         html = (FRONTEND / out_name).read_text(encoding="utf-8")
-        assert f'<script src="js/{name}.js" defer></script>' in html, out_name
-        assert html.index('src="js/app.js"') < html.index(f'src="js/{name}.js"'), out_name
+        assert f'src="js/{name}.js?v=' in html, out_name
+        assert html.index('src="js/app.js?v=') < html.index(f'src="js/{name}.js?v='), out_name
 
 
 def test_bolgeler_page_also_loads_live_js() -> None:
     # Bolge cizim arka plani canli kare gosterir -- live.js gerekir, app.js
     # ile kendi betigi arasinda yuklenmeli (build_frontend.py LIVE_PAGES).
     html = (FRONTEND / "bolgeler.html").read_text(encoding="utf-8")
-    assert '<script src="js/live.js" defer></script>' in html
-    assert html.index('src="js/app.js"') < html.index('src="js/live.js"') < html.index('src="js/bolgeler.js"')
+    assert 'src="js/live.js?v=' in html
+    assert html.index('src="js/app.js?v=') < html.index('src="js/live.js?v=') < html.index('src="js/bolgeler.js?v=')
 
 
 def test_every_script_calls_require_auth_first() -> None:

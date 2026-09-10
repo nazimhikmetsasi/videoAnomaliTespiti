@@ -46,7 +46,7 @@ def test_every_page_script_still_calls_require_auth_first() -> None:
         lines = [l.strip() for l in src.splitlines() if l.strip() and not l.strip().startswith("//")]
         assert lines[0] == "requireAuth();", f"{js_name}: ilk calisan satir requireAuth() degil"
         html = (FRONTEND / html_name).read_text(encoding="utf-8")
-        assert f'src="js/{js_name}"' in html
+        assert f'src="js/{js_name}?v=' in html
 
 
 # ---------------------------------------------------------------------- app.js

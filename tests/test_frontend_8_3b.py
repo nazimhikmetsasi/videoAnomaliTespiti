@@ -48,10 +48,10 @@ def test_scripts_exist() -> None:
 def test_build_frontend_injects_page_script_tag() -> None:
     for name, out_name in PAGES.items():
         html = (FRONTEND / out_name).read_text(encoding="utf-8")
-        assert f'<script src="js/{name}.js" defer></script>' in html, out_name
+        assert f'src="js/{name}.js?v=' in html, out_name
         # app.js her zaman page-script'ten ONCE gelir (app.js'teki global'lere
         # sayfa betigi bagimli).
-        assert html.index('src="js/app.js"') < html.index(f'src="js/{name}.js"'), out_name
+        assert html.index('src="js/app.js?v=') < html.index(f'src="js/{name}.js?v='), out_name
 
 
 def test_every_script_calls_require_auth_first() -> None:

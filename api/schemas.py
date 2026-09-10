@@ -100,6 +100,9 @@ class CameraHealthOut(BaseModel):
     gpu_mem: int | None = None
     queue_depth: int | None = None
     age_sec: float | None = None
+    # StreamServer gercekten acikken port, kapaliyken (JWT_SECRET yok) veya
+    # belge yoksa None -- panel bunu gorunce soket ACMAZ (ASAMA8_PLAN.md 8.6 SS3).
+    ws_port: int | None = None
 
 
 # ------------------------------------------------------------------ cameras

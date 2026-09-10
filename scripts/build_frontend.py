@@ -13,6 +13,7 @@ yazar, frontend/js/ altina dokunmaz. Sablon guncellenirse yeniden calistirilir:
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -62,7 +63,19 @@ PLACEHOLDER_IMG = "img/placeholder.svg"
 
 _A_HASH = re.compile(r'<a\b[^>]*?href="#"[^>]*?>.*?</a>', re.DOTALL)
 _TAG = re.compile(r"<[^>]+>")
-_SCRIPT_TAG = '<script src="js/app.js" defer></script>\n'
+def _versioned(rel_path: str) -> str:
+    """js/<ad>.js?v=<icerik ozeti>. Surumsuz sunulunca tarayici dosyayi
+    SEZGISEL onbellekliyor (FastAPI StaticFiles Cache-Control gondermiyor) ve
+    dagitimdan sonra ESKI betikle calisiyor. Bu gercekten yasandi: 8.6'da
+    index.js yeni, live.js onbellekten eski geldi ve panel "liveUrlFn is not
+    defined" ile tek kutuda takildi. Ozet ICERIKTEN uretilir -- degismeyen
+    dosyanin URL'si de degismez, onbellek bosa harcanmaz."""
+    data = (FRONTEND / rel_path).read_bytes()
+    return f"{rel_path}?v={hashlib.sha256(data).hexdigest()[:8]}"
+
+
+def _script_tag(rel_path: str) -> str:
+    return f'<script src="{_versioned(rel_path)}" defer></script>\n'
 
 # index.js (izgara), kamera-detay.js (tekli) ve bolgeler.js (cizim arka
 # planinda canli kare) canli goru baglantisini/cizimini js/live.js'ten
@@ -82,9 +95,9 @@ def _page_script_tag(out_name: str) -> str:
     stem = out_name.removesuffix(".html")
     tags = ""
     if out_name in LIVE_PAGES and (FRONTEND / "js" / "live.js").is_file():
-        tags += '<script src="js/live.js" defer></script>\n'
+        tags += _script_tag("js/live.js")
     if (FRONTEND / "js" / f"{stem}.js").is_file():
-        tags += f'<script src="js/{stem}.js" defer></script>\n'
+        tags += _script_tag(f"js/{stem}.js")
     return tags
 
 
@@ -317,7 +330,7 @@ def build() -> None:
         if out_name == "login.html":
             html = _transform_login(html)
         assert "</body>" in html, f"{src_dir}: </body> bulunamadi"
-        html = html.replace("</body>", _SCRIPT_TAG + _page_script_tag(out_name) + "</body>", 1)
+        html = html.replace("</body>", _script_tag("js/app.js") + _page_script_tag(out_name) + "</body>", 1)
         (FRONTEND / out_name).write_text(html, encoding="utf-8", newline="")
         print(f"yazildi: frontend/{out_name}")
 

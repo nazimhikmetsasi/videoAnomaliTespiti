@@ -156,7 +156,7 @@ function _setLiveStatus(text, ok) {
 function _connectLive(cam) {
     if (liveSock) { liveSock.stop(); liveSock = null; }
     _setLiveStatus("Bağlantı Yok", false);
-    liveSock = openReconnectingSocket(() => liveWsUrl("live", cam.name), {
+    liveSock = openReconnectingSocket(liveUrlFn("live", cam.name), {
         onMessage(blob) {
             setFrameImage(bgFrameEl, blob);
             // Ilk gercek kare gelince sablonun donuk/gri-ton onizleme

@@ -136,7 +136,7 @@ async function _drawForBox(st) {
 // --------------------------------------------------------------- baglantilar
 function _connectCamera(cam, box) {
     const st = box._vadap;
-    const live = openReconnectingSocket(() => liveWsUrl("live", cam.name), {
+    const live = openReconnectingSocket(liveUrlFn("live", cam.name), {
         // DIKKAT: onOpen'da "AKTIF" YAZILMAZ -- ws_server.py el sikismayi
         // yalniz jeton+yol formatina gore kabul eder, o camera_id'ye hic
         // yayin yapan olmasa da baglanti acilir. "Canli" durumu yalnizca
@@ -170,7 +170,7 @@ function _connectCamera(cam, box) {
             st.offline.style.display = "flex";
         },
     });
-    const meta = openReconnectingSocket(() => liveWsUrl("meta", cam.name), {
+    const meta = openReconnectingSocket(liveUrlFn("meta", cam.name), {
         onMessage(data) {
             st.lastMeta = JSON.parse(data);
             st.fpsSpan.textContent = st.lastMeta.fps + " FPS";
@@ -306,6 +306,12 @@ async function _load() {
             "Kameralar yüklenemedi: " + e.message + "</p>";
         return;
     }
+    // Yayinda olan kamera ONCE gelir: izgara ilk N kamerayi gosteriyor
+    // (_renderGrid), id sirasi kullanildiginda calisan kameralar disarida
+    // kalip ekran bastan asagi "Baglanti Yok" olabiliyordu -- 8.6 demosunda
+    // tam bunu gosterdi. Sira ICINDE id sirasi korunur (kararli siralama).
+    await healthReady();
+    _cameras.sort((a, b) => (healthWsPort(b.name) ? 1 : 0) - (healthWsPort(a.name) ? 1 : 0));
     _renderGrid();
     _startAlerts();
 }

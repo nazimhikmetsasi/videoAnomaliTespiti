@@ -19,7 +19,7 @@ from vision.source import VideoSource
 class HealthClient:
     def __init__(self, base_url: str, camera_id: str, source: VideoSource, *,
                  interval: float = 5.0, token: str | None = None,
-                 mongo_url: str = "") -> None:
+                 mongo_url: str = "", ws_port: int | None = None) -> None:
         self._url = f"{base_url.rstrip('/')}/api/cameras/{camera_id}/heartbeat"
         self._camera_id = camera_id
         self._source = source
@@ -27,6 +27,10 @@ class HealthClient:
         self._headers = {"Authorization": f"Bearer {token}"} if token else {}
         self._mongo_url = mongo_url
         self._mongo = None
+        # StreamServer gercekten acikken gercek port, kapaliyken None --
+        # panel bagli olmayan bir porta baglanmaya calismasin (ASAMA8_PLAN.md
+        # 8.6 SS3, madde 2).
+        self._ws_port = ws_port
 
         self._fps_actual = 0.0
         self._infer_ms = 0.0
@@ -83,6 +87,7 @@ class HealthClient:
                 "fps_actual": self._fps_actual,
                 "dropped": self._source.frames_dropped,
                 "infer_ms": self._infer_ms, "gpu_mem": gpu_mem,
+                "ws_port": self._ws_port,
                 # ponytail: VideoSource kuyruk derinligini disari acmiyor (Asama 6
                 # kapsami disinda), dogrudan ic alana bakiliyor. Kamu API'si
                 # gerekirse `VideoSource.queue_depth` property'si eklenir.

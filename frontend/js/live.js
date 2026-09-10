@@ -5,20 +5,80 @@
 // Canli goru sunucusu (vision/ws_server.py) API ile AYNI host, FARKLI port
 // (8001) -- ASAMA8_PLAN.md SS1. /ws/alerts ise API ile ayni origin'de.
 
-const LIVE_WS_PORT = 8001;
 const RECONNECT_MAX_MS = 15000;
+// Saglik ucu (GET /api/health/cameras) kisa sureli onbellegi -- izgarada N
+// kutu ayni anda soruyor, N istek DEGIL tek paylasilan istek (zonesFor'daki
+// desenle ayni ruh, farki kamera basina degil TEK anahtarli olmasi).
+const HEALTH_POLL_MS = 3000;
+// sistem-sagligi.js'teki STALE_SEC (ASAMA8_PLAN.md SS3.8.3) ile AYNI esik --
+// ayri sayfa betikleri arasinda modul yok, deger burada bilerek tekrarlanir.
+const STALE_SEC = 60;
 
 function _wsProto() {
     return location.protocol === "https:" ? "wss:" : "ws:";
 }
 
-function liveWsUrl(kind, cameraId) {
-    return _wsProto() + "//" + location.hostname + ":" + LIVE_WS_PORT + "/ws/" + kind + "/" +
+function liveWsUrl(kind, cameraId, port) {
+    return _wsProto() + "//" + location.hostname + ":" + port + "/ws/" + kind + "/" +
         encodeURIComponent(cameraId) + "?token=" + encodeURIComponent(token());
 }
 
 function alertsWsUrl() {
     return _wsProto() + "//" + location.host + "/ws/alerts?token=" + encodeURIComponent(token());
+}
+
+// --------------------------------------------------------------- saglik/port
+// Kamera basina ws_port + age_sec: TEK arka plan yoklayici, sayfada ilk
+// kullanildiginda baslar, HEALTH_POLL_MS'de bir tazelenir. Eszamanli N
+// cagri N istek ATMAZ -- hepsi ayni son sonucu okur.
+let _healthByName = {};
+let _healthPolling = false;
+
+async function _pollHealthOnce() {
+    try {
+        const rows = await api("/api/health/cameras");
+        const byName = {};
+        for (const row of rows) byName[row.name] = row;
+        _healthByName = byName;
+    } catch (_e) {
+        // ag hatasi: onceki bilinen durum korunur, sonraki yoklamada tekrar denenir.
+    }
+}
+
+let _healthFirst = null;
+
+function _ensureHealthPolling() {
+    if (_healthPolling) return _healthFirst;
+    _healthPolling = true;
+    _healthFirst = _pollHealthOnce();
+    setInterval(_pollHealthOnce, HEALTH_POLL_MS);
+    return _healthFirst;
+}
+
+// Izgara kurulmadan ONCE ilk yoklamanin bitmesini bekler -- kutu sirasi
+// "yayinda olan once" olacaksa (index.js) veri gelmeden siralama yapilamaz.
+function healthReady() {
+    return _ensureHealthPolling() || Promise.resolve();
+}
+
+// ws_port yoksa VEYA kayit STALE_SEC'ten bayatsa null -- cagiran taraf soket
+// ACMAZ (ASAMA8_PLAN.md 8.6 SS3, madde 3: olu kameraya korlemesine baglanma).
+function healthWsPort(cameraName) {
+    _ensureHealthPolling();
+    const doc = _healthByName[cameraName];
+    if (!doc || doc.ws_port == null) return null;
+    if (doc.age_sec != null && doc.age_sec > STALE_SEC) return null;
+    return doc.ws_port;
+}
+
+// openReconnectingSocket'in urlFn'i icin hazir kapanis -- port cozumu HER
+// denemede burada yapilir (bagli/kopuk bilgisi acildiktan sonra degil,
+// tam da baglanma aninda taze olsun diye).
+function liveUrlFn(kind, cameraName) {
+    return () => {
+        const port = healthWsPort(cameraName);
+        return port ? liveWsUrl(kind, cameraName, port) : null;
+    };
 }
 
 // Kopmada ustel geri cekilmeli yeniden baglanma (1s, 2s, 4s... tavan 15s).
@@ -33,7 +93,16 @@ function openReconnectingSocket(urlFn, { onOpen, onMessage, onClose } = {}) {
 
     function connect() {
         if (stopped) return;
-        ws = new WebSocket(urlFn());
+        const url = urlFn();
+        if (!url) {
+            // Port bilinmiyor / kamera saglik kaydi yok ya da bayat -- soket
+            // hic ACILMAZ, HEALTH_POLL_MS sonra tekrar denenir (kamera ayaga
+            // kalkinca kendiliginden baglanir).
+            if (onClose) onClose();
+            retryTimer = setTimeout(connect, HEALTH_POLL_MS);
+            return;
+        }
+        ws = new WebSocket(url);
         ws.binaryType = "blob";
         ws.onopen = () => { retryMs = 1000; if (onOpen) onOpen(); };
         ws.onmessage = (ev) => { if (onMessage) onMessage(ev.data); };
