@@ -4,11 +4,6 @@
 
 requireAuth();
 
-// api/auth.py require_role() tek yerde bu metni dondurur.
-const FORBIDDEN_MSG = "bu islem icin yetkiniz yok";
-
-const ROLE_ADI = { admin: "Yönetici", operator: "Operatör", viewer: "Görüntüleyici" };
-
 function initials(text) {
     return (text || "?").trim().slice(0, 2).toUpperCase();
 }

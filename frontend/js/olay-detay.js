@@ -4,17 +4,6 @@
 
 requireAuth();
 
-// ponytail: app.js'e tasinmali (kameralar-detay.js/olaylar.js'de ayni yardimci var).
-async function _fetchAuthedBlobUrl(path) {
-    const res = await fetch(path, { headers: { Authorization: "Bearer " + token() } });
-    if (!res.ok) throw new Error("kanit alinamadi (" + res.status + ")");
-    const blob = await res.blob();
-    return URL.createObjectURL(blob);
-}
-
-const DECIDED_BY_ADI = { rule: "Kural Motoru", model: "Model", hybrid: "Hibrit (Kural+Model)" };
-// ponytail: app.js'e tasinmali.
-
 function _showFatalError(msg) {
     const main = document.querySelector("main");
     main.innerHTML =

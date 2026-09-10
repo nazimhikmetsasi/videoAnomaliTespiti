@@ -24,7 +24,9 @@ _client: MongoClient | None = None
 def get_mongo() -> Database:
     global _client
     if _client is None:
-        _client = MongoClient(MONGO_URL)
+        # serverSelectionTimeoutMS varsayilani 30 sn: Mongo kapaliyken her
+        # cagri 30 sn asili kaliyor. 3 sn, postgres tarafiyla ayni gerekce.
+        _client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=3000)
     return _client[MONGO_DB]
 
 

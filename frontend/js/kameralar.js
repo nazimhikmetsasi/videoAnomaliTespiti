@@ -3,11 +3,6 @@
 
 requireAuth();
 
-// Kamera durumu icin ADI haritasi -- app.js'te DURUM_ADI (olay durumu) var
-// ama kamera durumu (online/offline/error) icin yok. ponytail: app.js'e
-// tasinmali (DURUM_ADI yaninda CAMERA_STATUS_ADI olarak).
-const CAMERA_STATUS_ADI = { online: "Aktif", offline: "Devre Dışı", error: "Hata" };
-
 let _tumKameralar = [];
 let _fillRow = null;
 

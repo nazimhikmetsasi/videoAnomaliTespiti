@@ -5,14 +5,6 @@
 
 requireAuth();
 
-// ponytail: app.js'e tasinmali (kamera-detay.js/olay-detay.js'de ayni yardimci var).
-async function _fetchAuthedBlobUrl(path) {
-    const res = await fetch(path, { headers: { Authorization: "Bearer " + token() } });
-    if (!res.ok) throw new Error("kanit alinamadi (" + res.status + ")");
-    const blob = await res.blob();
-    return URL.createObjectURL(blob);
-}
-
 const SEVERITY_STYLE = {
     critical: { text: "text-error", icon: "error", pulse: true, bar: "bg-error" },
     high: { text: "text-[#f59e0b]", icon: "warning", pulse: false, bar: "bg-[#f59e0b]" },

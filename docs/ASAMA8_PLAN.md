@@ -112,9 +112,19 @@ kullanıcılar, denetim kaydı.
 ### 8.6 — Uçtan uca demo
 - Gerçek kamera açık, gerçek olay üretilir; panelde alarm, olay kaydı, kanıt
   ve Telegram bildirimi birlikte doğrulanır
+- **Kamera donanımı yok: demo kaynağı `data/pilot/` videolarıdır.** Kameralar
+  veritabanında `source_type='file'` olarak zaten tanımlı; her kamera için
+  bir `vision.run` süreci o kameranın videosunu oynatır. Panelde hiçbir yerde
+  sahte/stok görüntü kalmaz — yayın yoksa "Bağlantı Yok" görünür, yayın
+  varsa videodan gelen gerçek kare
+- Birden çok kamerayı tek komutla ayağa kaldıran küçük bir yardımcı gerekir
+  (`scripts/run_pilot_cameras.py`): her pilot klibi için `--ws --rules
+  --camera-id <ad>` ile süreç başlatır, Ctrl+C ile hepsini durdurur.
+  Videolar kısa olduğu için demo boyunca döngü seçeneği de gerekir
 - Ölçülecek: panel canlı FPS (hedef ≥ 20, v1: 0.67), alarmın ekranda görünme
   gecikmesi, ekran açılış süresi
-- **Onay:** PLAN.md § 8 tablosundaki panel satırları gerçek ölçümle doldurulur
+- **Onay kriteri:** PLAN.md § 8 tablosundaki panel satırları gerçek ölçümle
+  doldurulur
 
 ## 4. Bilinçli sınırlar
 
