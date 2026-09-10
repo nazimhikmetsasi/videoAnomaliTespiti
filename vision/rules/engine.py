@@ -74,6 +74,7 @@ class Candidate:
     metrics: dict[str, float]
     thresholds_used: dict[str, float]
     zone_name: str | None = None
+    decided_by: str = "rule"     # rule / model / hybrid — Asama 9 ablation kaynagi
 
 
 class RuleEngine:

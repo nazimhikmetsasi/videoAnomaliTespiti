@@ -46,6 +46,11 @@ class FrameFeatures:
     spine_angle: float        # yalnizca iskeletten; bilinmiyorsa -1.0. Kural KULLANMAZ, telemetri/tez icin
     knee_angle: float         # kalca-diz-bilek acisi, derece (180 = duz bacak)
     limb_speed: float         # bilek/ayak bilegi icinde en yuksek normalize hiz
+    # Asagidaki ikisi kurallarin isine yaramaz; TCN penceresi (Asama 9) ham
+    # iskeleti ister ve pencereyi ikinci bir tampondan kurmaktansa buradan
+    # okumak tek kaynak birakir. Bedeli iz basina 50 x (17x3 + 4) float.
+    bbox: np.ndarray | None = None        # xyxy, letterbox kare uzayinda
+    keypoints: np.ndarray | None = None   # (17, 3) duzlestirilmis; poz yoksa None
 
 class TrackWindow:
     """Tek izin son `window_frames` karesi."""
@@ -97,7 +102,8 @@ class FeatureEngine:
             # Hiz/aci 0.0 (RuleEngine pozsuz kareyi zaten disliyor); body_tilt
             # bbox'tan bile hesaplanir (SS10.5#4), keypoint gerektirmez.
             return FrameFeatures(idx, ts, False, height, centroid, foot, aspect,
-                                  0.0, 0.0, box_tilt, -1.0, 180.0, 0.0)
+                                  0.0, 0.0, box_tilt, -1.0, 180.0, 0.0,
+                                  track.bbox, None)
         mid_ank = _avg_point(kp, (KP["l_ank"], KP["r_ank"]), self.kp_conf)
         foot_px = mid_ank if mid_ank is not None else np.array([(x1 + x2) / 2, y2])
         foot = np.array([foot_px[0] / w, foot_px[1] / h])
@@ -108,7 +114,8 @@ class FeatureEngine:
         body_tilt = box_tilt if spine < 0.0 else max(box_tilt, spine)
         return FrameFeatures(idx, ts, True, height, centroid, foot, aspect, norm_speed, norm_vy,
                               body_tilt, spine, self._knee_angle(kp),
-                              self._limb_speed(track.track_id, kp, height, ts))
+                              self._limb_speed(track.track_id, kp, height, ts),
+                              track.bbox, kp)
 
     def _velocity(self, window: TrackWindow, centroid: np.ndarray, height: float,
                   ts: float) -> tuple[float, float]:

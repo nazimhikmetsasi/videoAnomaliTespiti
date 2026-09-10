@@ -66,7 +66,7 @@ def event_to_row(msg: dict, camera_id: int, zone_id: int | None) -> dict | None:
         "track_ids": track_ids,
         "confidence": confidence,
         "severity": SEVERITY.get(anomaly_type, "medium"),
-        "decided_by": "rule",           # TCN Asama 9'da gelir
+        "decided_by": msg.get("decided_by") or "rule",
         "started_at": started_at,
         "ended_at": ended_at,
         "duration_ms": duration_ms,
@@ -218,8 +218,11 @@ def _write_telemetry(event_id: int, camera_id: int, msg: dict) -> None:
             "score": msg.get("score"),
             "thresholds_used": msg.get("thresholds_used", {}),
         },
-        "model_verdict": None,
-        "arbiter": "rule",
+        # Asama 9: model oyu metrics icinde geliyor (HybridArbiter tcn_conf
+        # yaziyor); yoksa None kalir ve belge Asama 8'dekiyle ayni okunur.
+        "model_verdict": ({"conf": msg["metrics"]["tcn_conf"]}
+                          if "tcn_conf" in (msg.get("metrics") or {}) else None),
+        "arbiter": msg.get("decided_by") or "rule",
         "spark_verdict": "confirmed",
         "created_at": datetime.datetime.now(datetime.timezone.utc),
     }

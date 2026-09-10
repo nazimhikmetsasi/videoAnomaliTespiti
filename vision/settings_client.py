@@ -91,6 +91,10 @@ class SettingsClient:
             return False
 
         self._engine.thresholds = new_thresholds
+        # tcn_min_conf Thresholds'ta degil hakemde yasar (kural esigi degil,
+        # model guven kapisi). Hakem yoksa alan sessizce yok sayilir.
+        if hasattr(self._engine, "min_conf") and "tcn_min_conf" in data:
+            self._engine.min_conf = float(data["tcn_min_conf"])
         self.applied += 1
         self.last_updated_at = updated_at
         # Uygulama ani stdout'a yazilir: sicak yukleme gecikmesi (PUT ile bu
