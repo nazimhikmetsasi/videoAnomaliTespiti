@@ -97,6 +97,7 @@ CANDIDATE_SCHEMA = StructType([
     StructField("ts", DoubleType()),
     StructField("event_time", DoubleType()),
     StructField("zone_name", StringType()),
+    StructField("decided_by", StringType()),
     StructField("metrics", MapType(StringType(), DoubleType())),
     StructField("thresholds_used", MapType(StringType(), DoubleType())),
 ])
@@ -150,6 +151,9 @@ def main() -> None:
                      spark_max("score").alias("score"),
                      max_by(col("track_ids"), col("score")).alias("track_ids"),
                      max_by(col("zone_name"), col("score")).alias("zone_name"),
+                     # Oturumun en yuksek skorlu adayinin karari kazanir; ayni
+                     # iz bir oturumda hem kural hem model adayi uretebilir.
+                     max_by(col("decided_by"), col("score")).alias("decided_by"),
                      max_by(col("metrics"), col("score")).alias("metrics"),
                      max_by(col("thresholds_used"), col("score")).alias("thresholds_used")))
 
@@ -170,7 +174,8 @@ def main() -> None:
             (col("end_ts") - col("start_ts")).alias("duration_sec"),
             col("start_time").cast("double").alias("start_time"),
             col("end_time").cast("double").alias("end_time"),
-            col("score"), col("zone_name"), col("metrics"), col("thresholds_used"),
+            col("score"), col("zone_name"), col("decided_by"),
+            col("metrics"), col("thresholds_used"),
         )).alias("value"))
 
     (out.writeStream.format("kafka")

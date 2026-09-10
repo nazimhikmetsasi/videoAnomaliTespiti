@@ -3,7 +3,7 @@
 Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 `docs/PLAN.md` sonra bu dosya okunur ve kaldığı yerden devam edilir.
 
-**Son güncelleme:** 2026-09-09
+**Son güncelleme:** 2026-09-10
 
 ---
 
@@ -39,8 +39,8 @@ Sıradaki iş 8.5 (yazma ekranları): kamera ekle/düzenle/sil, bölge poligon
 | 5 | Veri katmanı ve API | Tamamlandı |
 | 6 | Canlı görüntü (WebSocket) | Tamamlandı |
 | 7 | LLM ve Telegram | Tamamlandı |
-| 8 | Panel (kullanıcı şablonu) | 8.1–8.4 tamamlandı, 8.5 sırada |
-| 9 | TCN modeli ve yeni sınıflar | Bekliyor |
+| 8 | Panel (kullanıcı şablonu) | Tamamlandı (8.1–8.6) |
+| 9 | TCN modeli ve yeni sınıflar | 9.1 tamam; 9.2–9.4 kod hazır, ölçüm bekliyor |
 | 10 | Ölçek ve tez çıktıları | Bekliyor |
 
 ---
@@ -1932,22 +1932,132 @@ inşası şart.
 
 ---
 
+## Aşama 9.1 sonucu (2026-09-10)
+
+Eğitim veri kümesi indirildi: **1080 klip, 193 MB, 0 hata**
+(`scripts/fetch_datasets.py`, yeniden çalıştırılabilir).
+
+| Sınıf | Klip | Kaynak dağılımı |
+|---|---|---|
+| FALL | 66 | casia 36 + URFD fall 30 |
+| RUN | 144 | casia `run` 48 + ucarg ground 96 |
+| FIGHT | 270 | bitint 150 + utint 60 + casia 12 + ucarg ground 48 |
+| NORMAL | 600 | casia, bitint, utint, ucarg ground, URFD adl (kaynak başına eşit pay, `Random(0)`) |
+
+`telemetry` koleksiyonu kullanılmadı ve kullanılamaz: reddedilen aday
+tüketiciye hiç ulaşmıyor (Spark süzüyor), üstelik etiketi kuralın kendisi
+koyuyor — onunla eğitilen model kuralı taklit eder ve ablation tablosu
+tanımı gereği anlamsız çıkardı. Gerekçe ve kaynak seçimi
+`docs/ASAMA9_PLAN.md` § 1'de.
+
+**Kaynak seçimi tahminle değil klipler açılıp bakılarak yapıldı.** Elenenler
+ölçümle elendi:
+
+| Elenen | Ölçülen gerekçe |
+|---|---|
+| `virat` | SPHAR bunları anotasyon kutusuna kırpmış: klipler 64x64 – 72x142 piksel, çoğunda kişi hiç görünmüyor |
+| `uccrime` | Kesilmemiş; süre medyanı **92.7 sn**, en uzunu 538.7 sn. Olay birkaç saniye, kalan yüzlerce pencere FIGHT diye etiketlenirdi |
+| `okutama`, `ucaerial`, `ucarg _aerial_` / `_rooftop_` | Kuş bakışı / çok uzak; rooftop'ta kişi ~30 piksel |
+| `caviar`, `livevid` | Kesilmemiş (SPHAR "Known Caveats") |
+| `casia _jump_` | `running` klasöründe ama eylem zıplama (48 klip) |
+
+İki gerçek hata bulundu ve düzeltildi:
+
+1. **URFD klipleri 640x240 yan yana derinlik + renk geliyor.** Kırpılmasa
+   derinlik yarısındaki hayalet siluet YOLO'ya ikinci bir kişi gibi görünür
+   ve aynı olayı iki ize bölerdi. İndirme sırasında sağ (renkli) yarı
+   kırpılıyor.
+2. **"Dosya var, atla" dalı kırpmayı da atlıyordu.** Kırpma betiğe sonradan
+   eklendiği için daha önce inen 36 URFD klibi sessizce yan yana kalmıştı.
+   Atlama yolunda da `crop_right_half` çağrılıyor (kırpılmış dosyada
+   hiçbir şey yapmaz).
+
+## Aşama 9.2-9.4 kod durumu (2026-09-10)
+
+Kod yazıldı ve doğrulandı; **ölçümler dizi çıkarımı bitince alınacak.**
+
+- `eval/extract_sequences.py` — klipleri gerçek hattan geçirip iz başına
+  50x53 pencere üretir. **Kök neden düzeltmesi:** ilk sürüm 50 kare
+  *kesintisiz* dizi istiyordu ve 6 klipten 7 pencere çıkıyordu (22 düştü).
+  İzler yeterince uzun (91–198 kare) ve %100 pozlu, ama her ~15 karede bir
+  kare atlıyor. Üretimde de pencere "son 50 **görülme**"dir, 50 ardışık kare
+  değil (`FeatureEngine` yalnız izin görüldüğü kareyi ekliyor). Şart
+  üretimin tanımına çekildi: aynı 6 klipten **29 pencere, 0 düşen**. İz
+  `STALE_FRAMES`'ten uzun kaybolursa zincir kopar — bu da üretimdeki
+  davranış.
+- `models/tcn.py` — 5 bloklu genişletilmiş nedensel TCN, **66 116 parametre**.
+  Eğitim hattı kısmi veriyle uçtan uca doğrulandı (klip bazlı bölme,
+  ağırlıklı kayıp, karışıklık matrisi, kayıt). Pencere başına çıkarım
+  **1.87 ms**.
+- `vision/rules/arbiter.py` — `HybridArbiter`, `RuleEngine` ile aynı imza.
+  `tests/test_arbiter.py` 8 test: eşik altında karar kuralda kalır, model
+  tek başına aday üretir, uzlaşmada hibrit olur, ZONE/LOITERING modele
+  dokunmaz, model tek başına FIGHT üretmez.
+- `decided_by` uçtan uca geçiyor: `Candidate` → `publish.py` →
+  `spark_job.py` (şema + `max_by` + çıkış struct'ı) → `consumer.py` →
+  `events.decided_by` ve MongoDB `telemetry.arbiter`. Panel etiketleri
+  (`Kural Motoru` / `Model` / `Hibrit`) zaten vardı.
+- `vision/run.py`: `--no-tcn` ve `--tcn-min-conf` bayrakları; ağırlık yoksa
+  hat aynen kural motoruyla çalışır (doğrulandı). `tcn_min_conf` sıcak
+  yükleme yolundan da geliyor.
+- Tüm paket **191 test + 8 yeni test yeşil.**
+
+Aşama 10'a not: toplu çıkarım ölçüldü, kare başına **27.5 ms → 16.8 ms**
+(batch 4); batch 8 ve 16 ek kazanç vermiyor. Dizi çıkarımında toplu hâle
+getirilmedi — tüm döngüdeki kazanç ~1.3x ve toplu çıkarım Aşama 10'un işi.
+
+### 9.2 çıkarım durumu — yarıda durduruldu (2026-09-10, 16:25)
+
+Çıkarım elle durduruldu, **yeniden çalıştırılabilir**: var olan `.npz`
+atlanır, kaldığı yerden devam eder.
+
+```bash
+venv/Scripts/python.exe -m eval.extract_sequences
+```
+
+| Sınıf | İşlenen klip | `.npz` | Pencere | Durum |
+|---|---|---|---|---|
+| NORMAL | 600 / 600 | 415 | 2726 | bitti |
+| FALL | 66 / 66 | 38 | 128 | bitti |
+| RUN | ~60 / 144 | 12 | 21 | yarım |
+| FIGHT | 0 / 270 | 2 | 14 | başlamadı |
+
+Hız: **7 klip/dakika**. Kalan ~350 klibin çoğu FIGHT ve 2–3 saniyelik
+(`bitint`, `utint`), yani kalan süre klip sayısının ima ettiğinden kısa.
+
+İki şey şimdiden görünüyor, ikisi de eğitimden önce karara bağlanmalı:
+
+1. **FALL ince: 66 klipten 128 pencere.** NORMAL 2726 pencere üretti.
+   Ağırlıklı kayıp dengesizliği kısmen kapatır ama 128 pencere az; FALL
+   için `STRIDE` düşürülüp (25 → 10) örtüşme artırılabilir. Ölçülmeden
+   karar verilmeyecek.
+2. **38 klip hiç açılmıyor** (FIGHT 13, NORMAL 24, RUN 1): `moov atom not
+   found` / `non-existing PPS`. Yerel dosya boyutları SPHAR deposundaki
+   boyutlarla **birebir aynı** — indirme kesilmemiş, dosyalar kaynakta
+   bozuk. Yapılacak bir şey yok, bu klipler pencere üretmeden atlanıyor.
+
 ## Bir sonraki adım
 
-Aşama 9 — TCN modeli ve yeni sınıflar (`docs/PLAN.md` § Aşama 9):
+Aşama 9, kaldığı yer: **dizi çıkarımı yarıda** (RUN yarım, FIGHT
+başlamadı). Sıra:
 
-1. `telemetry` koleksiyonundan etiketli veri seti üretimi
-2. `models/tcn.py`: keypoint dizisi sınıflandırıcı eğitimi
-3. `HybridArbiter`: model güveni `tcn_min_conf` altındaysa kural motoruna düşer
-4. FIGHT ve LOITERING sınıflarının açılması (bu iki kuralın gerçek doğruluğu
-   hiç ölçülmedi — pilot kliplerde bu olaylar yok)
-5. **Onay kriteri:** `decided_by` üzerinden kural / model / hibrit ablation
-   tablosu
+1. `venv/Scripts/python.exe -m eval.extract_sequences` — kaldığı yerden
+   devam eder, ~50 dakika
+2. FALL'ın pencere sayısına bakılır; 128 pencere azsa FALL için `STRIDE`
+   düşürülür (ölçülmeden değiştirilmeyecek)
+3. `venv/Scripts/python.exe -m models.tcn --train` — 9.3, karışıklık
+   matrisi + sınıf başına F1
+4. `venv/Scripts/python.exe -m eval.tcn_eval --limit 15` — 9.5 ablation.
+   `--limit` şart: holdout sınıf başına sınırlanmazsa 216 klip x 3 mod
+   ~90 dakika sürer
+5. **Onay kriteri:** `decided_by` kırılımıyla kural / model / hibrit
+   tablosu, pilot ve holdout kümeleri için AYRI
 
 Aşama 10'a devreden ölçümler: çoklu kamera toplu çıkarım (tek süreç, tek
 model) ve kamera başına ≥ 20 FPS hedefi, 4 kamera 8 saat kesintisiz koşu.
-Canlı kaynakta alarm gecikmesi ve gerçek kota aşımında LLM soğutması donanım/
-senaryo gerektiriyor, kod değişikliği değil.
+Canlı kaynakta alarm gecikmesi ve gerçek kota aşımında LLM soğutması
+donanım/senaryo gerektiriyor, kod değişikliği değil. Toplu çıkarımın kare
+başına maliyeti 9.2 sırasında ölçüldü: 27.5 ms → 16.8 ms (batch 4).
 
 ---
 

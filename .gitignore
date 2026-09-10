@@ -14,10 +14,13 @@ venv/
 .env
 config/*-service-account.json
 
-# Model agirliklari (indirilir, depoya girmez)
+# Model agirliklari (indirilir/egitilir, depoya girmez)
 *.pt
 *.onnx
 *.engine
+# TCN normalizasyon istatistikleri agirliga BAGLIDIR; agirlik depoda
+# olmadigi icin bu da girmez, ikisi birlikte uretilir (models/tcn.py).
+models/tcn_meta.json
 
 # Egitim ciktilari
 runs/

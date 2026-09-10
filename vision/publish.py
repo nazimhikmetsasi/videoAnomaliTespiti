@@ -49,6 +49,7 @@ def candidate_to_dict(cand: Candidate, camera_id: str, epoch_base: float) -> dic
         "ts": float(cand.ts),
         "event_time": epoch_base + float(cand.ts),
         "zone_name": cand.zone_name,
+        "decided_by": cand.decided_by,
         "metrics": {k: float(v) for k, v in cand.metrics.items()},
         "thresholds_used": {k: float(v) for k, v in cand.thresholds_used.items()},
     }

@@ -180,6 +180,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--save", default="", help="isaretlenmis videoyu bu yola yaz")
     parser.add_argument("--rules", action="store_true",
                         help="duzleme+oznitelik+kural zincirini calistir (Asama 3)")
+    parser.add_argument("--no-tcn", action="store_true",
+                        help="TCN hakemini kapat, yalniz kural (Asama 9 ablation)")
+    parser.add_argument("--tcn-min-conf", type=float, default=0.60,
+                        help="model guveni bunun altindaysa karar kurala duser")
     parser.add_argument("--zones", default="",
                         help="bolge JSON yolu (SS7 formati); verilmezse bos bolge listesi")
     parser.add_argument("--kafka", nargs="?",
@@ -258,6 +262,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.rules:
         zones = load_zones(args.zones, Path(str(args.source)).stem) if args.zones else []
         rule_engine = RuleEngine(zones=zones)
+        if not args.no_tcn:
+            # Model yoksa (henuz egitilmedi / agirlik indirilmedi) hat aynen
+            # kural motoruyla calisir -- Asama 9 oncesi davranis korunur.
+            try:
+                from models.tcn import TCNClassifier
+                from vision.rules.arbiter import HybridArbiter
+                rule_engine = HybridArbiter(rule_engine, TCNClassifier(args.device),
+                                            min_conf=args.tcn_min_conf)
+                print(f"  TCN hakemi acik (tcn_min_conf={args.tcn_min_conf})")
+            except (FileNotFoundError, OSError, KeyError) as exc:
+                print(f"  TCN agirligi yok, yalniz kural: {exc}")
 
     writer = None
     pre_ms, infer_ms, track_ms, smooth_ms, rules_ms, loop_ms, publish_ms = [], [], [], [], [], [], []
@@ -492,6 +507,10 @@ def main(argv: list[str] | None = None) -> int:
         stage_rows += [("duzleme", smooth_ms), ("oznitelik+kural", rules_ms)]
     if publisher is not None and publish_ms:
         stage_rows.append(("kafka publish", publish_ms))
+    if getattr(rule_engine, "model_ms", None):
+        # TCN suresi "kural" satirinin ICINDEdir; ayrica gosterilir ki
+        # hakemin bedeli ablationda gorunsun.
+        stage_rows.append(("  ^ TCN cikarimi", rule_engine.model_ms))
     if stream_server is not None and ws_ms:
         stage_rows.append(("ws kodlama+yayin", ws_ms))
     stage_rows.append(("dongu toplam", loop_ms))
