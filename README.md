@@ -11,6 +11,8 @@ raporu sunan ve güvenlik personeline anlık bildirim ileten platform.
   aşama planı, ölçülebilir hedefler
 - **[docs/DURUM.md](docs/DURUM.md)** — güncel ilerleme, karar günlüğü,
   bir sonraki adım
+- **[docs/TEZ.md](docs/TEZ.md)** — bütün ölçüm tabloları, ablation sonuçları,
+  tutmayan hedefler ve kaynakça
 
 ## Mimari özeti
 
@@ -23,7 +25,7 @@ raporu sunan ve güvenlik personeline anlık bildirim ileten platform.
 | Backend | FastAPI + Uvicorn, WebSocket |
 | Raporlama | Google Gemini Flash + Türkçe şablon yedeği |
 | Bildirim | Telegram Bot API |
-| Panel | React, Tailwind CSS, Canvas API, Recharts |
+| Panel | Tailwind CDN + düz HTML/JS (derleme adımı yok), Canvas API |
 | Dağıtım | Docker Compose |
 
 `vision/` servisi GPU erişimi için host üzerinde native venv'de çalışır.
@@ -70,7 +72,7 @@ Model ve görünüm eşleştirme seçenekleri:
 
 | bayrak | ne yapar |
 |---|---|
-| `--model models/yolo26n-pose.pt` | çoklu kamera / düşük bütçe modeli |
+| `--model models/yolo26n-pose.pt` | küçük model — **dikkat:** ölçümde FALL sınıfını tamamen kaybediyor (`docs/TEZ.md` § 3) |
 | `--model models/yolov8s-pose.pt` | ablation karşılaştırması (v8, NMS'li) |
 | `--reid-model auto` | varsayılan: dedektör bedava öznitelik veriyorsa onu, vermiyorsa `models/yolo26s-reid.onnx` |
 | `--no-reid` | görünüm eşleşmesini tamamen kapat (ablation) |
@@ -80,6 +82,61 @@ Model ve görünüm eşleştirme seçenekleri:
 ```bash
 venv/Scripts/python.exe tests/test_vision_core.py
 ```
+
+## Tüm sistemi çalıştırma
+
+Kaynaklar: **dizüstünün kendi kamerası ve mp4 dosyaları.** IP/güvenlik
+kamerası gerekmez; RTSP yolu kodda var ama denenmedi.
+
+1. Yığını kaldır (Docker Desktop açıkken):
+
+```bash
+docker compose up -d
+```
+
+2. Kameraları başlat — tek süreç, tek model, N kamera:
+
+```bash
+venv\Scripts\python.exe scripts\run_pilot_cameras.py --cameras webcam_01,zone_01,run_01,fall_01
+```
+
+3. Panele gir: **http://localhost:8000** — kullanıcı `admin`, şifre
+   `.env` içindeki `ADMIN_PASSWORD`.
+
+4. Durdur: kameralarda Ctrl+C, sonra `docker compose down`.
+
+Kamera adları veritabanından gelir (`scripts/seed_pilot.py` tohumlar, panelden
+de eklenebilir). Dört kameradan fazlası 4 GB VRAM'de ölçülmedi.
+
+### Ekranlar
+
+| Ekran | Ne yapar |
+|---|---|
+| Canlı İzleme | 1 / 2x2 / 3x3 ızgara, kutu-iskelet-bölge-ID katmanları, kırmızı alarm |
+| Kameralar / Kamera Detay | kamera CRUD, kamera bazlı olay geçmişi |
+| Olaylar / Olay Detay | filtreler (tip, kamera, tarih, **karar kaynağı**), kanıt klibi + karesi, Türkçe LLM raporu |
+| Bölgeler | kare üstünde poligon çizimi, kameraya bağlı |
+| Analitik | tip dağılımı, saat ısı haritası, kural/model/hibrit kırılımı |
+| Ayarlar | eşikler panelden, **yeniden başlatma yok** (~1 sn'de uygulanır) |
+| Sistem Sağlığı | kamera başına FPS, düşen kare, çıkarım süresi, GPU belleği |
+| Kullanıcılar / Denetim Kaydı | rol yönetimi, değişiklik kaydı |
+
+### Uzun koşu ölçümü
+
+Koşu çalışırken yanda:
+
+```bash
+venv\Scripts\python.exe scripts\soak_test.py --interval 60 --hours 8
+```
+
+`logs/soak.csv` biriktirir; `--report logs/soak.csv` ilk saat / son saat
+karşılaştırmasını basar (FPS sapması, RAM/VRAM sızıntısı, disk büyümesi).
+
+## Veri kümeleri ve atıf
+
+Eğitim verisi halka açık akademik kümelerden derlenmiştir ve depoya
+girmez (`scripts/fetch_datasets.py` yeniden indirir). Kullanılan kaynaklar,
+lisansları ve atıf künyeleri **[docs/TEZ.md](docs/TEZ.md) § 7**'de.
 
 ## Durum
 
