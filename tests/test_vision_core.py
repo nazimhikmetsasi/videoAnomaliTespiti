@@ -19,7 +19,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from vision.source import VideoSource, classify_source  # noqa: E402
+from vision.source import Frame, VideoSource, classify_source  # noqa: E402
 from vision.stages.preprocess import Preprocessor, letterbox  # noqa: E402
 from vision.stages.tracker import Tracker  # noqa: E402
 
@@ -210,3 +210,25 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_halka_tampon_4k_karede_sismez() -> None:
+    """Asama 10.5 cokusu: tampon kare SAYISIYLA sinirliydi, bayt ile degil.
+
+    4K kaynakta kare basina 24.9 MB x 300 kare = tek kamera icin 7.5 GB.
+    Olculdu: RSS 0.9-4.9 GB salindi, surec 13. dakikada cuDNN hatasiyla
+    oldu. Tampona giden kopya artik kucultulur; kuyruga giden kare HAM kalir.
+    """
+    from vision.source import BUFFER_MAX_W
+
+    source = VideoSource.__new__(VideoSource)          # __init__ kaynak acar
+    frame_4k = Frame(idx=0, ts=0.0, image=np.zeros((2160, 3840, 3), np.uint8))
+    small = source._buffer_copy(frame_4k)
+
+    assert small.image.shape[1] == BUFFER_MAX_W        # 3840 -> 960
+    assert small.image.nbytes * 4 < frame_4k.image.nbytes   # en az 4 kat kucuk
+    assert frame_4k.image.shape == (2160, 3840, 3)     # HAM kare dokunulmadi
+
+    # Zaten kucuk kare kopyalanmaz, aynen gecer
+    small_src = Frame(idx=1, ts=0.0, image=np.zeros((540, 960, 3), np.uint8))
+    assert source._buffer_copy(small_src) is small_src

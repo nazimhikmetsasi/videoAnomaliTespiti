@@ -14,6 +14,33 @@ import numpy as np
 from vision.rules.engine import Candidate, Thresholds
 from vision.stages.features import TrackWindow
 
+
+def pair_proximity(wi: TrackWindow, wj: TrackWindow) -> float:
+    """Iki izin merkez mesafesi / ortalama bbox yuksekligi. Olcek-normalize."""
+    fi, fj = wi.last, wj.last
+    mean_h = (fi.height + fj.height) / 2
+    if mean_h <= 0:
+        return 1e9
+    return float(np.linalg.norm(fi.centroid - fj.centroid) / mean_h)
+
+
+def close_pairs(windows: dict[int, TrackWindow], th: Thresholds) -> set[int]:
+    """Yakin bir cifte ait iz kimlikleri.
+
+    HybridArbiter da bunu kullanir: model FIGHT dedi diye tek basina aday
+    uretmek yanlistir (kavga ikili bir olaydir) ama YAKINLIK sartini
+    kuralin uzuv hizi sartindan AYIRMAK gerekti. Olculdu (Asama 11):
+    uzuv hizi FIGHT'i NORMAL'den ayirmiyor -- 0.5 ve ustu her esikte NORMAL
+    orani daha yuksek. Yakinlik ise tutuyor (FIGHT kliplerinde medyan 0.93,
+    esik 1.20). Bu yuzden yakinlik paylasilir, uzuv hizi kurala ozel kalir.
+    """
+    close: set[int] = set()
+    for wi, wj in itertools.combinations(windows.values(), 2):
+        if pair_proximity(wi, wj) < th.fight_proximity:
+            close.add(wi.track_id)
+            close.add(wj.track_id)
+    return close
+
 HOLD = 3                    # cift bazli sart surekliligi, kare sayisi
 FIGHT_LIMB_SPEED = 2.0       # normalize uzuv hizi esigi (1/sn)
 
@@ -42,8 +69,7 @@ class FightRule:
     def _check_pair(self, wi: TrackWindow, wj: TrackWindow, pair: tuple[int, int],
                      th: Thresholds) -> Candidate | None:
         fi, fj = wi.last, wj.last
-        mean_h = (fi.height + fj.height) / 2
-        proximity = float(np.linalg.norm(fi.centroid - fj.centroid) / mean_h) if mean_h > 0 else 1e9
+        proximity = pair_proximity(wi, wj)
 
         met = (proximity < th.fight_proximity
                and fi.limb_speed >= self.limb_speed_th

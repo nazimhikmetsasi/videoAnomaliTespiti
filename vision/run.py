@@ -31,6 +31,7 @@ import time
 from pathlib import Path
 
 import cv2
+import torch
 
 from vision.camera import (  # noqa: F401  (load_zones disaridan da kullaniliyor)
     LIVE_WAIT_SEC, WARMUP_FRAMES, CameraPipeline, draw, load_zones,
@@ -46,6 +47,9 @@ from vision.ws_server import StreamServer
 # kamerada eski davranis (2 sn) korunur.
 MULTI_READ_TIMEOUT = 0.0
 IDLE_SLEEP = 0.005      # hicbir kaynak kare vermediyse bos donguyu yakma
+# Ardisik bu kadar cikarim hatasindan sonra pes edilir: gecici bir cuDNN
+# hatasi atlanabilir, kalici bir bozulma sessizce donmeye devam etmemeli.
+MAX_INFER_ERRORS = 10
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -245,6 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     timeout = MULTI_READ_TIMEOUT if multi else 2.0
     writer = None
     stop = False
+    infer_errors = 0
     while not stop and not all(p.finished for p in pipes):
         batch: list[tuple[CameraPipeline, object, object]] = []
         for pipe in pipes:
@@ -259,7 +264,24 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         t0 = time.perf_counter()
-        results = detector([image for _, _, image in batch])
+        try:
+            results = detector([image for _, _, image in batch])
+        except RuntimeError as exc:
+            # Gozetim sistemi tek bir cikarim hatasinda OLMEZ. Asama 10.5'in
+            # 1 saatlik kosusunda surec 13. dakikada "cuDNN error:
+            # CUDNN_STATUS_EXECUTION_FAILED" ile tamamen dustu; dort kamera
+            # birden sustu ve kimse haberdar olmadi. Tur atlanir, sayilir,
+            # sebep basilir; dongu devam eder.
+            infer_errors += 1
+            torch.cuda.empty_cache()
+            print(f"  [{time.strftime('%H:%M:%S')}] cikarim hatasi "
+                  f"({infer_errors}.): {exc}")
+            if infer_errors >= MAX_INFER_ERRORS:
+                print(f"  {MAX_INFER_ERRORS} ardisik cikarim hatasi, duruluyor")
+                break
+            time.sleep(IDLE_SLEEP)
+            continue
+        infer_errors = 0
         # Toplu cagrinin suresi kameralara esit bolunur: kare basina maliyet
         # budur, tek kameraya tum batch'i yazmak raporu yalanlardi.
         infer_ms = (time.perf_counter() - t0) * 1000 / len(batch)

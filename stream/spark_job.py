@@ -54,8 +54,18 @@ WATERMARK_SEC = int(os.getenv("SPARK_WATERMARK_SEC", "2"))
 MIN_HITS = int(os.getenv("SPARK_MIN_HITS", "2"))
 MIN_SEC_DEFAULT = float(os.getenv("SPARK_MIN_SEC_DEFAULT", "1.0"))
 MIN_SEC = json.loads(os.getenv("SPARK_MIN_SEC", json.dumps(MIN_SEC_DEFAULT_MAP)))
-CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", "/checkpoints")
 SCHEMA_VERSION = 1
+# Toplama (aggregation) surumu. Spark durum deposu SEMA DENETIMI yapar:
+# groupBy/agg yapisi degisince eski checkpoint ile yeni sorgu uyusmaz ve
+# Spark sorguyu BASLATMAYI REDDEDER -- sessizce, olay uretmeden.
+# Asama 9'da `max_by(decided_by)` eklenince tam bu oldu ve iki gun boyunca
+# hic olay yazilmadi; kimse fark etmedi cunku hicbir sey gurultulu bicimde
+# basarisiz olmadi (Asama 10.5'in 1 saatlik kosusu yakaladi).
+# Cozum: agg yapisi her degistiginde bu sayi artirilir, checkpoint yolu
+# kendiliginden yenilenir. Elle volume silmeye gerek kalmaz.
+AGG_VERSION = 2
+CHECKPOINT_DIR = os.path.join(
+    os.getenv("CHECKPOINT_DIR", "/checkpoints"), f"agg{AGG_VERSION}")
 
 # ASAMA6_PLAN.md SS9: spark_min_sec/spark_min_hits/spark_window_sec panelden
 # degistirilebilir ama akan sorguya GOMULU -- ancak Spark yeniden baslayinca

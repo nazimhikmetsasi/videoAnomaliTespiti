@@ -22,10 +22,21 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
+import dataclasses
+
 import cv2
 import numpy as np
 
 BUFFER_FRAMES = 300          # 25 FPS'te 12 sn — +-5 sn klip icin fazlasiyla yeter
+# Halka tampon kare SAYISIYLA sinirli; bayt ile degil. 4K kaynakta kare
+# basina 24.9 MB demek: tek kamera icin 7.5 GB. Asama 10.5'in 1 saatlik
+# kosusunda olculdu — RSS 0.9-4.9 GB arasi salindi ve 13. dakikada surec
+# "cuDNN error: CUDNN_STATUS_EXECUTION_FAILED" ile oldu (GPU bellegi
+# sabit 1131 MB'taydi, yani VRAM tasmasi DEGIL; host bellegi tukenmisti).
+# Cozum: tamponda saklanan kopya bu genislige kucultulur. Kuyruga giden
+# kare HAM kalir, yani tespit kalitesi degismez; yalnizca kanit klibinin
+# cozunurlugu sinirlanir -- panel zaten 960x540 gosteriyor.
+BUFFER_MAX_W = 960
 RECONNECT_START_SEC = 0.5
 RECONNECT_MAX_SEC = 30.0
 
@@ -144,6 +155,18 @@ class VideoSource:
                 if time.monotonic() >= deadline:
                     return None
 
+    def _buffer_copy(self, frame: Frame) -> Frame:
+        """Tampona giden kopya: genisligi BUFFER_MAX_W'yi asmaz."""
+        if frame.image is None:
+            return frame
+        height, width = frame.image.shape[:2]
+        if width <= BUFFER_MAX_W:
+            return frame
+        scale = BUFFER_MAX_W / width
+        small = cv2.resize(frame.image, (BUFFER_MAX_W, max(1, round(height * scale))),
+                           interpolation=cv2.INTER_AREA)
+        return dataclasses.replace(frame, image=small)
+
     def snapshot(self) -> list[Frame]:
         """Tampondaki kareleri kopyalar (kanit klibi icin)."""
         with self._buffer_lock:
@@ -164,7 +187,7 @@ class VideoSource:
 
     def _publish(self, frame: Frame) -> None:
         with self._buffer_lock:
-            self._buffer.append(frame)
+            self._buffer.append(self._buffer_copy(frame))
 
         if self.is_live:
             try:
