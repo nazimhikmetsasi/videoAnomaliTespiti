@@ -23,14 +23,14 @@ denenmemiştir — bu, sonuçların açık bir sınırıdır.
 | GPU çıkarım / kare | 2 model geçişi | 1 geçiş | 1 geçiş |
 | Eşik değişimi | `.env` + restart | panelden anında | panelden, ~1 sn |
 | Kanıt | 1 JPEG | mp4 klip + JPEG | mp4 + JPEG |
-| Anomali sınıfı sayısı | 4 | 7 | 7 tanımlı; FIGHT duyarlılığı 0.07, LOITERING ölçülemedi |
+| Anomali sınıfı sayısı | 4 | 7 | 7 tanımlı; FIGHT duyarlılığı **0.80**, LOITERING ölçülemedi |
 | Eşik taşınabilirliği | piksel, kameraya bağımlı | ölçek-normalize | ölçek-normalize |
 | 4 GB VRAM'de kamera | 1–2 | 3–4 | **4 eşzamanlı** |
 | En büyük dosya | `pipeline.py` 435 satır | < 150 satır | tutmadı: `vision/camera.py` 421 satır |
-| Karar kaynağı | yalnız kural | kural + model + hibrit | hibrit F1 0.50 > kural 0.41 |
+| Karar kaynağı | yalnız kural | kural + model + hibrit | hibrit F1 **0.67** > kural 0.41 |
 
-İki hedef tutmadı ve olduğu gibi raporlanır: dosya boyutu ve FIGHT
-duyarlılığı. Gerekçeleri § 6'da.
+Tutmayan tek hedef dosya boyutudur ve olduğu gibi raporlanır. LOITERING
+duyarlılığı ölçülemedi (hiçbir kümede olumlu örnek yok). Gerekçeler § 6'da.
 
 ---
 
@@ -112,8 +112,8 @@ verilmez**, çünkü alan farkı ancak iki tabloyu ayrı tutunca görünür.
 | Mod | TP | FP | FN | Kesinlik | Duyarlılık | F1 |
 |---|---|---|---|---|---|---|
 | kural | 13 | 6 | 31 | 0.68 | 0.30 | 0.41 |
-| model | 13 | **1** | 31 | **0.93** | 0.30 | 0.45 |
-| hibrit | **17** | 7 | **27** | 0.71 | **0.39** | **0.50** |
+| model | 25 | 6 | 19 | **0.81** | 0.57 | **0.67** |
+| hibrit | **28** | 12 | **16** | 0.70 | **0.64** | **0.67** |
 
 Tip bazında F1:
 
@@ -121,11 +121,14 @@ Tip bazında F1:
 |---|---|---|---|
 | FALL | 0.53 | 0.67 | **0.78** |
 | RUN | 0.50 | **0.55** | 0.48 |
-| FIGHT | 0.12 | 0.00 | 0.12 |
+| FIGHT | 0.12 | **0.75** | **0.75** |
 
-Model FIGHT'ta 0.00'dır çünkü **tasarım gereği** tek başına FIGHT üretmez:
-model tek izi sınıflandırır, kavga ikili bir olaydır, eşleştirmeyi kural
-yapar.
+FIGHT'taki sıçrama Aşama 11'de ölçülen bir kök nedenin düzeltilmesinden
+geliyor. Kuralın "karşılıklı uzuv hızı" şartı kavgayı normal hareketten
+**ayırmıyor** (0.5 ve üstü her eşikte NORMAL oranı daha yüksek), ve hakem
+modelin FIGHT oyunu bu çalışmayan kuralın onayına bağladığı için model
+FIGHT'ı hiç üretemiyordu. Yakınlık şartı ayrıldı: model artık iz yakın bir
+çiftin parçasıysa tek başına FIGHT üretiyor. Duyarlılık **0.07 → 0.80**.
 
 ### 4.2 Pilot klipler (üretim alanı, 1080p ve 4K)
 
@@ -192,7 +195,7 @@ Bunlar gizlenmez; tezin dürüstlüğü buradadır.
 
 | Konu | Durum |
 |---|---|
-| **FIGHT duyarlılığı 0.07** | Plan kural tabanlı kavga için ~%70 bekliyordu. Sebebi ölçüldü: kural üç kare üst üste ikili yakınlık + uzuv hızı ister, eğitim klipleri 2–3 saniye, pencere 2 saniye |
+| **FIGHT duyarlılığı** | **Düzeltildi: 0.07 → 0.80** (Aşama 11). Kök neden `HOLD` değil öznitelikti: uzuv hızı FIGHT'ı NORMAL'den ayırmıyor. Kural yolu hâlâ 0.12'dedir ve öyle kalır — kavgayı model tespit eder |
 | **LOITERING duyarlılığı** | Hiç ölçülmedi — hiçbir kümede olumlu örnek yok. Yanlış pozitif oranı sıfır |
 | **Model pilot alanda 12 sahte FALL** | Alan farkı; çözümü pilot alandan eğitim verisi ya da ölçek artırma |
 | **Canlı kaynakta uçtan uca alarm gecikmesi** | Ölçülmedi. Dosya kaynağında `started_at` duvar saati değildir; gerçek sayı kameranın önünde gerçek bir olay ister |

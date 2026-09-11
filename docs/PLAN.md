@@ -481,11 +481,11 @@ Kullanıcı commit atar, `/clear` çeker, sonraki aşamadan devam edilir.
 | GPU çıkarım / kare | 2 model geçişi | 1 geçiş, model `n` → `s` | 1 geçiş (Aşama 2) |
 | Eşik değişimi | `.env` düzenle + restart | panelden anında | panelden, ~1 sn (Aşama 8.5) |
 | Kanıt | 1 JPEG | mp4 klip + JPEG | mp4 + JPEG (Aşama 6) |
-| Anomali sınıfı sayısı | 4 | 7 | 7 tanımlı; FIGHT duyarlılığı 0.07 (Aşama 9.5), LOITERING ölçülemedi |
+| Anomali sınıfı sayısı | 4 | 7 | 7 tanımlı; FIGHT duyarlılığı **0.80** (Aşama 11), LOITERING ölçülemedi |
 | Eşik taşınabilirliği | kameraya bağımlı (piksel) | ölçek-normalize | ölçek-normalize (Aşama 3) |
 | 4 GB VRAM'de kamera | 1–2 | 3–4 | **4 eşzamanlı, kamera başına 26.3 FPS** (Aşama 10.4) |
 | En büyük dosya | `pipeline.py` 435 satır | aşama başına < 150 satır | **tutmadı**: `vision/camera.py` 421 satır (Aşama 10.1). Aşama dosyaları hedefte, kamera hattının kendisi değil |
-| Karar kaynağı | yalnız kural | kural + model + hibrit | hibrit F1 0.50 > kural 0.41 (Aşama 9.5, holdout) |
+| Karar kaynağı | yalnız kural | kural + model + hibrit | hibrit F1 **0.67** > kural 0.41 (Aşama 11, holdout) |
 
 Panel satırlarının ölçümü (Aşama 8.6, 2026-09-10; ayrıntı `docs/DURUM.md`):
 

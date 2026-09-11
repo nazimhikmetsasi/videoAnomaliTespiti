@@ -9,11 +9,18 @@ Karar tablosu (docs/ASAMA9_PLAN.md SS9.4):
     model NORMAL disi + kural sessiz   -> model adayi              (model)
     model ve kural ayni tipte          -> tek aday, skor maksimum  (hybrid)
     ZONE_VIOLATION / LOITERING         -> her zaman kural          (rule)
-    FIGHT                              -> model tek basina URETMEZ
+    FIGHT                              -> model + YAKINLIK sarti     (model)
 
 FIGHT'in ayri tutulmasi: model TEK izi siniflandirir, kavga ikili bir
-olaydir. Iki izi eslestirmeyi `FightRule`in yakinlik kontrolu yapar; model
-yalnizca zaten kuralin yakaladigi FIGHT adayini hibrite yukseltir.
+olaydir. Bu yuzden modelin FIGHT oyu ancak iz YAKIN bir ciftin parcasiysa
+aday uretir (`fight.close_pairs`).
+
+Onceden model FIGHT'i tek basina HIC uretemiyordu; sart kuralin de ayni
+tipte aday vermesiydi. Asama 11'de olculdu ki kuralin uzuv hizi sarti
+FIGHT'i NORMAL'den ayirmiyor (0.5 ve ustu her esikte NORMAL orani daha
+yuksek, en uzun ardisik seri 1 kare) -- yani calismayan bir kurala
+baglanmak modelin FIGHT duyarliligini sifira cakiyordu (holdout F1: kural
+0.12, model 0.00). Yakinlik sarti ise tutuyor. Ayrim buradan geliyor.
 """
 
 from __future__ import annotations
@@ -24,9 +31,11 @@ import numpy as np
 
 from models.tcn import CHANNELS, MIN_POSE_RATIO, WINDOW, frame_vector
 from vision.rules.engine import Candidate, RuleEngine
+from vision.rules.fight import close_pairs
 from vision.stages.features import TrackWindow
 
-MODEL_TYPES = ("FALL", "RUN")     # model tek basina yalnizca bunlari uretebilir
+MODEL_TYPES = ("FALL", "RUN")     # model bunlari kosulsuz uretebilir
+PAIR_TYPES = ("FIGHT",)           # bunlar icin ayrica YAKIN cift sarti aranir
 RULE_ONLY = ("ZONE_VIOLATION", "LOITERING")
 EVERY = 5      # kac karede bir model kosar (pencere 25 kare kayiyor)
 
@@ -126,8 +135,14 @@ class HybridArbiter:
                 boosted.update(agrees)
             merged.append(cand)
 
+        pairs = close_pairs(windows, self.thresholds) if verdicts else set()
         for track_id, (label, conf) in verdicts.items():
-            if label not in MODEL_TYPES or conf < self.min_conf or track_id in boosted:
+            if conf < self.min_conf or track_id in boosted:
+                continue
+            if label in PAIR_TYPES:
+                if track_id not in pairs:
+                    continue        # kavga ikili bir olaydir: yakin cift yoksa aday yok
+            elif label not in MODEL_TYPES:
                 continue
             last = windows[track_id].last
             merged.append(Candidate(

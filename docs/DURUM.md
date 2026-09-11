@@ -41,7 +41,7 @@ Sıradaki iş 8.5 (yazma ekranları): kamera ekle/düzenle/sil, bölge poligon
 | 7 | LLM ve Telegram | Tamamlandı |
 | 8 | Panel (kullanıcı şablonu) | Tamamlandı (8.1–8.6) |
 | 9 | TCN modeli ve yeni sınıflar | Tamamlandı (9.1–9.5) |
-| 10 | Ölçek ve tez çıktıları | 10.1–10.4 tamam; 10.5 (8 saat) ve 10.6 sırada |
+| 10 | Ölçek ve tez çıktıları | 10.1–10.4, 10.6 tamam; 10.5 **1 saat** koşuldu (8 saat değil) |
 
 ---
 
@@ -2272,6 +2272,182 @@ regresyon testi var.
 Canlı kaynakta yüksek `dropped` **normaldir**: kamera ~30 FPS üretir, hat ~5
 tüketir, gerisi tasarım gereği atılır (kuyruk derinliği 1, "gecikme yerine
 tazelik").
+
+## Aşama 11 sonucu — olay tetiklemeli ReID ve FIGHT kök nedeni (2026-09-11)
+
+### 11.1–11.3 — ReID galerisi: ölçüldü, **çalışmıyor**
+
+`vision/reid_gallery.py` (olay anında gömme, kosinüs eşleştirme, kalıcı
+`person_id`) ve `eval/reid_eval.py` yazıldı. Gerçek referans uydurulmadı:
+CASIA klipleri dosya adında kişi kimliği taşıyor (`..._p01_...`).
+
+| Koşul | Kosinüs |
+|---|---|
+| Aynı kişi, ardışık kare | **0.749** |
+| Farklı kişi, aynı kare | 0.563 |
+| Aynı kişi, tekrar giriş (klip başı ↔ sonu) | **0.465** |
+| Aynı kişi, farklı klip / farklı eylem | 0.358 |
+
+**Aynı kişinin birkaç saniye sonraki hâli, farklı bir kişiden daha uzak.**
+Gömme vektörü zamanla/duruşla, kişiler arasındaki farktan hızlı bozuluyor.
+Eşik taramasında en iyi F1 tekrar girişte **0.15** (eşik 0.75, kesinlik
+0.38, duyarlılık 0.09). Bu sayıyla kimlik atamak olayların çoğuna yanlış
+`person_id` yazmak demek — **hatta bağlanmadı.**
+
+Kodlayıcı hatası değil: ardışık karede 0.749, aynı karedeki iki kişiyi
++0.186 ile ayırıyor. Yani model kare-kare eşleştirme için çalışıyor (zaten
+BoT-SORT onu o iş için kullanıyor), zaman içinde kimlik taşımaya yetmiyor.
+Sebep çözünürlük: CASIA kaynağı 320x240, kişi kare yüksekliğinin ~%27'si,
+kırpım ~35x146 **interpolasyonlu** piksel.
+
+Olumlu yan bulgu: **en iyi kare seçimi (Laplacian) işe yarıyor** — tekrar
+girişte 0.465, ilk kareyi almaya göre belirgin daha iyi (0.346 → 0.465
+farklı-klip koşulunda da aynı yönde).
+
+Kendi kusurum olarak kayda geçer: kırpım 960x540 letterbox karesinden
+alınıyor, ham kareden değil. CASIA'da fark yok (kaynak zaten küçük) ama
+1080p/4K kamerada mevcut çözünürlüğün çoğunu atıyor. Gerçek kamerada
+ölçülecekse önce bu düzeltilmeli.
+
+### 11.4 — FIGHT duyarlılığı 0.07: kök neden
+
+Önce varsayılan suçlu `HOLD = 3` (üç kare üst üste şart) sanılmıştı.
+**Ölçüm bunu çürüttü.** 15 FIGHT klibi, 1069 kare:
+
+| Şart | Sağlanma |
+|---|---|
+| Karede en az 2 pozlu iz | 96.9% |
+| Yakınlık < 1.20 | çoğu çiftte (medyan **0.93**) |
+| Her iki izin uzuv hızı ≥ 2.0 | **%0.3** |
+| İkisi birden | %0.3 |
+| En uzun ardışık seri | **1 kare** |
+
+`HOLD` hiç sıraya gelmiyor. Şart uzuv hızında düşüyor: medyan 0.11, p90 1.14,
+eşik 2.0.
+
+Eşiği düşürmek de çözmüyor — çünkü öznitelik ayırmıyor. FIGHT ve NORMAL
+kliplerinde yakın çiftlerin uzuv hızı dağılımı:
+
+| Eşik | FIGHT kare % | NORMAL kare % |
+|---|---|---|
+| 0.3 | 19.8 | 17.3 |
+| 0.5 | 10.4 | **13.0** |
+| 0.7 | 5.4 | **9.1** |
+| 1.1 | 1.8 | **4.4** |
+| 2.0 | 0.1 | 0.1 |
+
+**0.5 ve üstü her eşikte NORMAL oranı daha yüksek.** Hiçbir eşik bunu
+kurtaramaz; sorun eşikte değil özniteliktedir.
+
+### Yapılan değişiklik
+
+Yakınlık şartı uzuv hızı şartından **ayrıldı** (`fight.close_pairs`).
+Hakem artık modelin FIGHT oyunu, iz yakın bir çiftin parçasıysa tek başına
+aday olarak kabul ediyor. Önceden şart "kural da aynı tipte aday versin"di
+ve çalışmayan bir kurala bağımlılık modelin FIGHT duyarlılığını sıfıra
+çakıyordu (holdout F1: kural 0.12, model 0.00).
+
+Gerekçe ölçüme dayanıyor: kuralın uzuv hızı şartı ayırmıyor, yakınlık
+şartı ayırıyor, TCN pencere bazında FIGHT F1 **0.649** veriyor. PLAN.md
+risk 3 zaten "gerçek çözüm TCN modelidir" diyordu.
+
+### Değişikliğin ölçülen etkisi — 9.5 ablation yeniden koşuldu
+
+| Mod | TP | FP | FN | Kesinlik | Duyarlılık | F1 |
+|---|---|---|---|---|---|---|
+| kural | 13 | 6 | 31 | 0.68 | 0.30 | 0.41 (değişmedi) |
+| model | 13 → **25** | 1 → 6 | 31 → **19** | 0.93 → 0.81 | 0.30 → **0.57** | 0.45 → **0.67** |
+| hibrit | 17 → **28** | 7 → 12 | 27 → **16** | 0.71 → 0.70 | 0.39 → **0.64** | 0.50 → **0.67** |
+
+Tip bazında F1:
+
+| Tip | kural | model | hibrit |
+|---|---|---|---|
+| FALL | 0.53 | 0.67 | **0.78** |
+| RUN | 0.50 | **0.55** | 0.48 |
+| FIGHT | 0.12 | 0.00 → **0.75** | 0.12 → **0.75** |
+
+**FIGHT duyarlılığı 0.07 → 0.80** (15 holdout klibinin 12'si; kesinlik 0.71).
+Pilot kliplerde değişiklik yok — o kümede hiç FIGHT olayı yok.
+
+Kaybedilen: model kesinliği 0.93'ten 0.81'e indi (5 yanlış pozitif FIGHT).
+Takas bilinçli ve ölçülü: duyarlılık 0.30 → 0.57. Kavga tespitinde 0.07
+duyarlılık, kesinliği ne olursa olsun kullanılamaz bir sistemdir.
+
+## Aşama 10.5 sonucu — uzun koşu (2026-09-11)
+
+8 saat yerine **1 saat** koşuldu (zaman kısıtı). Onay kriteri tam
+karşılanmadı ve tezde öyle yazılacak. Buna rağmen koşu **üç gerçek hata
+buldu** — hepsi dakikalık testlerde görünmeyen cinsten.
+
+### Bulgu 1 — halka tampon 4K kaynakta belleği tüketiyordu
+
+İlk koşu 13. dakikada çöktü: `RuntimeError: cuDNN error:
+CUDNN_STATUS_EXECUTION_FAILED`, toplu çıkarım çağrısında.
+
+| dk | kamera | FPS | görü RSS MB | GPU MB |
+|---|---|---|---|---|
+| 0.0 | 4 | 17.9 | 1870 | 950 |
+| 4.3 | 4 | 19.0 | **4235** | 1129 |
+| 8.5 | 4 | 18.8 | **4870** | 1131 |
+| 12.8 | — | — | **0** (öldü) | 378 |
+
+**GPU belleği sabit 1131 MB** — VRAM taşması değil, host belleği tükendi.
+Kök neden: `VideoSource` halka tamponu kare **sayısıyla** sınırlı
+(`BUFFER_FRAMES = 300`), bayt ile değil. `run_01.mp4` 3840x2160 → kare
+başına 24.9 MB × 300 = tek kamera için **7.5 GB**.
+
+Düzeltme: tampona giden kopya `BUFFER_MAX_W = 960` piksele küçültülür.
+Kuyruğa giden kare **ham kalır** (tespit kalitesi değişmez); yalnız kanıt
+klibinin çözünürlüğü sınırlanır — panel zaten 960x540 gösteriyor. 4K'da
+tampon 7.5 GB → ~470 MB. Regresyon testi `tests/test_vision_core.py`'de.
+
+### Bulgu 2 — tek çıkarım hatası tüm süreci öldürüyordu
+
+Dört kamera birden sustu ve kimse haberdar olmadı. Gözetim sistemi tek bir
+geçici hatada ölmemeli. Tur atlanır, sayılır, sebep basılır, döngü devam
+eder; 10 ardışık hatada pes edilir (`MAX_INFER_ERRORS`).
+
+### Bulgu 3 — Spark iki gündür sessizce ölüydü
+
+**Bir saat boyunca tek yeni olay üretilmedi** (sayaç 1040'ta sabit). Sebep:
+
+```
+Existing value schema: ... (Asama 9 oncesi)
+Provided value schema: ... (max_by(decided_by) eklenmis)
+StateSchemaCompatibilityChecker.check ... incompatible schema
+```
+
+Aşama 9'da `decided_by` için `max_by` eklendiğinde Spark durum deposunun
+şeması değişti; kalıcı checkpoint eski şemayı tutuyordu ve Spark sorguyu
+**başlatmayı reddediyordu**. Hiçbir şey gürültülü biçimde başarısız
+olmadı: görü çalıştı, Kafka'ya aday bastı, panel açıldı — yalnızca olay
+yazılmadı. İki gün böyle geçti.
+
+Düzeltme kalıcı: checkpoint yolu artık toplama sürümünü taşıyor
+(`/checkpoints/agg2`). `groupBy/agg` yapısı her değiştiğinde `AGG_VERSION`
+artırılır, checkpoint kendiliğinden yenilenir — elle volume silmek
+gerekmez. Doğrulandı: olay sayısı 1040 → 1045, yeni kayıtlar bugünün
+damgasıyla.
+
+### İkinci koşu — düzeltmelerden sonra
+
+| Metrik | İlk ölçüm | Son ölçüm | Değişim |
+|---|---|---|---|
+| Toplam FPS | 30.6 | 30.7 | **+0.0%** |
+| GPU belleği | 947 MB | 1133 MB | oturdu, sabit |
+| Görü RSS | 4705 MB | 5657 MB | ilk 20 dk'da plato, sonra 5.2–5.9 bandında salınım |
+| storage | 2099 MB | 3359 MB | **+1260 MB / saat** |
+
+1 saat, 58 ölçüm, 4 kamera kesintisiz. **FPS sapması yok, RSS'te doğrusal
+artış yok** — sızıntı belirtisi yok.
+
+Açık kalan: **disk saatte 1.3 GB büyüyor** (8 saatte ~10 GB). Kanıt
+kliplerinin saklama politikası yok. Aşama 12'ye.
+
+Ayrıca görüldü: Spark eşikleri API'den çekemiyor (`HTTP Error 401`),
+ortam varsayılanlarına düşüyor. Sessiz bir bozulma daha; panelden eşik
+değiştirmek Spark süzgecini etkilemiyor demektir.
 
 ## Bir sonraki adım
 
