@@ -41,7 +41,7 @@ Sıradaki iş 8.5 (yazma ekranları): kamera ekle/düzenle/sil, bölge poligon
 | 7 | LLM ve Telegram | Tamamlandı |
 | 8 | Panel (kullanıcı şablonu) | Tamamlandı (8.1–8.6) |
 | 9 | TCN modeli ve yeni sınıflar | Tamamlandı (9.1–9.5) |
-| 10 | Ölçek ve tez çıktıları | 10.1–10.4, 10.6 tamam; 10.5 **1 saat** koşuldu (8 saat değil) |
+| 10 | Ölçek ve tez çıktıları | 10.1–10.4, 10.6 tamam; 10.5 en uzun kesintisiz **2 sa 50 dk** (8 saat değil) |
 
 ---
 
@@ -2448,6 +2448,28 @@ kliplerinin saklama politikası yok. Aşama 12'ye.
 Ayrıca görüldü: Spark eşikleri API'den çekemiyor (`HTTP Error 401`),
 ortam varsayılanlarına düşüyor. Sessiz bir bozulma daha; panelden eşik
 değiştirmek Spark süzgecini etkilemiyor demektir.
+
+### Kesintisiz çalışma süresi — 2 saat 50 dakika
+
+Ölçüm betiği 1 saatte kendi süresini doldurup çıktı, ama **görü süreçleri
+çalışmaya devam etti**: 11:05'te başladılar, 13:55'te elle kapatıldılar.
+Toplam **2 saat 50 dakika kesintisiz**, 4 kamera, çökme yok.
+
+Bu sürenin tamamı ölçülmedi; enstrümanlı bölümler `logs/soak_2.csv`
+(11:05–12:05, 58 ölçüm) ve `logs/soak_ev.csv` (13:50–13:55, 20 ölçüm).
+Aradaki 12:05–13:50 aralığında hat çalıştı ama kaydedilmedi.
+
+Son ölçümlerde olay sayısı **1139 → 1140** artıyordu, yani Spark
+checkpoint düzeltmesi saatler sonra da tutuyor — düzeltmenin kalıcı
+olduğunun ikinci kanıtı.
+
+İki dosya tek tabloda birleştirilmez: `gecen_dk` her koşuda sıfırdan
+sayar, birleştirme ilk saat / son saat karşılaştırmasını bozar.
+
+**Onay kriteri hâlâ karşılanmadı** — 8 saat gerekiyor, en uzun kesintisiz
+süre 2 saat 50 dakika. Koşuyu ölçüm betiğiyle *aynı anda* başlatmak
+gerekiyor; bu kez betik kameralardan 2.5 saat sonra başlatıldığı için
+sürenin çoğu kayda girmedi.
 
 ## Bir sonraki adım
 
