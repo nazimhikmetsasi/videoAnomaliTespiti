@@ -6,6 +6,10 @@
 // spark_window_sec, spark_min_hits, tcn_min_conf) sablonda hicbir kontrole
 // karsilik gelmiyor (ASAMA8_PLAN.md SS4: karsiligi olmayan ogeye
 // dokunulmaz). Kismi PUT sayesinde bu alanlara zaten dokunulmuyor.
+//
+// Tek istisna Kur/Birak anahtaridir (armed): sablonda karsiligi yok ama
+// islevin kendisi bir dugme olmadan kullanilamaz, bu yuzden camSelect gibi
+// JS'te uretilip enjekte edilir.
 
 requireAuth();
 
@@ -42,6 +46,43 @@ camSelect.className =
     "focus:ring-secondary transition-all outline-none appearance-none";
 camSelect.style.display = "none";
 tabsWrap.insertAdjacentElement("afterend", camSelect);
+
+// ------------------------------------------------------- Kur/Birak anahtari
+// TEZ_KAPSAM.txt Faz 1: "Evde = bildirim yok, Koruma = alarm". Diger
+// alanlardan farkli olarak Kaydet dugmesini BEKLEMEZ: kur/birak sik ve
+// aceleyle yapilan bir islemdir, kaydedilmemis bir formda unutulmasi
+// sistemin sessiz kalmasi demektir.
+const armBtn = document.createElement("button");
+armBtn.className = "ml-3 px-4 py-2 rounded font-body-sm text-body-sm transition-all";
+tabsWrap.insertAdjacentElement("afterend", armBtn);
+
+function _paintArm(armed) {
+    armBtn.textContent = armed ? "Koruma açık" : "Evde — bildirim yok";
+    armBtn.className = "ml-3 px-4 py-2 rounded font-body-sm text-body-sm transition-all " +
+        (armed ? "bg-error text-on-error" : "bg-surface-container border border-outline-variant text-secondary");
+    armBtn.title = armed
+        ? "Anomali bildirimleri gönderiliyor. Tıklayınca Evde moduna geçer."
+        : "Bildirim gönderilmiyor. Tespit ve kanıt üretimi sürüyor, olaylar kaydediliyor.";
+}
+
+armBtn.addEventListener("click", async () => {
+    if (!loaded) return;
+    const next = !loaded.armed;
+    // Koruma KAPATILIRKEN onay istenir; acilirken istenmez. Yanlislikla
+    // sessizlestirmenin bedeli, yanlislikla alarm acmanin bedelinden buyuk.
+    if (!next && !confirm("Koruma kapatılsın mı? Anomali bildirimleri gönderilmeyecek; tespit ve kayıt sürecek.")) return;
+    armBtn.disabled = true;
+    try {
+        const path = scope === "camera" ? "/api/settings/" + scopeCameraId : "/api/settings";
+        loaded = await api(path, { method: "PUT", body: { armed: next } });
+        _paintArm(loaded.armed);
+        lastChangedP.textContent = "Son değişiklik: " + fmtDateTime(loaded.updated_at);
+    } catch (e) {
+        alert("Mod değiştirilemedi: " + e.message);
+    } finally {
+        armBtn.disabled = false;
+    }
+});
 
 // Kamera kapsaminda source==="global" ise (henuz kameraya ozel satir yok)
 // kullaniciya bunun devralinan deger oldugu belirtilir.
@@ -145,6 +186,11 @@ async function _loadSettings() {
     restartFields = loaded.restart_required || [];
     restartWarning.style.display = "none";
     _fillForm(loaded);
+    // _fillForm'un ICINDE degil: "Sifirla" dugmesi de _fillForm cagiriyor ama
+    // sunucuya dokunmuyor. armed ANINDA uygulanan bir durumdur, formun
+    // kaydedilmemis taslak degeri degil -- oradan boyanirsa dugme gercekte
+    // olmayan bir modu gosterir.
+    _paintArm(loaded.armed);
     sourceHint.style.display = scope === "camera" && loaded.source === "global" ? "" : "none";
     lastChangedP.textContent = "Son değişiklik: " + fmtDateTime(loaded.updated_at);
 }

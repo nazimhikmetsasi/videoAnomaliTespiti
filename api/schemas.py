@@ -201,6 +201,8 @@ class SettingsIn(BaseModel):
     spark_min_hits: int
     spark_min_sec: dict[str, float]
     tcn_min_conf: float
+    # Kur/Birak: False = Evde (bildirim yok), True = Koruma (alarm).
+    armed: bool = True
 
 
 class SettingsPatch(BaseModel):
@@ -226,6 +228,7 @@ class SettingsPatch(BaseModel):
     spark_min_hits: int | None = None
     spark_min_sec: dict[str, float] | None = None
     tcn_min_conf: float | None = None
+    armed: bool | None = None
 
 
 # settings_client.py bu esikleri pipeline'i yeniden baslatmadan uygular;
