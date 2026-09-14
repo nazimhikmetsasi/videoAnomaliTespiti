@@ -216,7 +216,7 @@ class EvidenceWriter:
                  min_sec: dict[str, float] | None = None,
                  api_base_url: str = "", token: str = "",
                  mongo_url: str = "", queue_max: int = 8,
-                 epoch_base: float = 0.0) -> None:
+                 epoch_base: float = 0.0, keeper=None) -> None:
         self.source = source
         self.storage_dir = Path(storage_dir)
         self.tracker = EpisodeTracker(spark_window_sec, min_hits, min_sec)
@@ -231,6 +231,9 @@ class EvidenceWriter:
         self._headers = {"Authorization": f"Bearer {token}"} if token else {}
         self._mongo_url = mongo_url
         self._mongo = None
+        # vision/retention.py Retention'i; None ise budama yapilmaz (birim
+        # testleri ve kanit yazimini tek basina olcen kosular boyle calisir).
+        self._keeper = keeper
 
         self._queue: queue.Queue[_Job] = queue.Queue(maxsize=queue_max)
         self._stop = threading.Event()
@@ -375,6 +378,15 @@ class EvidenceWriter:
         mongo_ref = self._write_pose_sequence(ep, job.pose_samples)
         self._post_evidence(ep, event_start, event_end, clip_rel, frame_rel,
                             job.truncated, mongo_ref)
+
+        # Budama YAZDIKTAN sonra ve bu arka plan thread'inde: ana goru
+        # dongusu hicbir sekilde diskte beklemez. Kendi hatasi kaniti
+        # goturmemeli -- klip zaten yazildi ve bildirildi.
+        if self._keeper is not None:
+            try:
+                self._keeper.maybe_prune()
+            except OSError as exc:
+                self.last_error = f"saklama budamasi: {exc}"
 
     def _write_clip(self, path: Path, frames: list[Frame]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

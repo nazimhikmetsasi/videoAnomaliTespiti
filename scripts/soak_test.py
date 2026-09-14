@@ -29,6 +29,13 @@ from pathlib import Path
 import httpx
 import psutil
 
+# Windows konsolu cp1252; Turkce karakterli bir hata mesajini basmak
+# UnicodeEncodeError atiyor ve HATA ISLEYICISI KOSUYU OLDURUYORDU
+# (8 saatlik kosu 4. dakikada "baglanti iptal edildi" mesajinin g harfinde
+# coktu). Basim asla catlamamali: kodlanamayan karakter yerine '?' gecsin.
+sys.stdout.reconfigure(errors="replace")
+sys.stderr.reconfigure(errors="replace")
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CSV = ROOT / "logs" / "soak.csv"
 FIELDS = ("ts", "gecen_dk", "kamera", "fps_toplam", "fps_min", "dusen_toplam",
