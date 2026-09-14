@@ -83,6 +83,11 @@ CREATE TABLE detection_settings (
     spark_min_sec    JSONB        NOT NULL DEFAULT
         '{"FALL":0.0,"RUN":1.0,"ZONE_VIOLATION":1.0,"LOITERING":2.0,"FIGHT":0.5}',
     tcn_min_conf     NUMERIC(3,2) NOT NULL DEFAULT 0.60,
+    -- Kur/Birak anahtari (TEZ_KAPSAM.txt Faz 1: "Evde = bildirim yok,
+    -- Koruma = alarm"). FALSE iken tespit ve kanit uretimi AYNEN surer,
+    -- yalnizca disari bildirim gitmez -- olay gecmisi eksilmez.
+    -- Var olan kurulumlar icin ayni sutun api/db/migrate.py'de.
+    armed            BOOLEAN      NOT NULL DEFAULT TRUE,
     updated_by       INT          REFERENCES users(id) ON DELETE SET NULL,
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -140,7 +145,7 @@ CREATE TABLE notifications (
     event_id BIGINT       NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     channel  VARCHAR(20)  NOT NULL CHECK (channel IN ('telegram', 'fcm')),
     target   VARCHAR(120) NOT NULL,
-    status   VARCHAR(10)  NOT NULL CHECK (status IN ('sent', 'failed')),
+    status   VARCHAR(10)  NOT NULL CHECK (status IN ('sent', 'failed', 'skipped')),
     error    TEXT,
     sent_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );

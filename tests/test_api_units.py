@@ -34,6 +34,7 @@ _SETTINGS_DEFAULTS = dict(
     window_frames=50, spark_window_sec=3, spark_min_hits=2,
     spark_min_sec={"FALL": 0.0, "RUN": 1.0, "ZONE_VIOLATION": 1.0, "LOITERING": 2.0, "FIGHT": 0.5},
     tcn_min_conf=0.60,
+    armed=True,          # Kur/Birak; varsayilan Koruma (init.sql DEFAULT TRUE)
 )
 
 

@@ -91,6 +91,8 @@ class DetectionSettings(Base):
     spark_min_hits: Mapped[int] = mapped_column(Integer)
     spark_min_sec: Mapped[dict] = mapped_column(JSONB)
     tcn_min_conf: Mapped[float] = mapped_column(Numeric(3, 2, asdecimal=False))
+    # Kur/Birak: False = Evde (bildirim yok), True = Koruma (alarm).
+    armed: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

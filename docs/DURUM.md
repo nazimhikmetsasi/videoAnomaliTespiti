@@ -2696,6 +2696,82 @@ yaratacağı için bilinçli olarak yok (ASAMA6_PLAN.md §9).
 
 ---
 
+## Aşama 12.3 — Kur/Bırak (Evde / Koruma) modu (2026-09-14)
+
+`TEZ_KAPSAM.txt` **Faz 1** satırı: *"Kur/Bırak: Evde = bildirim yok,
+Koruma = alarm."* Kapsamda AKTİF işaretliydi, kodda karşılığı yoktu.
+`TEZ_UYUM.md` bunu yanlışlıkla Faz 2'ye yazmıştı; Faz 2 olan, bu modun
+**bilinen kişi** ile birlikte çalışmasıdır (§49), modun kendisi değil.
+
+### Ne yapar, ne yapmaz
+
+Evde modunda **tespit, kanıt üretimi ve olay kaydı aynen sürer**; kesilen
+yalnızca dışarı bildirimdir. Ölçüldü: kapalıyken koşan klip 5 yeni olay
+yazdı (1725 → 1730), hepsi veritabanında, klipleriyle birlikte.
+
+Bastırma **LLM çağrısından önce** yapılır: kimseye gitmeyecek bir rapor
+için kota harcanmaz. Ölçümde görüldü — bastırılan olayda `llm_report_tr`
+boş, gönderilende dolu.
+
+Bastırılan bildirim **kayıt bırakır** (`notifications.status = 'skipped'`,
+`error = 'evde modu'`). Bir güvenlik sisteminde "alarm gönderilmedi"
+bilgisi, gönderildi bilgisi kadar denetlenebilir olmalıdır.
+
+### Şema göçü — init.sql tek başına yetmiyor
+
+`infra/postgres/init.sql` yalnızca veritabanı birimi **boşken** koşar. Bu
+kurulumda 1725 olay vardı; init.sql'i değiştirmek o veritabanına hiçbir şey
+yapmazdı. Bu yüzden `api/db/migrate.py` eklendi: açılışta koşan,
+tekrarlanabilir DDL listesi. Her ifade `IF NOT EXISTS` ya da
+`DROP CONSTRAINT IF EXISTS` + yeniden ekleme biçimindedir.
+
+**Ölçülen tuzak:** ilk yazımda bütün göçler tek `engine.begin()` bloğundaydı.
+PostgreSQL'de bir ifade patlayınca işlem iptal olur ve aynı işlemdeki
+sonraki ifadeler "current transaction is aborted" ile düşer — yani ilk hata
+geri kalan göçlerin hepsini sessizce götürürdü. Her göç kendi işlemine
+alındı.
+
+Alembic kurulmadı: tek şemalı, tek geliştiricili ve ileriye dönük göçler
+için sürüm grafiği, çakışma çözümü ve ayrı komut satırı karşılığı olmayan
+bir maliyettir. Göç sayısı artarsa yükseltme yolu odur.
+
+### Ölçülen ikinci tuzak: arıza sessizliği
+
+`_is_armed` ilk yazımda `bool(value)` dönüyordu. Sorgu beklenmedik biçimde
+`None` dönerse bu **False** verir, yani sistem kendiliğinden sessizleşirdi —
+yazdığım gerekçenin tam tersi. Bunu yakalayan şey testin kendisi değil,
+**değersiz bir testi düzeltmekti**: `assert x is False or True` yazmıştım,
+hiçbir şey ölçmüyordu. Anlamlı hâle getirince hata çıktı.
+
+Güvenlik sisteminde güvenli taraf gürültülü olandır: satır yoksa, sütun
+yoksa, sorgu boş dönerse **KURULU** sayılır.
+
+### Panelde
+
+Ayarlar ekranına Kur/Bırak düğmesi enjekte edildi (`camSelect` ile aynı
+desen: şablonda karşılığı olmayan ama işlevin kullanılabilmesi için şart
+olan öğe JS'te üretilir). Diğer alanlardan farklı olarak **Kaydet
+beklemez** — kur/bırak sık ve aceleyle yapılan bir iştir, kaydedilmemiş bir
+formda unutulması sistemin sessiz kalması demektir. Kapatırken onay
+istenir, açarken istenmez.
+
+### Uçtan uca doğrulama
+
+| bildirim | durum | sebep | LLM raporu |
+|---|---|---|---|
+| 739 | `skipped` | evde modu | yok |
+| 740–743 | `sent` | — | var |
+
+Aynı klip, aynı kamera; arada yalnızca panelden mod değişti.
+
+### Yan bulgu
+
+`docker compose up -d` kodu güncellemez: API ve tüketici `build: ./api`
+ile imaja derleniyor. Göç ilk denemede koşmadı ve sütun eklenmedi; kayıtta
+hata yoktu çünkü çalışan imajda o kod hiç yoktu. `--build` gerekiyor.
+
+---
+
 ## Bir sonraki adım
 
 Aşama 10 kapandı (10.5 dahil: 8 saat, 4 kamera, kesintisiz). Sırada duran

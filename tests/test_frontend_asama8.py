@@ -18,9 +18,25 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.build_frontend import (  # noqa: E402
-    _LOGIN_REPLACEMENTS, _REMOTE_IMG, _script_tag, LIVE_PAGES, NAV_TARGETS,
-    PAGES, PLACEHOLDER_IMG, build,
+    _LOGIN_REPLACEMENTS, _REMOTE_IMG, _script_tag, ICON_MARK_END,
+    ICON_MARK_START, LIVE_PAGES, NAV_TARGETS, PAGES, PLACEHOLDER_IMG, build,
 )
+
+
+def _strip_icon_block(lines: list[str]) -> list[str]:
+    """build_frontend'in </head> oncesine ekledigi ikon-fontu blogunu ayiklar.
+
+    Sablonlarin hicbiri `.material-symbols-outlined` icin font-family
+    tanimlamiyordu; ligatur cozulmeyince ikon yerine ham kelime basiliyor ve
+    duzen kayiyordu. Blok isaretcilerle sarilidir, boylece "tasarima
+    dokunulmadi" kaniti ayakta kalir: blok cikarilinca geri kalan satirlar
+    sablonla BIREBIR ayni olmalidir."""
+    if ICON_MARK_START not in lines:
+        return lines
+    start = lines.index(ICON_MARK_START)
+    end = lines.index(ICON_MARK_END)
+    assert start < end, "ikon blogu isaretcileri ters"
+    return lines[:start] + lines[end + 1:]
 
 ROOT = Path(__file__).resolve().parents[1]
 SABLON = ROOT / "sablon"
@@ -82,6 +98,7 @@ def test_only_href_and_script_lines_differ_from_template() -> None:
         # -- varsa -- sayfaya ozel betik (build_frontend.py _page_script_tag,
         # Asama 8.3'ten beri). Uc de betik satiridir; tasarim kanitindan once
         # ayiklanir.
+        built_lines = _strip_icon_block(built_lines)
         script_lines = [i for i, line in enumerate(built_lines) if 'src="js/' in line]
         assert len([i for i in script_lines if 'src="js/app.js?v=' in built_lines[i]]) == 1, out_name
         max_scripts = 3 if out_name in LIVE_PAGES else 2
@@ -122,6 +139,9 @@ def test_login_diff_is_only_declared_changes() -> None:
     app_tag = _script_tag("js/app.js")
     assert built.count(app_tag) == 1
     reconstructed = built.replace(app_tag, "", 1)
+    # Ikon-fontu blogu da beyan edilmis bir eklemedir; ayiklanir ki geri kalan
+    # sablonla birebir kalsin (bkz. _strip_icon_block).
+    reconstructed = "\n".join(_strip_icon_block(reconstructed.split("\n")))
     # Ileri sirada geri al: iki quickFill() cagrisi ayni metne sadelesiyor
     # (onclick="quickFill()"), sirali replace(..., 1) soldan sagadir --
     # belgedeki soldan-saga sirayla ayni sirada geri almak konumu korur.

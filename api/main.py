@@ -12,6 +12,7 @@ from pymongo.errors import PyMongoError
 from sqlalchemy import text
 
 from api.config import FRONTEND_DIR
+from api.db.migrate import run_migrations
 from api.db.mongo import get_mongo
 from api.db.postgres import engine
 from api.matching import load_tolerance
@@ -22,6 +23,10 @@ from api.ws import alerts
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Sema gocleri HER SEYDEN ONCE: init.sql yalnizca bos birimde kosar,
+    # var olan kurulumda yeni sutunlar buradan gelir (api/db/migrate.py).
+    if applied := run_migrations():
+        print(f"  sema gocu uygulandi: {', '.join(applied)}")
     # Kanit-olay eslesme toleransi = spark_window_sec; acilista bir kez okunur
     # (api/matching.py, gerekcesi orada).
     load_tolerance()

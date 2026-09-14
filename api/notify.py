@@ -40,7 +40,8 @@ _sleep = time.sleep
 _TIMEOUT_SEC = 10.0
 _CAPTION_LIMIT = 1000
 
-_counters = {"sent": 0, "failed": 0, "dropped": 0, "llm": 0, "template": 0}
+_counters = {"sent": 0, "failed": 0, "dropped": 0, "llm": 0, "template": 0,
+             "skipped": 0}
 
 
 def enqueue(event_id: int) -> None:
@@ -137,15 +138,36 @@ def _send_with_retry(chat_id: str, text_: str, photo_path: Path | None) -> tuple
     return "failed", last_error[:240]
 
 
+def _is_armed(db, camera_id: int) -> bool:
+    """Kameraya ozel satir varsa o, yoksa global satir; ikisi de yoksa
+    KURULU sayilir. Cozum sirasi api/routers/settings.py ile aynidir
+    (kamera satiri globali ezer); burada tek sorguda COALESCE ile yapilir
+    cunku bildirim yolunda ikinci bir gidis gelis gereksizdir.
+
+    Varsayilanin True olmasi bilinclidir: bir arizada (satir silinmis,
+    sutun yok) sistemin SESSIZLESMEMESI gerekir. Guvenlik sisteminde
+    guvenli taraf gurultulu olandir."""
+    value = db.execute(text("""
+        SELECT COALESCE(
+            (SELECT armed FROM detection_settings WHERE camera_id = :cam),
+            (SELECT armed FROM detection_settings WHERE camera_id IS NULL),
+            TRUE)
+    """), {"cam": camera_id}).scalar()
+    # None -> True. `bool(None)` False verirdi, yani sorgu beklenmedik bicimde
+    # bos donerse sistem KENDILIGINDEN sessizlesirdi -- yukaridaki gerekcenin
+    # tam tersi. COALESCE bunu zaten onler ama tek savunma birakilmaz.
+    return True if value is None else bool(value)
+
+
 def _process_event(event_id: int) -> None:
     """SS4.6 sirasi: rapor ONCE yazilir (Telegram tamamen kapali olsa bile
     panel raporu gorur), sonra alicilar cozulup gonderilir."""
     with SessionLocal() as db:
         row = db.execute(
             text("""
-                SELECT e.anomaly_type, e.confidence, e.duration_ms, e.started_at,
-                       e.track_ids, e.severity, e.frame_path, c.name AS camera_name,
-                       z.name AS zone_name
+                SELECT e.camera_id, e.anomaly_type, e.confidence, e.duration_ms,
+                       e.started_at, e.track_ids, e.severity, e.frame_path,
+                       c.name AS camera_name, z.name AS zone_name
                 FROM events e
                 JOIN cameras c ON c.id = e.camera_id
                 LEFT JOIN zones z ON z.id = e.zone_id
@@ -154,6 +176,17 @@ def _process_event(event_id: int) -> None:
         ).mappings().first()
         if row is None:
             return   # olay bulunamadi -- SS4.6 disi bir durum, sessizce cik
+
+        # Kur/Birak (TEZ_KAPSAM.txt Faz 1). Evde modunda tespit, kanit ve
+        # olay kaydi AYNEN surer; kesilen yalnizca disari bildirimdir.
+        # LLM cagrisindan ONCE bakilir: kimseye gitmeyecek bir rapor icin
+        # kota harcanmaz.
+        if not _is_armed(db, row["camera_id"]):
+            _counters["skipped"] += 1
+            db.add(Notification(event_id=event_id, channel="telegram", target="-",
+                                 status="skipped", error="evde modu"))
+            db.commit()
+            return
 
         ctx = {
             "event_id": event_id,

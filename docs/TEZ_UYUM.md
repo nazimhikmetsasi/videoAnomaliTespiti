@@ -81,12 +81,20 @@ değerleridir.**
 
 | Faz | Kapsam | v2'deki durum |
 |---|---|---|
-| Faz 1 | RUN, FALL, ZONE_VIOLATION, RUN_ZONE | **Tamam** ve üstüne çıkıldı: 7 sınıf tanımlı, FIGHT/LOITERING/WRONG_DIRECTION eklendi |
-| Faz 2 | **Kişi ayırt: bilinen yüz / izin listesi**, "Evde / Koruma" modu, kritik filtre | **Hiç yok.** Kodda `face`, `person_id`, `armed` diye bir şey yok |
-| Faz 3 | Olay sınıfı / aksiyon tanıma | **Kısmen:** TCN sınıflandırıcı + hibrit hakem var (Aşama 9), FIGHT/LOITERING tanımlı ama FIGHT duyarlılığı 0.07 |
+| Faz 1 | RUN, FALL, ZONE_VIOLATION, RUN_ZONE + **Kur/Bırak** | **Tamam** ve üstüne çıkıldı: 7 sınıf tanımlı, FIGHT/LOITERING/WRONG_DIRECTION eklendi; Kur/Bırak Aşama 12.3'te yapıldı |
+| Faz 2 | **Kişi ayırt: bilinen yüz / izin listesi**, kritik filtre, bunların Kur/Bırak ile birlikte çalışması | **Yok** ve kapsam dışı bırakıldı |
+| Faz 3 | Olay sınıfı / aksiyon tanıma | **Tamam:** TCN sınıflandırıcı + hibrit hakem (Aşama 9), FIGHT duyarlılığı 0.80'e çıkarıldı (Aşama 11). LOITERING tanımlı ama duyarlılığı ölçülemedi |
 
-Faz 2 kapsamda "AKTİF" işaretli ama v2'de karşılığı yok. Bu, tez
-metninde ya kapsam dışı ilan edilmeli ya yapılmalı.
+**Düzeltme:** bu tablo önce "Evde / Koruma modu"nu Faz 2'ye yazıyordu.
+`TEZ_KAPSAM.txt` satır 19'a göre mod **Faz 1**'e aittir ("Kur/Bırak: Evde =
+bildirim yok, Koruma = alarm"); Faz 2 olan, modun bilinen kişi ve kritik
+filtreyle **birlikte** çalışmasıdır (satır 49). Mod Aşama 12.3'te yapıldı.
+
+Faz 2'nin kalan kısmı (yüz tanıma) bilinçli olarak kapsam dışı bırakıldı:
+ayrı model, ayrı veri kümesi ve KVKK/rıza gereksinimi doğurur, üstelik
+doğrulaması için etiketli yüz verisi gerekir ve yoktur. Aynı ailedeki ReID
+zaten ölçülüp terk edilmişti (tekrar girişte en iyi F1 0.15); yüz tanıma
+ondan zordur. Tez metninde kapsam dışı ilan edilecektir.
 
 ---
 

@@ -317,6 +317,54 @@ def _transform_login(html: str) -> str:
     return html
 
 
+# Sablonlarin hicbiri `.material-symbols-outlined` icin `font-family`
+# TANIMLAMIYOR (6 sablonda kural hic yok, 6'sinda yalnizca
+# font-variation-settings var). Google'in @font-face'i yukleniyor ama span'lar
+# body'den 'Inter'i miras aldigi icin ligatur cozulmuyor: ikon yerine ham
+# kelime basiliyor ("visibility", "arrow_forward"...) ve uzun metinler duzeni
+# kaydiriyor. 12 sayfada 254 kullanim.
+#
+# Var olan kurali YAMAMAK yerine </head> oncesine bagimsiz bir kural eklenir:
+# sablonlarin yarisinda yamanacak kural yok, ve boylece sablon degisse bile
+# duzeltme ayakta kalir. Enjekte edilen kural yalnizca sablonun HIC
+# tanimlamadigi ozellikleri verir -- font-variation-settings'e dokunmaz,
+# dolayisiyla tasarimin FILL/wght ayarlari aynen gecerli kalir.
+# Blok ISARETCI ile sarilir: tests/test_frontend_asama8.py "frontend sablondan
+# yalnizca beyan edilen yerlerde ayrilir" degismezini koruyor ve bu bloku
+# ayiklayip geri kalanin birebir ayni oldugunu kanitliyor.
+ICON_MARK_START = "<!-- build_frontend: ikon fontu -->"
+ICON_MARK_END = "<!-- /build_frontend -->"
+
+ICON_FONT_CSS = ICON_MARK_START + """
+<style>
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+</style>
+""" + ICON_MARK_END + """
+</head>"""
+
+
+def _fix_icon_font(html: str) -> str:
+    """Idempotent: sablon ileride kendisi font-family tanimlarsa ikinci kez
+    eklenmez."""
+    if "font-family: 'Material Symbols Outlined'" in html:
+        return html
+    assert "</head>" in html, "</head> bulunamadi, ikon fontu eklenemez"
+    return html.replace("</head>", ICON_FONT_CSS, 1)
+
+
 def build() -> None:
     FRONTEND.mkdir(exist_ok=True)
     for src_dir, out_name in PAGES.items():
@@ -326,6 +374,7 @@ def build() -> None:
         with open(SABLON / src_dir / "code.html", encoding="utf-8", newline="") as f:
             html = f.read()
         html = _rewrite_nav_links(html)
+        html = _fix_icon_font(html)
         html = _REMOTE_IMG.sub(PLACEHOLDER_IMG, html)
         if out_name == "login.html":
             html = _transform_login(html)
