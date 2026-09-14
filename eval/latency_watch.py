@@ -154,6 +154,22 @@ def report(camera: str | None, since_id: int, window_sec: float) -> int:
     print(satir("tespit -> alarm (sn)", hat))
     print(satir("toplam, ilk kanittan (sn)", toplam))
 
+    # SURUKLENME DENETIMI: kaynak kendi FPS'inde akitilamadiysa her olayin
+    # gecikmesi bir oncekinden buyuk cikar -- sayilar gecerli GORUNUR ama
+    # olctukleri sey hattin hizi degil birikmis isleme borcudur. Olculdu:
+    # 4K klipte degerler 27 sn'den 79 sn'ye tirmandi.
+    if len(hat) >= 4:
+        ucte_bir = max(1, len(hat) // 3)
+        ilk = statistics.median(hat[:ucte_bir])
+        son = statistics.median(hat[-ucte_bir:])
+        if ilk > 0 and son > ilk * 1.25:
+            print(f"\n  !! OLCUM GECERSIZ: gecikme kosu boyunca BUYUYOR "
+                  f"({ilk:.1f} -> {son:.1f} sn).")
+            print("     Kaynak kendi FPS'inde akitilamamis; sahne zamani duvar")
+            print("     saatinden kaymis ve fark gecikmeye eklenmis. Hattin")
+            print("     yetisebildigi bir kaynakla tekrarlayin (vision/run.py")
+            print("     --realtime, kosu raporundaki 'GERCEK ZAMANLI AKIS' uyarisi).")
+
     print(f"\n  Tasarim tabani: Spark oturum penceresi {window_sec:.0f} sn "
           f"sessizlikten SONRA kapanir;")
     print(f"  'tespit -> alarm' yapisal olarak bunun altina inemez.")

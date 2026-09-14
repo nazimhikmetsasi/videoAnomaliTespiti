@@ -65,6 +65,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-frames", type=int, default=0, help="0 = sinirsiz")
     parser.add_argument("--loop", action="store_true",
                         help="dosya kaynagi bitince basa sar (idx sifirlanmaz)")
+    parser.add_argument("--realtime", action="store_true",
+                        help="dosyayi kendi FPS'inde akit (gercek kamera gibi); "
+                             "gecikme olcumu bunu GEREKTIRIR")
     parser.add_argument("--no-clahe", action="store_true")
     parser.add_argument("--gmc", default=OVERRIDES["gmc_method"],
                         help="kamera hareketi telafisi: sparseOptFlow / none")
@@ -136,6 +139,13 @@ def print_report(pipe: CameraPipeline, args, prefix: str = "") -> None:
     print(f"  kare sayisi          : {pipe.frames}  ({pipe.elapsed:.1f} sn)")
     print(f"  gercek FPS           : {pipe.frames / pipe.elapsed:.1f}")
     print(f"  dusen kare (kaynak)  : {pipe.dropped}")
+    # Gercek zamanli akitma tutturulamadiysa GURULTULU sekilde soyle: o
+    # kosudan alinan uctan uca gecikme olcumu gecersizdir (sahne zamani
+    # duvar saatinden kayar, fark dogrudan "gecikme"ye eklenir).
+    if getattr(pipe.source, "realtime", False) and pipe.source.pace_lag > 0.5:
+        print(f"  !! GERCEK ZAMANLI AKIS TUTTURULAMADI: {pipe.source.pace_lag:.1f} sn geride")
+        print(f"     kaynak {pipe.source.fps:.0f} FPS istiyor, hat yetisemedi -- "
+              f"bu kosudan GECIKME OLCULEMEZ")
     print(f"  yeniden baglanma     : {pipe.reconnects}")
     if pipe.outages:
         print(f"  kaynak kesintisi     : {pipe.outages} kez "

@@ -166,6 +166,50 @@ aşım 60 saniyede ~22 MB'dır, 20 GB tavanın binde biri.
 
 ---
 
+## 3.7 Uçtan uca alarm gecikmesi
+
+Gecikme `events` tablosunun kendi damgalarından hesaplanır: `started_at`
+(anomalinin başlangıcı), `ended_at` (bitişi) ve `created_at` (olay
+satırının veritabanına yazılması). Üç sayı ayrı raporlanır; en anlamlısı
+anomali bittikten sonra alarma kalan süredir.
+
+`data/pilot/fall_01.mp4`, gerçek zamanlı akıtma, 4 olay:
+
+| ölçüt | medyan | en düşük | en yüksek |
+|---|---|---|---|
+| tespit → alarm | **13,99 sn** | 12,74 | 15,09 |
+| toplam (ilk kanıttan) | 14,03 sn | 12,77 | 15,13 |
+
+**Bu sürenin 5 saniyesi tasarım gereğidir ve kısaltılamaz:** Apache Spark
+oturum penceresi 3 saniyelik sessizlikten sonra kapanır ve su işareti
+(watermark) 2 saniyedir. Kalan yaklaşık 9 saniye Spark mikro-yığın
+gecikmesi ile tüketici süresidir; akış sorgusuna açık bir tetikleyici
+(`trigger`) verilmediğinden Spark varsayılan davranışla, önceki yığın
+tamamlanır tamamlanmaz yeni yığını işler ve kullanılan donanımda yığın
+başına süre saniyeler mertebesindedir. Bu iki bileşenin ayrımı ayrıca
+ölçülmemiştir.
+
+**Operatörün gördüğü ilk uyarı bu değildir.** Panelin canlı görüntü katmanı
+aday anomalileri (`pre_alarms`) her karede WebSocket üzerinden alır; aday
+uyarısı operatörün ekranında saniyenin altında belirir. Yukarıdaki 13,99
+saniye, **doğrulanmış olayın** veritabanına yazılıp bildirime dönüşme
+süresidir. İki sayı farklı şeyleri ölçer ve karıştırılmamalıdır.
+
+### Ölçümün geçerlilik şartı
+
+Dosya kaynağında olay zaman damgası sahne zamanından türer
+(`epoch_base + kare_indeksi / FPS`). Dosya diskin izin verdiği hızda
+okunursa sahne zamanı duvar saatinden kayar ve bu kayma doğrudan
+"gecikme" olarak raporlanır. Bu nedenle ölçüm yalnızca kaynağın **kendi
+kare hızında** akıtıldığı koşularda geçerlidir; kaynak bu hızda
+akıtılamazsa ölçüm otomatik olarak geçersiz işaretlenir (gecikmenin koşu
+boyunca büyümesi sınanır).
+
+Kullanılan donanımda 3840x2160 çözünürlüklü kaynak kendi kare hızında
+işlenememektedir; bu çözünürlükte gecikme ölçülememiştir.
+
+---
+
 ## 4. Karar katmanı — kural / model / hibrit ablation
 
 Aşamanın onay kriteri. `eval/tcn_eval.py`, üç mod × iki küme. **Tek ortalama
@@ -262,7 +306,7 @@ Bunlar gizlenmez; tezin dürüstlüğü buradadır.
 | **FIGHT duyarlılığı** | **Düzeltildi: 0.07 → 0.80** (Aşama 11). Kök neden `HOLD` değil öznitelikti: uzuv hızı FIGHT'ı NORMAL'den ayırmıyor. Kural yolu hâlâ 0.12'dedir ve öyle kalır — kavgayı model tespit eder |
 | **LOITERING duyarlılığı** | Hiç ölçülmedi — hiçbir kümede olumlu örnek yok. Yanlış pozitif oranı sıfır |
 | **Model pilot alanda 12 sahte FALL** | Alan farkı; çözümü pilot alandan eğitim verisi ya da ölçek artırma |
-| **Canlı kaynakta uçtan uca alarm gecikmesi** | Ölçülmedi. Dosya kaynağında `started_at` duvar saati değildir; gerçek sayı kameranın önünde gerçek bir olay ister |
+| **Uçtan uca alarm gecikmesi** | Ölçüldü (§3.7): medyan 13.99 sn. Dizüstü kamerasıyla değil, gerçek zamanlı akıtılan pilot klibiyle |
 | **ReID kalitesi** | Kalabalık sahnede ID değişimi hiç ölçülmedi; pilot kliplerde en fazla 1–2 kişi var ve `--no-reid` sonucu hiç değiştirmedi |
 | **En büyük dosya < 150 satır** | Tutmadı: `vision/camera.py` 421 satır. Aşama dosyaları hedefte, kamera hattının kendisi değil |
 | **RTSP** | Kod yolu var, donanım yok, hiç denenmedi |

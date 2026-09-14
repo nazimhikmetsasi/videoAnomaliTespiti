@@ -75,6 +75,7 @@ class VideoSource:
         buffer_frames: int = BUFFER_FRAMES,
         reconnect_max_sec: float = RECONNECT_MAX_SEC,
         loop: bool = False,
+        realtime: bool = False,
     ) -> None:
         self.source = source
         self.source_type = classify_source(source)
@@ -83,6 +84,24 @@ class VideoSource:
         # Canli kaynakta anlami yok (akis zaten hic bitmez) -- sessizce yok
         # sayilir, cagiran taraf her kaynak turu icin ayri kontrol yazmasin.
         self.loop = loop and not self.is_live
+        # Dosyayi KENDI FPS'inde akitir. Varsayilan kapali: degerlendirme
+        # kosulari (eval/) dosyayi olabildigince hizli isler, yavaslatmanin
+        # orada bedeli var getirisi yok.
+        #
+        # Acikken iki sey duzelir:
+        #   1) Gercek kamera kareleri 25 FPS'te verir, diskin okuyabildigi
+        #      hizda degil -- benzetim sadiklasir.
+        #   2) `started_at` = epoch_base + idx/fps olduğu icin SAHNE zamani
+        #      duvar saatinden kayarsa bu kayma dogrudan "gecikme"ye eklenir.
+        #      Olculdu: bu yuzden dosya kaynagindan alinan gecikme degerleri
+        #      on binlerce saniyeye ciktiginda hattin hizini degil BIRIKMIS
+        #      isleme gecikmesini olcuyorlardi.
+        self.realtime = realtime and not self.is_live
+        # Gercek zamanli akitmada PROGRAMIN GERISINDE kalinan en buyuk sure.
+        # Sifirdan buyukse kaynak kendi FPS'inde akitilamamis demektir ve
+        # `started_at` (sahne zamani) duvar saatinden kaymistir -- o kosudan
+        # alinan gecikme olcumu GECERSIZDIR. Sessiz bozulmayi gorunur yapar.
+        self.pace_lag = 0.0
         # Ozniteliklerin zaman kaynagi budur (PLAN.md Asama 3): klip 25 FPS
         # kayitken hat 37 FPS calisirsa duvar saati hizlari 1.5 kat sisirir.
         # Canlida gercek FPS onemsiz, duvar saati (frame.ts) kullanilacak.
@@ -100,7 +119,13 @@ class VideoSource:
 
         # Devir teslim: canlida tek yuva (en yenisi kazanir), dosyada kuyruk
         # dolunca uretici bekler.
-        self._queue: queue.Queue[Frame] = queue.Queue(maxsize=1 if self.is_live else 64)
+        # Gercek zamanli dosya CANLI gibi davranir: tek kutuluk devir teslim
+        # ve eski kareyi dusurme. Kuyrukta biriktirmek olculen bir hataydi --
+        # hat kaynak FPS'ine yetisemeyince borc kuyruga yazilir, sahne zamani
+        # duvar saatinin gerisinde kalir ve fark dogrudan 'gecikme' olarak
+        # raporlanir (kosu boyunca 14 sn'den 19 sn'ye tirmanan degerler).
+        _handoff = self.is_live or self.realtime
+        self._queue: queue.Queue[Frame] = queue.Queue(maxsize=1 if _handoff else 64)
 
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -189,7 +214,7 @@ class VideoSource:
         with self._buffer_lock:
             self._buffer.append(self._buffer_copy(frame))
 
-        if self.is_live:
+        if self.is_live or self.realtime:
             try:
                 self._queue.put_nowait(frame)
             except queue.Full:
@@ -216,6 +241,8 @@ class VideoSource:
         cap: cv2.VideoCapture | None = None
         backoff = RECONNECT_START_SEC
         idx = 0
+        # Gercek zamanli akitmanin referans ani; ilk kare okunurken kurulur.
+        pace_t0: float | None = None
 
         while not self._stop.is_set():
             if cap is None:
@@ -259,6 +286,20 @@ class VideoSource:
                     return
                 backoff = min(backoff * 2, self.reconnect_max_sec)
                 continue
+
+            if self.realtime:
+                # Kare `idx` sahne zamani idx/fps'te gosterilmeliydi; o ana
+                # kadar bekle. Hat gercek zamandan YAVAS ise bekleme sifira
+                # duser -- yetisilmeye calisilmaz, aksi halde birikmis borcu
+                # kapatmak icin kareler patlama halinde akardi.
+                if pace_t0 is None:
+                    pace_t0 = time.monotonic()
+                gecikme = pace_t0 + idx / self.fps - time.monotonic()
+                if gecikme > 0:
+                    if self._stop.wait(gecikme):
+                        break
+                else:
+                    self.pace_lag = max(self.pace_lag, -gecikme)
 
             self.frames_read += 1
             self._publish(Frame(idx=idx, ts=time.time(), image=image))

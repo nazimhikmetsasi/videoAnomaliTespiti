@@ -295,33 +295,8 @@
                 Video Tabanlı Anomali Tespiti ve Davranış Analizi Platformu
             </p>
 </div>
-<!-- Role Selector Switcher -->
-<div class="grid grid-cols-2 p-1 mb-5 bg-slate-900/90 rounded-lg border border-slate-800 text-xs font-medium">
-<button class="py-1.5 px-3 rounded-md transition-all duration-200 text-cyan-300 bg-slate-800 shadow-sm border border-slate-700/60 flex items-center justify-center gap-1.5" id="tabOperator" type="button">
-<span class="material-symbols-outlined text-[16px]">visibility</span>
-<span>Operatör Girişi</span>
-</button>
-<button class="py-1.5 px-3 rounded-md transition-all duration-200 text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5" id="tabAdmin" type="button">
-<span class="material-symbols-outlined text-[16px]">admin_panel_settings</span>
-<span>Yönetici Paneli</span>
-</button>
-</div>
-<!-- Quick Fill Role Chips (Convenient for Control Room Preview) -->
-<div class="flex items-center justify-between mb-4 px-1 text-[11px] text-slate-400">
-<span class="flex items-center gap-1">
-<span class="material-symbols-outlined text-[14px] text-slate-500">flash_on</span>
-                Hızlı Rol Seçimi:
-            </span>
-<div class="flex items-center gap-1.5">
-<button class="px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 hover:text-cyan-300 border border-slate-700/50 text-slate-300 transition-colors" onclick="quickFill()" type="button">
-                    Operatör
-                </button>
-<button class="px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 hover:text-cyan-300 border border-slate-700/50 text-slate-300 transition-colors" onclick="quickFill()" type="button">
-                    Yönetici
-                </button>
-</div>
-</div>
-<!-- Authentication Form -->
+<!-- build_frontend: rol sekmeleri kaldirildi (rol hesapta: users.role) -->
+<!-- build_frontend: hizli rol cipleri kaldirildi (demo kimlikleri) -->
 <form class="space-y-4" id="authForm" onsubmit="event.preventDefault(); simulateLogin();">
 <!-- Username / Email Field -->
 <div class="space-y-1.5">
@@ -400,25 +375,9 @@
             }
         }
 
-        // Quick Fill Helper for Demo Testing
-        function quickFill(user, pass) {
-            if (user) document.getElementById('identityInput').value = user;
-            if (pass) document.getElementById('passwordInput').value = pass;
-        }
+        // build_frontend: quickFill kaldirildi (demo kimlik doldurucu)
 
-        // Segmented Tab Controls
-        const tabOperator = document.getElementById('tabOperator');
-        const tabAdmin = document.getElementById('tabAdmin');
-
-        tabOperator.addEventListener('click', () => {
-            tabOperator.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-cyan-300 bg-slate-800 shadow-sm border border-slate-700/60 flex items-center justify-center gap-1.5";
-            tabAdmin.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5";
-        });
-
-        tabAdmin.addEventListener('click', () => {
-            tabAdmin.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-cyan-300 bg-slate-800 shadow-sm border border-slate-700/60 flex items-center justify-center gap-1.5";
-            tabOperator.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5";
-        });
+        // build_frontend: rol sekmesi dinleyicileri kaldirildi
 
         // Gercek giris (ASAMA8_PLAN.md SS3, madde 4)
         async function simulateLogin() {

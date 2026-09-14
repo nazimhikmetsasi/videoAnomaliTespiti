@@ -2772,6 +2772,83 @@ hata yoktu çünkü çalışan imajda o kod hiç yoktu. `--build` gerekiyor.
 
 ---
 
+## Aşama 12.4 — Uçtan uca alarm gecikmesi ölçüldü (2026-09-14)
+
+Aşama 6'dan beri açık duran soru kapandı. Ölçüm `eval/latency_watch.py`,
+kaynak `events` tablosunun kendi damgaları — ek enstrümantasyon gerekmedi:
+
+| damga | ne |
+|---|---|
+| `started_at` | anomalinin başladığı an |
+| `ended_at` | bittiği an |
+| `created_at` | olay satırının veritabanına yazıldığı an |
+
+Raporlanan üç sayı ayrı tutulur: **anomali süresi** (`ended−started`),
+**tespit → alarm** (`created−ended`) ve **toplam** (`created−started`).
+
+### Ölçülen
+
+`data/pilot/fall_01.mp4`, gerçek zamanlı akıtma, 4 olay:
+
+| | medyan | en düşük | en yüksek |
+|---|---|---|---|
+| tespit → alarm | **13.99 sn** | 12.74 | 15.09 |
+| toplam | 14.03 sn | 12.77 | 15.13 |
+
+### Yapısal taban 5 saniye, gerisi Spark
+
+Gecikmenin 5 saniyesi **tasarım gereğidir ve kısaltılamaz**:
+
+- Spark oturum penceresi 3 sn sessizlikten sonra kapanır (`spark_window_sec`)
+- Su işareti 2 sn (`SPARK_WATERMARK_SEC`)
+
+Kalan ~9 saniye Spark mikro-yığın gecikmesi + tüketicidir. `writeStream`'e
+açık bir `trigger` verilmemiş, yani varsayılan "önceki yığın biter bitmez"
+çalışıyor ve bu donanımda yığın başına saniyeler sürüyor. **Bu ayrım ayrıca
+ölçülmedi**, yalnızca tabandan artakalan olarak biliniyor.
+
+### Operatör ne zaman görüyor — iki ayrı sayı
+
+Panelin canlı görüntüsü `pre_alarms`'ı **her karede** WebSocket'ten alır
+(`build_meta`), yani aday anomali operatörün ekranında saniyenin altında
+belirir. 13.99 saniye, **doğrulanmış olayın** veritabanına yazılıp bildirime
+dönüşme süresidir. Tezde ikisi karıştırılmamalı.
+
+### Dosya kaynağıyla ölçmenin şartı: gerçek zamanlı akıtma
+
+`started_at` = `epoch_base + idx/fps`, yani **sahne zamanıdır**. Dosya
+diskin hızında okunursa sahne zamanı duvar saatinden kayar ve kayma
+doğrudan "gecikme"ye eklenir. Bu yüzden `VideoSource`'a `--realtime`
+eklendi: dosya kendi FPS'inde akar ve **canlı kaynakla aynı devir teslimi**
+kullanır (tek kutuluk kuyruk, eski kareyi düşürme). Kuyrukta biriktirmek
+yetmiyordu — hat kaynağa yetişemeyince borç kuyruğa yazılıyor ve aynı kayma
+geri geliyordu (ölçüldü: koşu boyunca 14 sn'den 19 sn'ye tırmandı).
+
+### Sessiz bozulma görünür yapıldı
+
+Bu kaymanın en kötü yanı **geçerli görünmesiydi**. Aşama 6'da raporlanan
+"13.9–54.8 sn alarm gecikmesi" ve bu oturumda görülen 139578 saniyelik
+değerler aynı hatanın ürünü. İki koruma eklendi:
+
+1. `VideoSource.pace_lag` — programın gerisinde kalınan en büyük süre.
+   Koşu raporu 0.5 sn'yi aşarsa **GERÇEK ZAMANLI AKIŞ TUTTURULAMADI** basar.
+2. `latency_watch --report` — gecikme koşu boyunca %25'ten fazla büyüyorsa
+   **ÖLÇÜM GEÇERSİZ** uyarısı verir.
+
+Doğrulandı: 4K klip koşusu (hat 12.8 FPS, kaynak 30 FPS istiyor) geçersiz
+işaretlendi (39.3 → 72.8 sn), `fall_01` koşusu temiz geçti.
+
+**Sınır:** ölçüm dizüstü kamerasıyla değil, gerçek zamanlı akıtılan pilot
+klibiyle yapıldı. Kameranın önünde gerçek bir düşme ölçümü hâlâ yapılmadı;
+hattın kaynak ayrımı yapmadığı göz önüne alınırsa sayının değişmesi
+beklenmez ama bu **varsayımdır, ölçüm değildir**.
+
+**4K kaynakta gecikme ölçülemez:** bu donanımda hat 3840x2160 klibi kendi
+FPS'inde işleyemiyor. Ölçüm yalnız hattın yetişebildiği çözünürlükte
+geçerlidir.
+
+---
+
 ## Bir sonraki adım
 
 Aşama 10 kapandı (10.5 dahil: 8 saat, 4 kamera, kesintisiz). Sırada duran
