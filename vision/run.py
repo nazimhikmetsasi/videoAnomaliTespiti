@@ -36,6 +36,7 @@ import torch
 from vision.camera import (  # noqa: F401  (load_zones disaridan da kullaniliyor)
     LIVE_WAIT_SEC, WARMUP_FRAMES, CameraPipeline, draw, load_zones,
 )
+from vision import retention
 from vision.rules.engine import Candidate
 from vision.stages.pose_detector import DEFAULT_WEIGHTS, PoseDetector
 from vision.stages.preprocess import FRAME_H, FRAME_W
@@ -99,6 +100,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--evidence", action="store_true",
                         help="olay basina klip + kare yaz, API'ye bildir")
     parser.add_argument("--storage-dir", default="storage", help="klip ve kare kok dizini")
+    parser.add_argument("--clip-days", type=float, default=retention.CLIP_DAYS,
+                        help="bu yastan eski klipler silinir (0 = yas kurali kapali)")
+    parser.add_argument("--frame-days", type=float, default=retention.FRAME_DAYS,
+                        help="bu yastan eski kareler silinir; klipten uzun yasarlar")
+    parser.add_argument("--storage-max-gb", type=float, default=retention.MAX_GB,
+                        help="toplam depo tavani; asilirsa en eski klipler silinir")
     parser.add_argument("--heartbeat-sec", type=float, default=5.0, help="0 = kapali (SS7)")
     return parser.parse_args(argv)
 
@@ -236,8 +243,15 @@ def main(argv: list[str] | None = None) -> int:
     names = [c.strip() for c in str(args.camera_id).split(",") if c.strip()]
     if len(names) != len(sources):
         names = [args.camera_id if not multi else ""] * len(sources)
+    # TEK budayici, kameralar arasi paylasilir: depo dizini ortaktir, kamera
+    # basina bir tane kurmak ayni 7500 dosyayi dort kez taratir ve ayni dosyayi
+    # silmek icin yarisirlar.
+    keeper = retention.Retention(args.storage_dir, clip_days=args.clip_days,
+                                 frame_days=args.frame_days,
+                                 max_gb=args.storage_max_gb) if args.evidence else None
     pipes = [CameraPipeline(src, args, reid_model=reid_model,
-                            stream_server=stream_server, camera_id=name)
+                            stream_server=stream_server, camera_id=name,
+                            keeper=keeper)
              for src, name in zip(sources, names)]
     for pipe in pipes:
         pipe.start()

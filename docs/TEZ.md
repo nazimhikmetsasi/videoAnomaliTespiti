@@ -102,6 +102,70 @@ yani kaçırmıyor.
 
 ---
 
+## 3.5 Uzun koşu dayanıklılığı (8 saat, 4 kamera)
+
+`scripts/soak_test.py`, 60 saniyede bir ölçüm, 459 ölçüm, kesintisiz.
+Kameralar: `webcam_01` (dizüstü kamerası), `zone_01`, `run_01`, `fall_01`.
+
+| metrik | ilk saat | son saat | değişim |
+|---|---|---|---|
+| toplam FPS | 33.2 | 33.4 | +0.6% |
+| en düşük kamera FPS | 8.2 | 8.3 | +0.7% |
+| çıkarım süresi | 13.9 ms | 14.0 ms | +0.5% |
+| görü süreci RSS | 5804 MB | 6005 MB | +3.5% |
+| GPU belleği | 791 MB | 898 MB | +13.6% |
+| depolama | 7382 MB | 17785 MB | +141% |
+
+Olay sayısı 1216 → 1722 (8 saatte 506 yeni olay).
+
+**FPS ve çıkarım süresi sekiz saat boyunca sapmadı** — %1'in altındaki
+değişim ölçüm gürültüsüdür.
+
+GPU belleğindeki %13.6, saatlik kırılıma bakınca sızıntı değil:
+
+| saat | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| GPU MB | 791 | 864 | 899 | 898 | 898 | 898 | 898 | 898 |
+| RSS MB | 5804 | 5694 | 5805 | 5866 | 5895 | 5994 | 5985 | 6005 |
+
+GPU üçüncü saatte 898 MB'de oturur ve kalan beş saat oynamaz; artış CUDA
+tahsis ön belleğinin ısınmasıdır. RSS'te saatte ~25 MB'lik salınımlı bir
+sürüklenme vardır (8 saatte +201 MB). Sekiz saatte sızıntı *görülmedi*;
+daha uzun koşu ölçülmediği için "sızıntı yok" iddia edilmez.
+
+Ölçülen tek gerçek engel **disktir**: saatte 1.3 GB, günde ~31 GB. Kanıt
+kliplerinin saklama politikası bu tezin kapsamı dışında bırakılmıştır.
+
+---
+
+## 3.6 Kanıt saklama politikası
+
+Uzun koşunun ölçtüğü tek işletim engeli deponun sınırsız büyümesiydi:
+saatte 1.3 GB, günde ~31 GB. `vision/retention.py` iki kuralı birlikte
+uygular.
+
+| kural | varsayılan | gerekçe |
+|---|---|---|
+| klip yaşı | 7 gün | öngörülebilir saklama süresi |
+| kare yaşı | 90 gün | Mongo `pose_sequences` TTL indeksiyle aynı |
+| toplam boyut tavanı | 20 GB | diski kesin sınırlar |
+
+Tek başına yaş kuralı diski sınırlamaz (yoğun bir haftada 7 × 31 =
+217 GB); tek başına boyut tavanı saklama süresini öngörülemez yapar.
+Tavan aşıldığında yalnız klipler silinir (en eskiden başlayarak);
+kareler deponun yalnızca %3'üdür ve silinmeleri tavanı kurtarmazken
+panelin görsel geçmişini götürür.
+
+Silinen yalnızca dosyadır: `events` satırı, `clip_path` alanı ve
+`pose_sequences` belgeleri yerinde kalır, dolayısıyla bu tezde raporlanan
+olay sayıları ve metrikler saklama politikasından etkilenmez.
+
+**Ölçülen sınır:** tavan anlık değil ortalamadır. Budama 60 saniyede bir
+koşar; arada yazılan klipler tavanın üstüne çıkar. Ölçülen büyüme hızıyla
+aşım 60 saniyede ~22 MB'dır, 20 GB tavanın binde biri.
+
+---
+
 ## 4. Karar katmanı — kural / model / hibrit ablation
 
 Aşamanın onay kriteri. `eval/tcn_eval.py`, üç mod × iki küme. **Tek ortalama
@@ -202,7 +266,7 @@ Bunlar gizlenmez; tezin dürüstlüğü buradadır.
 | **ReID kalitesi** | Kalabalık sahnede ID değişimi hiç ölçülmedi; pilot kliplerde en fazla 1–2 kişi var ve `--no-reid` sonucu hiç değiştirmedi |
 | **En büyük dosya < 150 satır** | Tutmadı: `vision/camera.py` 421 satır. Aşama dosyaları hedefte, kamera hattının kendisi değil |
 | **RTSP** | Kod yolu var, donanım yok, hiç denenmedi |
-| **8 saat kesintisiz koşu** | `scripts/soak_test.py` hazır; koşu yapıldığında sonuç buraya girer |
+| **8 saat kesintisiz koşu** | Yapıldı (§3.5): 8.0 saat, 4 kamera, FPS sapması +0.6%. Diskin sınırsız büyümesi saklama politikasıyla kapatıldı (§3.6) |
 
 ---
 

@@ -150,8 +150,11 @@ class CameraPipeline:
 
     def __init__(self, source: str, args, *, reid_model: str,
                  stream_server: StreamServer | None = None,
-                 camera_id: str = "", zones_stem: str = "") -> None:
+                 camera_id: str = "", zones_stem: str = "", keeper=None) -> None:
         self.args, self.source_arg = args, source
+        # Kameralar arasi PAYLASILAN budayici (vision/retention.py); kanit
+        # yazicisi start() icinde kuruluyor, oraya tasinmali.
+        self.keeper = keeper
         self.stream_server = stream_server
         self.preprocess = Preprocessor(clahe=not args.no_clahe)
         self.tracker = Tracker(device=args.device, gmc_method=args.gmc,
@@ -226,9 +229,14 @@ class CameraPipeline:
             self.evidence_writer = EvidenceWriter(
                 self.source, storage_dir=args.storage_dir,
                 api_base_url=args.settings_url, token=args.settings_token or "",
-                mongo_url=default_mongo_url(), epoch_base=self.epoch_base)
+                mongo_url=default_mongo_url(), epoch_base=self.epoch_base,
+                keeper=self.keeper)
             self.evidence_writer.start()
             print(f"  kanit uretimi: acik (storage_dir={args.storage_dir})")
+            if self.keeper is not None:
+                print(f"  saklama: klip {self.keeper.clip_days:.0f} gun, kare "
+                      f"{self.keeper.frame_days:.0f} gun, tavan "
+                      f"{self.keeper.max_gb:.2f} GB")
         if args.heartbeat_sec > 0 and args.settings_url and self.camera_id:
             # ws_port yalniz StreamServer GERCEKTEN acildiysa yazilir (JWT_SECRET
             # yoksa acilmaz) -- panel olmayan bir porta korlemesine baglanmasin.

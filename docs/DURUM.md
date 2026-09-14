@@ -41,7 +41,7 @@ Sıradaki iş 8.5 (yazma ekranları): kamera ekle/düzenle/sil, bölge poligon
 | 7 | LLM ve Telegram | Tamamlandı |
 | 8 | Panel (kullanıcı şablonu) | Tamamlandı (8.1–8.6) |
 | 9 | TCN modeli ve yeni sınıflar | Tamamlandı (9.1–9.5) |
-| 10 | Ölçek ve tez çıktıları | 10.1–10.4, 10.6 tamam; 10.5 en uzun kesintisiz **2 sa 50 dk** (8 saat değil) |
+| 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 
 ---
 
@@ -2466,39 +2466,239 @@ olduğunun ikinci kanıtı.
 İki dosya tek tabloda birleştirilmez: `gecen_dk` her koşuda sıfırdan
 sayar, birleştirme ilk saat / son saat karşılaştırmasını bozar.
 
-**Onay kriteri hâlâ karşılanmadı** — 8 saat gerekiyor, en uzun kesintisiz
-süre 2 saat 50 dakika. Koşuyu ölçüm betiğiyle *aynı anda* başlatmak
-gerekiyor; bu kez betik kameralardan 2.5 saat sonra başlatıldığı için
-sürenin çoğu kayda girmedi.
+### Bulgu 4 — hata işleyicisinin kendisi koşuyu öldürüyordu (2026-09-12)
+
+8 saatlik koşu 4. dakikada öldü. Zincir:
+
+1. API'den ölçüm çekerken geçici okuma hatası: `httpx.ReadError [WinError 10053]`
+2. `soak_test.py` bunu yakalıyor ve sebebi basıyor — tasarım doğru, satır
+   atlanıp koşu sürmeli
+3. Ama Windows konsolu **cp1252**; hata mesajı Türkçe ("bağlantı ... iptal
+   edildi") ve `ğ` harfi bu kod sayfasında yok
+4. `print` `UnicodeEncodeError` atıyor, `except` bloğunun *içinden*, yani
+   yakalanmıyor → süreç 1 ile çıkıyor
+
+Yani hatayı tolere etmek için yazılmış blok, hatayı **ölümcül** yapan
+şeydi. Kısa testlerde görünmez: geçici ağ hatası olmadan bu yol hiç
+çalışmıyor.
+
+Düzeltme tek satır — basım asla çatlamamalı:
+
+```python
+sys.stdout.reconfigure(errors="replace")
+sys.stderr.reconfigure(errors="replace")
+```
+
+Doğrulandı: `PYTHONIOENCODING=cp1252` altında `ğşı` basımı çıkış kodu 0,
+karakterler `???` oluyor, çökme yok.
+
+**Ders:** hata yolunu da hata yolu gibi test et. Kayıt/basım satırı,
+koruduğu koddan daha kırılgan olmamalı.
+
+### Bulgu 5 — konteyner "healthy" ama ana makineden ölü (2026-09-12)
+
+8 saatlik koşunun üç başlatma denemesi üst üste düştü. Belirti her seferinde
+başka göründü: önce `httpx.ReadError [WinError 10053]`, sonra `Server
+disconnected without sending a response`, kameralarda ise
+`rdkafka ... connection closed by peer: POLLHUP`.
+
+Tek bir kök neden: **Docker Desktop'ın ana makine port yönlendirmesi yarım
+kalkmıştı.** Yayınlanan portlar TCP bağlantısını kabul edip yanıt vermeden
+kapatıyordu — hem 8000 hem 9092.
+
+Yanıltıcı olan: `docker compose ps` altı konteyneri de **healthy**
+gösteriyordu. Sağlık yoklaması konteynerin *içinden* (`127.0.0.1`)
+koşuyor, o yüzden geçiyordu. API kayıtlarında ana makineden **tek bir
+istek bile yoktu** — yalnız kendi yoklaması. Teşhisi veren buydu.
+
+`docker compose start` ve `up -d` düzeltmedi; Docker Desktop'ın kendisini
+kapatıp açmak düzeltti.
+
+**Ders:** yığın kontrolü konteyner sağlığına bakmakla bitmez. Ana
+makineden en az bir gerçek istek atılmalı:
+
+```powershell
+Invoke-WebRequest http://localhost:8000/health -UseBasicParsing
+(New-Object Net.Sockets.TcpClient).Connect("localhost", 9092)
+```
+
+Koşu öncesi kontrol listesine bu iki satır eklendi.
+
+## Aşama 10.5 — 8 saatlik koşu TAMAM (2026-09-12)
+
+Onay kriteri karşılandı: **8.0 saat, 4 kamera, 459 ölçüm, kesintisiz.**
+Kameralar `webcam_01, zone_01, run_01, fall_01` (Aşama 10.4'teki kümenin
+aynısı, sayılar karşılaştırılabilir). Kayıt: `logs/soak_8saat.csv`.
+
+| metrik | ilk saat | son saat | değişim |
+|---|---|---|---|
+| toplam FPS | 33.2 | 33.4 | +0.6% |
+| en düşük kamera FPS | 8.2 | 8.3 | +0.7% |
+| çıkarım | 13.9 ms | 14.0 ms | +0.5% |
+| görü RSS | 5804 MB | 6005 MB | +3.5% |
+| GPU | 791 MB | 898 MB | +13.6% |
+| depolama | 7382 MB | 17785 MB | +141% |
+
+Olay sayısı 1216 → 1722 (506 yeni olay, 8 saatte).
+
+### GPU artışı sızıntı değil
+
+Ham %13.6 yanıltıcı. Saatlik ortalama:
+
+| saat | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| GPU MB | 791 | 864 | 899 | 898 | 898 | 898 | 898 | 898 |
+| RSS MB | 5804 | 5694 | 5805 | 5866 | 5895 | 5994 | 5985 | 6005 |
+
+GPU **3. saatte 898 MB'de oturuyor ve 6 saat boyunca oynamıyor** — CUDA
+tahsis ön belleğinin ısınması, sızıntı değil. Sızıntı olsaydı artış
+doğrusal sürerdi.
+
+RSS'te hafif sürüklenme var: saatte ~25 MB, salınımlı (2. saatte 5694'e
+düşüyor). 8 saatte +201 MB. Plato demek doğru olmaz ama bu hızda 24 saat
++600 MB eder; işletim için engel değil. Daha uzun koşu ölçmediğimiz için
+"sızıntı yok" değil **"8 saatte sızıntı görülmedi"** denmeli.
+
+### Kalan gerçek sorun: disk
+
+Depolama 8 saatte 7.4 GB'den 17.8 GB'ye çıktı — **saatte 1.3 GB**, günde
+~31 GB. Kanıt kliplerinin saklama politikası yok. Aşamanın teknik onay
+kriteri karşılandı ama bu haliyle sistem günlerce çalışamaz. Aşama 12'nin
+ilk maddesi.
+
+### Koşuya ulaşana kadar çıkan üç arıza
+
+Koşu başlatılabilene kadar üç deneme düştü; üçü de dakikalık testlerde
+görünmez cinsten ve ayrı ayrı yukarıda (Bulgu 4, Bulgu 5). Ayrıca
+`run_pilot_cameras.py` `--cameras` boş bırakılınca **3** kamera açıyor
+(`DEFAULT_CAMERA_COUNT = 3`); 4 kameralık ölçümle karşılaştırmak için
+kamera listesi açıkça verilmeli.
+
+<sub>Önceki durum kaydı: onay kriteri karşılanmadan önce en uzun
+kesintisiz süre 2 saat 50 dakikaydı.</sub>
+
+## Aşama 12.1 — Kanıt saklama politikası (2026-09-14)
+
+Aşama 10.5'in açık bıraktığı tek işletim engeli kapandı: depo saatte
+1.3 GB, günde ~31 GB büyüyordu ve hiçbir sınır yoktu.
+
+### Kural
+
+`vision/retention.py`, iki kural birlikte:
+
+| | varsayılan | neden |
+|---|---|---|
+| klip yaşı | 7 gün | öngörülebilir saklama süresi |
+| kare yaşı | 90 gün | Mongo `pose_sequences` TTL'i ile aynı |
+| toplam tavan | 20 GB | diski kesin sınırlar |
+
+Tek başına ikisi de yetmiyor: yaş kuralı diski sınırlamaz (yoğun haftada
+7 × 31 = 217 GB), boyut tavanı tek başına saklama süresini öngörülemez
+yapar (sakin hafta aylarca durur, yoğun gün saatler içinde silinir).
+
+Tavan aşılırsa **yalnız klipler** silinir, en eskiden başlayarak. Kareler
+deponun %3'ü (474 MB / 17 GB); hepsini silmek tavanı kurtarmaz ama
+panelin tüm görsel geçmişini götürür.
+
+Silinen şey yalnızca **dosyadır**. `events` satırı, `clip_path` alanı ve
+Mongo'daki `pose_sequences` yerinde kalır — olay geçmişi ve ölçülen
+metrikler bozulmaz. API zaten iki durumu ayırıyor: `clip_path` boşsa
+"klip bulunamadi", doluyken dosya yoksa "klip dosyasi diskte yok".
+
+### Nerede koşuyor
+
+Kanıt yazıcısının arka plan thread'inde, klip yazılıp bildirildikten
+sonra. Ana görü döngüsü diskte hiç beklemez. Budayıcı kameralar arasında
+**paylaşılır**: depo dizini ortaktır, kamera başına bir tane kurmak aynı
+7500 dosyayı dört kez taratır ve aynı dosyayı silmek için yarışırlar.
+
+### Ölçülen sınır: tavan anlık değil ortalama
+
+İki budama arasında (60 sn) yazılan klipler tavanın üstüne çıkar. Ölçüldü:
+10 MB tavanla canlı koşu 20 MB'a kadar çıktı, budama çalışınca 9 MB'a
+indi. Gerçek ölçekte aşım saatte 1.3 GB'lik büyümeyle 60 saniyede ~22 MB,
+yani 20 GB tavanın binde biri.
+
+### Testin yakalayamadığı hata
+
+Birim testleri geçtikten sonra tek kamerayla gerçek koşu yapıldı ve
+`NameError: name 'keeper' is not defined` çıktı: budayıcı `__init__`
+imzasına eklenmişti ama `EvidenceWriter` `start()` içinde kuruluyor.
+Hiçbir test kanıt üretimi açık bir boru hattı kurmuyor, o yüzden 221 test
+yeşilken kod üretimde ilk saniyede çöküyordu.
+
+**Ders (yine):** testin geçmesi doğrulama değildir.
+
+### Mevcut depo
+
+Kuru koşu: 17.3 GB, 3764 klip, 3761 kare; hiçbir dosya 7 günden eski
+değil, tavan aşılmıyor — yani politika şu an hiçbir şey silmez. İlk
+silme, koşular birikip 20 GB'ı aştığında ya da klipler bir haftayı
+doldurduğunda olur.
+
+```bash
+venv/Scripts/python.exe -m vision.retention --dry-run     # ne silinecek
+venv/Scripts/python.exe -m vision.retention               # elle buda
+```
+
+---
 
 ## Bir sonraki adım
 
-Aşama 10, kalan iki alt aşama:
+Aşama 10 kapandı (10.5 dahil: 8 saat, 4 kamera, kesintisiz). Sırada duran
+işler, önem sırasıyla:
 
-1. **10.5 — 4 kamera 8 saat kesintisiz koşu** (aşamanın onay kriteri).
-   Ölçülecek: FPS sapması, RAM/VRAM sızıntısı, düşen kare, yeniden bağlanma,
-   Kafka teslim hatası, Spark checkpoint büyümesi. `scripts/soak_test.py`
-   henüz yazılmadı — koşuyu tekrarlamadan tablo üretilebilsin diye periyodik
-   ölçüm satırını `logs/` altına yazmalı
-2. **10.6 — Tez çıktıları:** ablation raporu + gecikme dağılımı + v1/v2
-   karşılaştırma tablosu tek belgede; README; veri kümesi atıfları (SPHAR ve
-   alt kaynakları — CASIA yazar izni, BIT-Interaction ticari olmayan,
-   UT-Interaction MIT, UCF-ARG yalnız araştırma — ve UR Fall Detection)
+### 1. Disk saklama politikası — tek gerçek işletim engeli
 
-Sistemi açmak için:
+Kanıt klipleri saatte 1.3 GB, günde ~31 GB büyüyor. Sistem bu haliyle
+günlerce çalışamaz. En basit çözüm: `storage/` altında yaş veya toplam
+boyut sınırı, olay veritabanı kaydı kalır, klip düşer. Ölçülmüş sayı
+`docs/TEZ.md` §3.5'te.
+
+### 2. Spark eşikleri API'den çekemiyor (`HTTP Error 401`)
+
+Sessiz bozulma: panelden eşik değiştirmek Spark süzgecini etkilemiyor,
+ortam varsayılanına düşüyor. Kimlik doğrulama yolu düzeltilmeli.
+
+### 3. Tez metni — ölçülen sayılarla değiştirilecek yerler
+
+Tez taslağında MAE/MSE/RMSE/R² geçiyor; bu proje sınıflandırma yapıyor,
+o metrikler geçerli değil. Yerine precision/recall/F1 ve gecikme
+tabloları konacak. Kaynak sayıların tamamı `docs/TEZ.md`'de,
+belge-kod farkları `docs/TEZ_UYUM.md`'de.
+
+Ayrıca yazılacak: "yöntem değişiklikleri ve gerekçeleri" bölümü
+(Qdrant yerine NumPy galeri, ReID'nin hatta bağlanmaması, LSTM yerine
+TCN — hepsinin ölçüm gerekçesi DURUM'da var).
+
+### 4. Ölçülmemiş kalanlar — iddia edilmeyecek
+
+- **LOITERING duyarlılığı** hiç ölçülmedi; hiçbir kümede olumlu örnek yok
+- **Canlı kaynakta uçtan uca alarm gecikmesi** ölçülmedi; dosya kaynağında
+  `started_at` duvar saati değil, gerçek sayı kamera önünde gerçek olay ister
+- **Model pilot alanda 12 sahte FALL** üretiyor — alan farkı
+- **RTSP** kod yolu var, donanım yok, denenmedi
+- **8 saatten uzun koşu** yok; RSS'te saatte ~25 MB sürüklenme sürüyor mu
+  bilinmiyor
+
+### Sistemi açmak
 
 ```bash
 docker compose up -d
 venv/Scripts/python.exe scripts/run_pilot_cameras.py --cameras webcam_01,zone_01,run_01,fall_01
 ```
 
+`--cameras` boş bırakma: varsayılan **3** kamera açar, 4 kameralık
+ölçümlerle karşılaştırılamaz.
+
+Yığın kontrolü konteyner sağlığıyla bitmez — ana makineden gerçek istek at:
+
+```powershell
+Invoke-WebRequest http://localhost:8000/health -UseBasicParsing
+```
+
 Panel `http://localhost:8000`, kullanıcı `admin`, şifre `.env`'deki
 `ADMIN_PASSWORD`.
-
-Aşama 9'dan devreden açık sorular: FIGHT duyarlılığı 0.07, modelin pilot
-alanda 12 sahte FALL üretmesi, LOITERING duyarlılığının hiç ölçülmemiş
-olması. Canlı kaynakta alarm gecikmesi ve gerçek kota aşımında LLM soğutması
-donanım/senaryo gerektiriyor, kod değişikliği değil.
 
 ---
 
