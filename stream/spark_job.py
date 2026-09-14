@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from pyspark.sql import SparkSession
@@ -73,22 +74,75 @@ CHECKPOINT_DIR = os.path.join(
 # API_URL bos ise ozellik kapali sayilir (docker-compose SETTINGS_API_URL
 # saglamadikca), yukaridaki ortam degiskeni varsayilanlari aynen kalir.
 SETTINGS_API_URL = os.getenv("SETTINGS_API_URL", "")
+# Sabit jeton ARTIK ZORUNLU DEGIL, geriye donuk uyum icin duruyor. Elle
+# yapistirilan bir JWT `JWT_EXPIRE_MINUTES` (720 dk) sonra oluyor: olculen
+# gercek bir ariza, Spark aylarca 401 alip sessizce ortam varsayilanlarina
+# dustu, yani panelden esik degistirmek Spark suzgecini hic etkilemedi.
 SETTINGS_API_TOKEN = os.getenv("SETTINGS_API_TOKEN", "")
+SETTINGS_API_USER = os.getenv("SETTINGS_API_USER", "admin")
+SETTINGS_API_PASSWORD = os.getenv("SETTINGS_API_PASSWORD", "")
+
+
+def login_for_token() -> str:
+    """POST /api/auth/login -> taze JWT. Bos string = giris yapilamadi.
+
+    Esikler yalnizca ACILISTA bir kez okunur (sorguya gomulurler), o yuzden
+    tek giris yeter -- yenileme dongusu gerekmez.
+
+    ponytail: `admin` kimligi kullaniliyor, cunku veritabaninda tohumlanan
+    tek kullanici o ve `init.sql` yalnizca ilk kurulumda kosuyor -- var olan
+    kuruluma servis kullanicisi eklemek elle migration ister. Ayri bir
+    salt-okunur `viewer` kullanicisi yukseltme yoludur.
+    """
+    if not (SETTINGS_API_USER and SETTINGS_API_PASSWORD):
+        return ""
+    body = urllib.parse.urlencode({
+        "username": SETTINGS_API_USER, "password": SETTINGS_API_PASSWORD,
+    }).encode("utf-8")
+    # OAuth2PasswordRequestForm: govde FORM-kodludur, JSON degil.
+    req = urllib.request.Request(
+        f"{SETTINGS_API_URL.rstrip('/')}/api/auth/login", data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            return str(json.loads(resp.read().decode("utf-8"))["access_token"])
+    except (urllib.error.URLError, ValueError, KeyError, TypeError) as exc:
+        print(f"  [spark_job] giris yapilamadi: {exc}")
+        return ""
+
+
+def _get_settings(token: str) -> dict:
+    req = urllib.request.Request(f"{SETTINGS_API_URL.rstrip('/')}/api/settings")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req, timeout=5.0) as resp:
+        return dict(json.loads(resp.read().decode("utf-8")))
 
 
 def fetch_settings_from_api() -> tuple[int, int, dict[str, float]] | None:
     """GET /api/settings (global) -> (window_sec, min_hits, min_sec).
+
     `urllib.request`: Spark imajina yeni paket girmiyor. Ulasilamazsa (ag
-    hatasi, 401, bozuk JSON) None doner -- cagiran ortam degiskeni
-    varsayilanlarina duser ve tek satir uyari basar."""
+    hatasi, bozuk JSON) None doner -- cagiran ortam degiskeni varsayilanlarina
+    duser ve tek satir uyari basar.
+
+    Jeton suresi dolmussa (401/403) BIR KEZ giris yapilip tekrar denenir:
+    sessiz duse dusmenin asil sebebi buydu.
+    """
     if not SETTINGS_API_URL:
         return None
-    req = urllib.request.Request(f"{SETTINGS_API_URL.rstrip('/')}/api/settings")
-    if SETTINGS_API_TOKEN:
-        req.add_header("Authorization", f"Bearer {SETTINGS_API_TOKEN}")
+    token = SETTINGS_API_TOKEN
     try:
-        with urllib.request.urlopen(req, timeout=5.0) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        try:
+            data = _get_settings(token)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (401, 403):
+                raise
+            fresh = login_for_token()
+            if not fresh:
+                raise
+            print("  [spark_job] jeton gecersiz/suresi dolmus, yeniden giris yapildi")
+            data = _get_settings(fresh)
         return (int(data["spark_window_sec"]), int(data["spark_min_hits"]),
                 dict(data["spark_min_sec"]))
     except (urllib.error.URLError, ValueError, KeyError, TypeError) as exc:

@@ -114,12 +114,17 @@ services:
       KAFKA_BOOTSTRAP: kafka:29092
       CHECKPOINT_DIR: /checkpoints
       # ASAMA6_PLAN.md SS9: esikler acilista API'den cekilir. GET /api/settings
-      # kimlik ister; SPARK_SETTINGS_TOKEN .env'de bos birakilirsa istek 401
-      # alir, spark_job.py tek satir uyari basip ortam varsayilanlarinda kalir.
+      # kimlik ister; spark_job.py acilista KENDISI giris yapar.
+      # SPARK_SETTINGS_TOKEN artik istege baglidir: elle yapistirilan bir JWT
+      # JWT_EXPIRE_MINUTES (720 dk) sonra oluyordu ve Spark aylarca 401 alip
+      # sessizce ortam varsayilanlarina dusuyordu -- panelden esik degistirmek
+      # Spark suzgecini hic etkilemiyordu (docs/DURUM.md Asama 12.2).
       # Degerler DAG'e acilista gomulur -- panelden degistirilen spark_window_sec
       # ancak Spark yeniden baslayinca gecerli olur (bilincli sinir, SS9).
       SETTINGS_API_URL: http://api:8000
       SETTINGS_API_TOKEN: ${SPARK_SETTINGS_TOKEN:-}
+      SETTINGS_API_USER: ${SPARK_SETTINGS_USER:-admin}
+      SETTINGS_API_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD gerekli}
     volumes:
       - ./stream:/app:ro
       - spark_checkpoints:/checkpoints

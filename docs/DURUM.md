@@ -2643,6 +2643,59 @@ venv/Scripts/python.exe -m vision.retention               # elle buda
 
 ---
 
+## Aşama 12.2 — Spark eşikleri artık gerçekten API'den geliyor (2026-09-14)
+
+Aşama 10.5'te görülen sessiz bozulma kapandı: Spark `GET /api/settings`'ten
+`HTTP Error 401` alıyor, tek satır uyarı basıp ortam varsayılanlarına
+düşüyordu. Sonuç: **panelden eşik değiştirmek Spark süzgecini hiç
+etkilemiyordu** ve hiçbir şey gürültülü biçimde başarısız olmuyordu.
+
+### Kök neden
+
+`.env`'deki `SPARK_SETTINGS_TOKEN`, elle yapıştırılmış 164 karakterlik bir
+JWT'ydi. `JWT_EXPIRE_MINUTES=720`, yani jeton **12 saat sonra ölmüştü**.
+Sabit jeton koymak sorunu çözmez, erteler.
+
+### Çözüm
+
+Spark açılışta **kendisi giriş yapar**. Eşikler yalnızca açılışta bir kez
+okunduğu (sorguya gömüldükleri) için tek giriş yeter, yenileme döngüsü
+gerekmez.
+
+Akış: elindeki jetonla dener → `401/403` alırsa bir kez giriş yapıp tekrar
+dener → o da olmazsa eski davranış (uyarı + ortam varsayılanları).
+`401` dışı hatalarda (örn. `500`) giriş denenmez; kimlik sorunu değildir.
+
+`SPARK_SETTINGS_TOKEN` artık **isteğe bağlı**, geriye dönük uyum için
+duruyor. Kimlik `ADMIN_PASSWORD`'dan gelir.
+
+**ponytail:** `admin` kimliği kullanılıyor, çünkü veritabanında tohumlanan
+tek kullanıcı o ve `init.sql` yalnızca ilk kurulumda koşuyor — var olan
+kuruluma servis kullanıcısı eklemek elle migration ister. Ayrı bir
+salt-okunur `viewer` kullanıcısı yükseltme yoludur.
+
+### Doğrulama — testle değil, uçtan uca
+
+Birim testleri (6 adet) 401 yolunu, giriş gövdesinin form-kodlu olmasını ve
+`500`'de giriş denenmemesini ölçüyor. Ama asıl iddia "panelden eşik
+değiştirmek artık Spark'a geçiyor"; o canlı ölçüldü:
+
+1. Yığın kaldırıldı → `[spark_job] jeton gecersiz/suresi dolmus, yeniden
+   giris yapildi` → `esikler API'den alindi: window=3s`
+2. `PUT /api/settings` ile `spark_window_sec` 3 → 5
+3. `docker compose restart spark` → `esikler API'den alindi: window=5s`
+4. Eşik 3'e geri alındı
+
+Eskiden 3. adımda ortam varsayılanı okunurdu.
+
+### Değişmeyen bilinçli sınır
+
+Eşikler akan sorguya **gömülüdür**; panelden değiştirilen değer ancak Spark
+yeniden başlatılınca geçerli olur. Sıcak yükleme checkpoint uyumsuzluğu
+yaratacağı için bilinçli olarak yok (ASAMA6_PLAN.md §9).
+
+---
+
 ## Bir sonraki adım
 
 Aşama 10 kapandı (10.5 dahil: 8 saat, 4 kamera, kesintisiz). Sırada duran
