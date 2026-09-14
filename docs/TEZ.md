@@ -276,6 +276,52 @@ kare bazlı etiketi kullanılınca FALL kesinliği **0.300 → 0.524**, makro F1
 
 ---
 
+## 4.4 Alan farkının kaynağı — ölçülmüş açıklama
+
+§4.2'de görülen yanlış pozitiflerin "farklı çözünürlük" ile açıklanması
+sınanmıştır, çünkü sınıflandırıcının girdisi zaten ölçek-normalizedir:
+iskelet koordinatları sınır kutusuna, hız sınır kutusu yüksekliğine
+bölünür. Çözünürlük tek başına bu kanalları değiştirmez.
+
+**Girdi dağılımlarında anlamlı kayma yoktur.** Eğitim ve pilot pencereleri
+kanal grubu bazında karşılaştırıldığında, girdinin %32'sini oluşturan
+keypoint güveni dahil olmak üzere dağılımlar örtüşmektedir:
+
+| kanal grubu | eğitim | pilot |
+|---|---|---|
+| iskelet x/y (normalize) | 0,503 | 0,535 |
+| keypoint güveni | 0,770 | 0,738 |
+
+**Yanlış pozitifler karar eşiğinin hemen üstünde yoğunlaşır.** Modelin
+pilot pencerelerdeki NORMAL tahminlerinin ortalama olasılığı 0,853 iken,
+NORMAL dışı tahminlerinki 0,586–0,697 aralığındadır; kullanılan eşik
+0,60'tır. Eşik taraması (doğrulama kümesi klip bazında ayrılmıştır):
+
+| eşik | duyarlılık | pilot yanlış alarm |
+|---|---|---|
+| 0,50 | 0,708 | 23 |
+| **0,60** | **0,613** | **18** |
+| 0,70 | 0,524 | 12 |
+| 0,75 | 0,479 | 8 |
+| 0,90 | 0,292 | 3 |
+
+Eşiğin 0,60'tan 0,75'e çıkarılması pilot yanlış alarmlarını %56, buna
+karşılık duyarlılığı %22 azaltmaktadır; takas oranı taranan bütün aralıkta
+yaklaşık 2,4:1 düzeyinde sabit kalmaktadır.
+
+Bu sabitlik belirleyicidir. Yanlış pozitifler yalnızca yanlış kalibre
+edilmiş, eşiğin hemen üstüne yığılmış kararlar olsaydı, eşik yükseltildikçe
+hızla yok olur ve duyarlılık büyük ölçüde korunurdu. Her iki büyüklüğün de
+düzenli biçimde azalması, sınıf skorlarının pilot alanda **iç içe geçtiğini**
+göstermektedir: model bu alanda sınıfları ayırt edememektedir. Dolayısıyla
+eşik bir çalışma noktası tercihidir, çözüm değildir; çözüm pilot alandan
+eğitim verisi eklemektir.
+
+Bu çalışmada eşik 0,60'ta bırakılmıştır; raporlanan bütün tablolar bu
+çalışma noktasında üretilmiştir.
+
+---
+
 ## 5. Eğitim veri kümesi
 
 1080 klip, 193 MB. `scripts/fetch_datasets.py` ile yeniden üretilebilir.

@@ -2849,43 +2849,169 @@ geçerlidir.
 
 ---
 
+## Aşama 12.5 — Alan farkının kaynağı ölçüldü (2026-09-14)
+
+`docs/TEZ.md` §4.2'deki "model pilot kliplerde 12 sahte FALL üretiyor"
+bulgusu "alan farkı" diye açıklanıyordu. Bu açıklama **fazla kolaydı** ve
+sınanmamıştı: TCN'in girdisi zaten ölçek-normalizedir (iskelet bbox'a,
+hız bbox yüksekliğine bölünür), yani çözünürlük tek başına o kanalları
+değiştirmez.
+
+İki hipotez kuruldu ve **ikisi de ölçümle kısmen çürüdü.**
+
+### Hipotez 1 — keypoint güveni kaymış olabilir: REDDEDİLDİ
+
+53 kanalın 17'si ham keypoint güvenidir ve güven çözünürlüğe bağlıdır.
+`eval/domain_gap.py` eğitim ve pilot pencerelerinin dağılımlarını yan yana
+koydu:
+
+| kanal grubu | eğitim | pilot | fark |
+|---|---|---|---|
+| iskelet x/y (bbox-normalize) | 0.503 | 0.535 | +9.2% |
+| keypoint güveni | 0.770 | 0.738 | **−3.8%** |
+| merkez hızı | −0.002 | −0.005 | mutlak değerler sıfıra yakın |
+
+Güven dağılımları neredeyse aynı. Girdi uzayında modelin yanılmasını
+açıklayacak bir kayma **yok**.
+
+### Hipotez 2 — eşik kalibrasyonu: KISMEN DOĞRU, ÇÖZÜM DEĞİL
+
+Modelin pilot pencerelerdeki çıktısı, yanlış alarmların eşiğin hemen
+üstünde durduğunu gösterdi: NORMAL tahminlerinin ortalama olasılığı 0.853
+iken FALL 0.651, RUN 0.697, FIGHT 0.586 — çalışan eşik 0.60.
+
+`eval/conf_sweep.py` bunu iki tarafıyla taradı (doğrulama kümesi klip
+bazında ayrılmıştır, sızıntı yok):
+
+| eşik | yakalanan olay | duyarlılık | doğrulama yanlış alarm | pilot yanlış alarm |
+|---|---|---|---|---|
+| 0.50 | 238 | 0.708 | 139 | 23 |
+| **0.60** | 206 | **0.613** | 109 | **18** |
+| 0.70 | 176 | 0.524 | 83 | 12 |
+| 0.75 | 161 | 0.479 | 66 | 8 |
+| 0.80 | 138 | 0.411 | 57 | 6 |
+| 0.85 | 120 | 0.357 | 40 | 5 |
+| 0.90 | 98 | 0.292 | 30 | 3 |
+
+0.60 → 0.75: pilot yanlış alarm %56 düşüyor, duyarlılık %22 düşüyor.
+Takas oranı her adımda **~2.4:1 ve sabit**.
+
+**Yorum:** yanlış pozitifler yalnızca yanlış kalibre edilmiş gürültü
+olsaydı eşik yükselirken hızla çöker, duyarlılık büyük ölçüde korunurdu.
+İkisi de düzenli olarak azalıyor — skor dağılımları iç içe geçmiş, yani
+model pilot alanda sınıfları **gerçekten ayıramıyor**. Eşik kullanışlı bir
+düğmedir ama sorunu çözmez.
+
+### Sonuç
+
+"Alan farkı" açıklaması ayakta kalıyor ama artık **ölçülmüş** bir temeli
+var ve nedeni girdi kayması değil: model bu alanda ayırt edici değil.
+Gerçek çözüm pilot alandan eğitim verisi eklemektir; eşik yükseltmek
+yalnızca çalışma noktasını kaydırır ve bedeli duyarlılıktır.
+
+Çalışan eşik **0.60'ta bırakıldı**: tezdeki bütün tablolar bu noktada
+üretildi, değiştirmek hepsini geçersiz kılardı. Tarama tablosu çalışma
+noktası seçiminin gerekçesi olarak raporlanır.
+
+---
+
+## LOITERING — ölçüldü, hipotez çürüdü (2026-09-14)
+
+Duyarlılık hâlâ ölçülmedi ama bugün nedene dair iki ölçüm yapıldı.
+
+`data/pilot/zone_01.mp4` (60.6 sn, yeterince uzun tek pilot klip) kural
+motorundan geçirildi:
+
+| tip | aday | iz | ilk tetik |
+|---|---|---|---|
+| ZONE_VIOLATION | 704 | 3 | 10.8 sn |
+| RUN | 46 | 1 | 11.5 sn |
+| FALL | 3 | 1 | 26.8 sn |
+| **LOITERING** | **0** | — | — |
+
+İnsanlar yasaklı bölgede 10.8. saniyeden klip sonuna kadar duruyor ama
+oyalanma hiç tetiklenmiyor. Eşik 30 saniye.
+
+### Çürüyen hipotez: "iz 30 saniye yaşamıyor"
+
+Klipte 6 benzersiz iz sayılmıştı ve sahnede ~3 kişi var; bu, kimlik
+kopmasının sayacı (`enter_ts`) sürekli sıfırladığını düşündürdü. İz
+ömürleri ölçüldü:
+
+| iz | ömür (sn) |
+|---|---|
+| **1** | **32.5** |
+| 4 | 3.3 |
+| 5 | 1.4 |
+| 3 | 1.1 |
+| 8 | 0.3 |
+| 2 | 0.0 |
+
+**1 numaralı iz 32.5 saniye yaşıyor — eşiğin üstünde.** Dolayısıyla "kimlik
+yeterince yaşamıyor" açıklaması tek başına doğru değil.
+
+### Ölçümün kendi kusuru
+
+Ölçülen değer `son_görülme − ilk_görülme`, yani **aralıktır, kesintisiz
+süre değildir**. İz arada 90 kareden uzun kaybolduysa (`STALE_FRAMES`)
+kuralın durumu düşer ve sayaç sıfırlanır; bu ölçüm onu göremez. 32.5
+saniyelik aralık, 30 saniyelik kesintisiz varlık anlamına gelmez.
+
+### Yarın — iki şey ayrı ayrı ölçülecek
+
+1. **Kesintisiz varlık**: 1 numaralı izin en uzun ARALIKSIZ görülme süresi
+   (kare boşluklarını sayarak). 30 saniyenin altındaysa açıklama budur.
+2. **Bölge modu şartı**: `zone_01`'de bölge tanımlı olduğu için kural
+   ayak noktasının bölgede **kesintisiz** kalmasını arıyor
+   (`vision/rules/loiter.py`). Kişi bölgeye girip çıkıyorsa iz kopmasa
+   bile sayaç sıfırlanır. Bölge içinde kalış süresi ayrıca ölçülmeli.
+
+İkisinden hangisi olursa olsun sonuç raporlanabilir hale gelir:
+LOITERING "ölçülemedi" değil, **hangi somut şart yüzünden
+tetiklenemediği** yazılır.
+
+Kameradan deneme de yapıldı: `webcam_01` açıkken iki olay düştü (FALL ve
+RUN, ikisi de modelden), LOITERING yok — ama 30 saniyelik hareketsiz
+oturma yapılamadığı için bu **olumsuz kanıt sayılmaz**.
+
 ## Bir sonraki adım
 
-Aşama 10 kapandı (10.5 dahil: 8 saat, 4 kamera, kesintisiz). Sırada duran
-işler, önem sırasıyla:
+Aşama 10, 11 ve 12.1–12.4 kapandı. Kalanlar:
 
-### 1. Disk saklama politikası — tek gerçek işletim engeli
+### 1. LOITERING duyarlılığı — tek ölçülebilir açık madde
 
-Kanıt klipleri saatte 1.3 GB, günde ~31 GB büyüyor. Sistem bu haliyle
-günlerce çalışamaz. En basit çözüm: `storage/` altında yaş veya toplam
-boyut sınırı, olay veritabanı kaydı kalır, klip düşer. Ölçülmüş sayı
-`docs/TEZ.md` §3.5'te.
+Hiç ölçülmedi, çünkü erişilebilen hiçbir açık veri kümesinde olumlu örnek
+yok. Ama **kendi çekimimizle ölçülebilir ve bu kolay**: bölge tanımlı
+değilken kural, kişinin merkezinin kendi bbox yüksekliğinden fazla
+kaymadan `loiter_sec` (30 sn) kadraj içinde kalmasını arıyor
+(`vision/rules/loiter.py`). Tam boy kadraj gerekmez — masa başında
+oturmak yeterlidir.
 
-### 2. Spark eşikleri API'den çekemiyor (`HTTP Error 401`)
+Ölçüm için gereken: kamera açık, 35+ saniye kıpırdamadan durulan bir
+çekim, sonra `eval/latency_watch.py` ile olayın düşüp düşmediğine bakmak.
+Olumsuz örnek zaten bol (mevcut pilot klipler LOITERING üretmiyor, yani
+yanlış pozitif oranı ölçülü: sıfır).
 
-Sessiz bozulma: panelden eşik değiştirmek Spark süzgecini etkilemiyor,
-ortam varsayılanına düşüyor. Kimlik doğrulama yolu düzeltilmeli.
+### 2. Alan farkı — model 1080p/4K'da 12 sahte FALL
 
-### 3. Tez metni — ölçülen sayılarla değiştirilecek yerler
+320x240 gözetim kaydıyla eğitilmiş model yüksek çözünürlükte yanılıyor
+(`docs/TEZ.md` §4.2). Çözüm yolu ikisinden biri: pilot alandan eğitim
+verisi eklemek ya da ölçek artırma. Araştırma işi, kısa değil.
 
-Tez taslağında MAE/MSE/RMSE/R² geçiyor; bu proje sınıflandırma yapıyor,
-o metrikler geçerli değil. Yerine precision/recall/F1 ve gecikme
-tabloları konacak. Kaynak sayıların tamamı `docs/TEZ.md`'de,
-belge-kod farkları `docs/TEZ_UYUM.md`'de.
+### 3. Tez metni — hazır, yazılmayı bekliyor
 
-Ayrıca yazılacak: "yöntem değişiklikleri ve gerekçeleri" bölümü
-(Qdrant yerine NumPy galeri, ReID'nin hatta bağlanmaması, LSTM yerine
-TCN — hepsinin ölçüm gerekçesi DURUM'da var).
+`docs/TEZ_METIN.md` içinde §4.1'in yerine geçecek metin ve "Yöntem
+Değişiklikleri ve Gerekçeleri" bölümü hazır. Kullanıcı kararıyla proje
+bitene kadar bekletiliyor.
 
-### 4. Ölçülmemiş kalanlar — iddia edilmeyecek
+### 4. Yapılamayacaklar — iddia edilmeyecek
 
-- **LOITERING duyarlılığı** hiç ölçülmedi; hiçbir kümede olumlu örnek yok
-- **Canlı kaynakta uçtan uca alarm gecikmesi** ölçülmedi; dosya kaynağında
-  `started_at` duvar saati değil, gerçek sayı kamera önünde gerçek olay ister
-- **Model pilot alanda 12 sahte FALL** üretiyor — alan farkı
-- **RTSP** kod yolu var, donanım yok, denenmedi
-- **8 saatten uzun koşu** yok; RSS'te saatte ~25 MB sürüklenme sürüyor mu
+- **RTSP**: kod yolu var, IP kamera donanımı yok, hiç denenmedi
+- **4K'da gecikme**: bu donanımda hat kaynağın kendi FPS'ini tutturamıyor
+- **8 saatten uzun koşu**: RSS'teki saatte ~25 MB sürüklenme sürüyor mu
   bilinmiyor
+- **Faz 2 yüz tanıma**: bilinçli kapsam dışı (ayrı model, ayrı veri kümesi,
+  KVKK); Kur/Bırak modunun kendisi Aşama 12.3'te yapıldı
 
 ### Sistemi açmak
 
