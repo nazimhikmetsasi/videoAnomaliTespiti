@@ -165,7 +165,8 @@ class CameraPipeline:
         self.zones_stem = zones_stem or Path(str(source)).stem
         self._camera_id_override = camera_id
 
-        self.source = VideoSource(source, loop=args.loop)
+        self.source = VideoSource(source, loop=args.loop,
+                                  realtime=getattr(args, "realtime", False))
         self.publisher: CandidatePublisher | None = None
         self.settings_client: SettingsClient | None = None
         self.evidence_writer: EvidenceWriter | None = None

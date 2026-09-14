@@ -138,6 +138,29 @@ def _replace_once(html: str, old: str, new: str) -> str:
 # handler icindeki) kod yollarindan cagrilir -- js/app.js defer'dir, sayfa
 # ayristirilirken calisan bir kod yolu token() henuz tanimsizken patlardi.
 _LOGIN_REPLACEMENTS = [
+    # Rol SECIMI kaldirilir: rol hesabin kendisindedir (`users.role`) ve
+    # jetonun icinde gelir. Sekmeler yalnizca CSS sinifi degistiriyor, istege
+    # hic dokunmuyordu; cipler demo kimlik bilgilerini dolduruyordu ve o
+    # bilgiler zaten asagida temizleniyor -- geriye hicbir sey yapmayan
+    # dugmeler kaliyordu. Dinleyici JS'i de gider: dugmeler silinip kod
+    # kalsaydi getElementById null doner ve giris betigi hic calismazdi.
+    #
+    # Silmek yerine ISARETCI yorum birakilir: tests/test_frontend_asama8.py
+    # degisiklikleri ters cevirip sablonu yeniden kuruyor ve bos dizeye ters
+    # cevirme calismaz -- str.replace("", ...) metnin BASINA ekler.
+    # Kaldirildi: rol sekmeleri
+    ('<!-- Role Selector Switcher -->\n<div class="grid grid-cols-2 p-1 mb-5 bg-slate-900/90 rounded-lg border border-slate-800 text-xs font-medium">\n<button class="py-1.5 px-3 rounded-md transition-all duration-200 text-cyan-300 bg-slate-800 shadow-sm border border-slate-700/60 flex items-center justify-center gap-1.5" id="tabOperator" type="button">\n<span class="material-symbols-outlined text-[16px]">visibility</span>\n<span>Operatör Girişi</span>\n</button>\n<button class="py-1.5 px-3 rounded-md transition-all duration-200 text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5" id="tabAdmin" type="button">\n<span class="material-symbols-outlined text-[16px]">admin_panel_settings</span>\n<span>Yönetici Paneli</span>\n</button>\n</div>\n',
+     '<!-- build_frontend: rol sekmeleri kaldirildi (rol hesapta: users.role) -->\n'),
+    # Kaldirildi: hizli rol cipleri
+    ('<!-- Quick Fill Role Chips (Convenient for Control Room Preview) -->\n<div class="flex items-center justify-between mb-4 px-1 text-[11px] text-slate-400">\n<span class="flex items-center gap-1">\n<span class="material-symbols-outlined text-[14px] text-slate-500">flash_on</span>\n                Hızlı Rol Seçimi:\n            </span>\n<div class="flex items-center gap-1.5">\n<button class="px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 hover:text-cyan-300 border border-slate-700/50 text-slate-300 transition-colors" onclick="quickFill(\'op.demir@vadap.gov.tr\', \'Guvenlik*2025\')" type="button">\n                    Operatör\n                </button>\n<button class="px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 hover:text-cyan-300 border border-slate-700/50 text-slate-300 transition-colors" onclick="quickFill(\'admin.kaya@vadap.gov.tr\', \'Root#Secure99\')" type="button">\n                    Yönetici\n                </button>\n</div>\n</div>\n<!-- Authentication Form -->\n',
+     '<!-- build_frontend: hizli rol cipleri kaldirildi (demo kimlikleri) -->\n'),
+    # Kaldirildi: quickFill yardimcisi
+    ("        // Quick Fill Helper for Demo Testing\n        function quickFill(user, pass) {\n            document.getElementById('identityInput').value = user;\n            document.getElementById('passwordInput').value = pass;\n        }\n\n",
+     '        // build_frontend: quickFill kaldirildi (demo kimlik doldurucu)\n\n'),
+    # Kaldirildi: rol sekmesi dinleyicileri
+    ('        // Segmented Tab Controls\n        const tabOperator = document.getElementById(\'tabOperator\');\n        const tabAdmin = document.getElementById(\'tabAdmin\');\n\n        tabOperator.addEventListener(\'click\', () => {\n            tabOperator.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-cyan-300 bg-slate-800 shadow-sm border border-slate-700/60 flex items-center justify-center gap-1.5";\n            tabAdmin.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5";\n            quickFill(\'op.demir@vadap.gov.tr\', \'Guvenlik*2025\');\n        });\n\n        tabAdmin.addEventListener(\'click\', () => {\n            tabAdmin.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-cyan-300 bg-slate-800 shadow-sm border border-slate-700/60 flex items-center justify-center gap-1.5";\n            tabOperator.className = "py-1.5 px-3 rounded-md transition-all duration-200 text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5";\n            quickFill(\'admin.kaya@vadap.gov.tr\', \'Root#Secure99\');\n        });\n\n',
+     '        // build_frontend: rol sekmesi dinleyicileri kaldirildi\n\n'),
+
     # 1) demo kimlik bilgileri: value="..." nitelikleri kaldirilir.
     (
         'id="identityInput" placeholder="Örn: 489201 veya ad.soyad@vadap.gov.tr" '
@@ -149,15 +172,6 @@ _LOGIN_REPLACEMENTS = [
         'id="passwordInput" placeholder="••••••••••••" required="" type="password" '
         'value="Guvenlik*2025">',
         'id="passwordInput" placeholder="••••••••••••" required="" type="password">',
-    ),
-    # 2) hizli-doldur cipleri: sabit e-posta/sifre ciftleri kaldirilir.
-    (
-        "onclick=\"quickFill('op.demir@vadap.gov.tr', 'Guvenlik*2025')\"",
-        'onclick="quickFill()"',
-    ),
-    (
-        "onclick=\"quickFill('admin.kaya@vadap.gov.tr', 'Root#Secure99')\"",
-        'onclick="quickFill()"',
     ),
     # 3) "2FA Aktif" rozeti + "Oturumu 8 saat acik tut" onay kutusu: gercek
     #    karsiligi yok (2FA yok, jeton suresi sunucuda sabit) -- silinir.
@@ -179,41 +193,6 @@ _LOGIN_REPLACEMENTS = [
         '<p class="text-[11px] font-mono text-red-400 bg-red-950/40 border '
         'border-red-800/40 rounded px-2.5 py-1.5 text-center" hidden="" '
         'id="loginError"></p>',
-    ),
-    # 4) quickFill: artik parametresiz de cagriliyor -- bos deger yazmasin.
-    (
-        "        function quickFill(user, pass) {\n"
-        "            document.getElementById('identityInput').value = user;\n"
-        "            document.getElementById('passwordInput').value = pass;\n"
-        "        }",
-        "        function quickFill(user, pass) {\n"
-        "            if (user) document.getElementById('identityInput').value = user;\n"
-        "            if (pass) document.getElementById('passwordInput').value = pass;\n"
-        "        }",
-    ),
-    # 5) Operatör/Yönetici sekmeleri: yalnizca kendi sinifini degistirir,
-    #    alani doldurmaz -- rolu sunucu belirler, istemci secmez.
-    (
-        "            tabAdmin.className = \"py-1.5 px-3 rounded-md transition-all "
-        "duration-200 text-slate-400 hover:text-slate-200 flex items-center "
-        "justify-center gap-1.5\";\n"
-        "            quickFill('op.demir@vadap.gov.tr', 'Guvenlik*2025');\n"
-        "        });",
-        "            tabAdmin.className = \"py-1.5 px-3 rounded-md transition-all "
-        "duration-200 text-slate-400 hover:text-slate-200 flex items-center "
-        "justify-center gap-1.5\";\n"
-        "        });",
-    ),
-    (
-        "            tabOperator.className = \"py-1.5 px-3 rounded-md transition-all "
-        "duration-200 text-slate-400 hover:text-slate-200 flex items-center "
-        "justify-center gap-1.5\";\n"
-        "            quickFill('admin.kaya@vadap.gov.tr', 'Root#Secure99');\n"
-        "        });",
-        "            tabOperator.className = \"py-1.5 px-3 rounded-md transition-all "
-        "duration-200 text-slate-400 hover:text-slate-200 flex items-center "
-        "justify-center gap-1.5\";\n"
-        "        });",
     ),
     # 6) simulateLogin(): sahte setTimeout yerine gercek POST /api/auth/login.
     #    Basarida jeton js/app.js setToken() ile saklanir ve ?next= (yoksa
