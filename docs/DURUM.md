@@ -2915,94 +2915,142 @@ noktası seçiminin gerekçesi olarak raporlanır.
 
 ---
 
-## LOITERING — ölçüldü, hipotez çürüdü (2026-09-14)
+## Aşama 12.6 — LOITERING: kök neden bulundu ve düzeltildi, duyarlılık hâlâ ölçülemez (2026-11-10)
 
-Duyarlılık hâlâ ölçülmedi ama bugün nedene dair iki ölçüm yapıldı.
+### Ne gözlenmişti
 
-`data/pilot/zone_01.mp4` (60.6 sn, yeterince uzun tek pilot klip) kural
-motorundan geçirildi:
+`data/pilot/zone_01.mp4` (60.6 sn) kural motorundan geçince ZONE_VIOLATION
+704 aday üretiyor, LOITERING **sıfır**. İlk hipotez ("iz 30 sn yaşamıyor")
+14 Eylül'de çürümüştü: en uzun iz 32.5 sn. Ama o ölçüm ilk–son görülme
+**aralığıydı**, kesintisiz süre değildi.
 
-| tip | aday | iz | ilk tetik |
-|---|---|---|---|
-| ZONE_VIOLATION | 704 | 3 | 10.8 sn |
-| RUN | 46 | 1 | 11.5 sn |
-| FALL | 3 | 1 | 26.8 sn |
-| **LOITERING** | **0** | — | — |
+### Kök neden: tolerans yok, tek kare sayacı sıfırlıyor
 
-İnsanlar yasaklı bölgede 10.8. saniyeden klip sonuna kadar duruyor ama
-oyalanma hiç tetiklenmiyor. Eşik 30 saniye.
+`eval/loiter_probe.py` kuralın sayacı sıfırlayan iki şartını ayrı ölçtü:
 
-### Çürüyen hipotez: "iz 30 saniye yaşamıyor"
+| iz | kesintisiz iz (sn) | bölgede kesintisiz kalış (sn) | bölge çıkışı | en kısa çıkış |
+|---|---|---|---|---|
+| 1 | **32.5** | **11.7** | 7 | **0.04 sn** |
 
-Klipte 6 benzersiz iz sayılmıştı ve sahnede ~3 kişi var; bu, kimlik
-kopmasının sayacı (`enter_ts`) sürekli sıfırladığını düşündürdü. İz
-ömürleri ölçüldü:
+İz hiç kopmuyor. Sayacı sıfırlayan, ayak noktasının bölge sınırında **tek
+kare** dışarı taşmasıydı: `if st is None or not still` satırı tek bir
+"bölge dışı" karede 30 saniyelik birikimi siliyordu. Çıkış süreleri:
+0.04, 0.08, 0.16, 0.44, 0.88, 1.12, 1.88 sn.
 
-| iz | ömür (sn) |
+Çıkış karelerine bölge poligonu ve ayak noktası çizilerek bakıldı
+(tahmin değil, görüntü):
+
+- **0.04 sn**: kişi bölgenin içinde, ayak noktası alt sınırın tam üstünde —
+  sınır titremesi
+- **1.88 sn (t=13.4)**: kişi kapının önünde **hareketsiz duruyor**, klibin
+  kendi gömülü ihlal çerçevesi kırmızı; ayak noktası kadrajın alt
+  kenarında, poligonun birkaç piksel altında — gerçek çıkış değil
+- **1.12 sn (t=10.1)**: kişi gerçekten bölgenin dışında, yaklaşıyor —
+  gerçek çıkış, bekleme henüz başlamamış
+
+### Düzeltme
+
+Kısa sapmalar artık sayacı sıfırlamıyor. **Tolerans `STALE_FRAMES`'in
+kendisi (90 kare, 3.6 sn) — bu klipten seçilmedi.** Kural izin tamamen
+kaybolmasını zaten 90 kare tolere ediyordu; kişiyi 3.6 sn hiç görmemeyi
+"hâlâ orada" sayıp ayak noktasının tek kare sınır dışına kaymasını
+"ayrıldı" saymak tutarsızdı. İkisi de aynı anlama gelir.
+
+Toleransı klipten seçmek mümkündü ve bir tuzaktı: ölçüm 2.0 sn toleransın
+bu klibi tam eşiğe taşıdığını gösteriyordu (0.5–1.0 sn: 14.8 sn, 2.0 sn:
+31.4 sn). Değer testin kendisine uydurulmadı.
+
+Ek düzeltmeler (aynı değişiklikte):
+- Bölge modunda sayaç **bölgeye girince** başlar; önceden kişi bölge
+  dışındayken de durum açılıyordu
+- Tolerans içindeki çıkışta sayaç korunur ama **aday üretilmez**
+- Çapa modunda (bölge yok) aynı kusur vardı, aynı tolerans uygulandı
+
+7 yeni test (`tests/test_features_rules.py`); 3'ü eski kodda **düştü** —
+tek karelik titreme, kenarda 1.88 sn kayma, çapa modunda kısa kayma.
+
+### Asıl bulgu: zone_01 geçerli bir olumlu örnek değil
+
+Düzeltmeden sonra zone_01'de 1 LOITERING çıktı (ilk tetik 40.7 sn), diğer
+5 pilot klipte sıfır. **Bu bir gerçek pozitif DEĞİL.** 1 numaralı izin
+sahne kesiminin iki yanında görüntüsüne bakıldı:
+
+| t | sahne | 1 numaralı iz |
+|---|---|---|
+| 27.0 | koridor, cam kapılar | yürüyor |
+| 30.0 | bina dışı, duvar önü | yürüyor |
+| 40.0 | otopark | yürüyor |
+
+`zone_01` sabit güvenlik kamerası değil: **hareketli bir kamera aynı kişiyi
+takip ediyor** (aynı mont, her sahnede aynı lazer noktası). Takip doğru
+çalışıyor — iz baştan sona gerçekten aynı kişi. Ama bölge poligonu
+**görüntü koordinatlarında** tanımlı ve sabit kamera varsayıyor; kamera
+kişiyi takip edince kişi görüntüde hep aynı yerde kalıyor ve ayak noktası
+artık otoparkın üstüne düşen poligonun içinde duruyor. Kişi yürüyor,
+oyalanmıyor.
+
+Açıklamanın referans dosyası da bunu biliyor: `eval_end_sec: 28.0`. Geçerli
+sabit kamera kısmında (0–28 sn) kişi bölgede ~17 sn kalıyor, eşik 30 sn.
+**Bu klipte geçerli bir oyalanma örneği yok.**
+
+Eski kodun burada "yok" demesi doğru bir karar değildi, titremenin yan
+etkisiydi. Yeni kod sabit kamerada doğru davranıyor; hareketli kamerada
+bölge kurallarının hiçbiri anlamlı değildir (aşağıda sınır).
+
+### Tez tablosu değişmedi
+
+`eval/pilot_eval.py` yeniden koşuldu: LOITERING satırı yok — 40.7
+sn'deki aday `eval_end_sec` (28) dışında kaldığı için elendi. FALL/RUN/
+ZONE satırları etkilenemez: motor her kuralı bağımsız çağırır
+(`engine.__call__`), LOITERING kuralı yalnız kendi adayını üretir.
+
+### Sonuç
+
+| | durum |
 |---|---|
-| **1** | **32.5** |
-| 4 | 3.3 |
-| 5 | 1.4 |
-| 3 | 1.1 |
-| 8 | 0.3 |
-| 2 | 0.0 |
+| kural tetiklenebiliyor mu | **evet** (önce pratikte hiç) |
+| sınır titremesine dayanıklı mı | **evet**, testle sabit |
+| yanlış pozitif (sabit kamera, 5 pilot klip) | **0** |
+| duyarlılık | **ölçülemez** — elimizde geçerli tek bir olumlu örnek yok |
 
-**1 numaralı iz 32.5 saniye yaşıyor — eşiğin üstünde.** Dolayısıyla "kimlik
-yeterince yaşamıyor" açıklaması tek başına doğru değil.
+Duyarlılığı ölçmek için sabit kamerayla çekilmiş, en az 30 sn bölgede
+duran bir kişi içeren kayıt gerekir. Dizüstü kamerası bunun için uygundur
+(sabit kamera); çekim kullanıcıya bağlı.
 
-### Ölçümün kendi kusuru
+### Yeni sistem sınırı — tezde yazılacak
 
-Ölçülen değer `son_görülme − ilk_görülme`, yani **aralıktır, kesintisiz
-süre değildir**. İz arada 90 kareden uzun kaybolduysa (`STALE_FRAMES`)
-kuralın durumu düşer ve sayaç sıfırlanır; bu ölçüm onu göremez. 32.5
-saniyelik aralık, 30 saniyelik kesintisiz varlık anlamına gelmez.
-
-### Yarın — iki şey ayrı ayrı ölçülecek
-
-1. **Kesintisiz varlık**: 1 numaralı izin en uzun ARALIKSIZ görülme süresi
-   (kare boşluklarını sayarak). 30 saniyenin altındaysa açıklama budur.
-2. **Bölge modu şartı**: `zone_01`'de bölge tanımlı olduğu için kural
-   ayak noktasının bölgede **kesintisiz** kalmasını arıyor
-   (`vision/rules/loiter.py`). Kişi bölgeye girip çıkıyorsa iz kopmasa
-   bile sayaç sıfırlanır. Bölge içinde kalış süresi ayrıca ölçülmeli.
-
-İkisinden hangisi olursa olsun sonuç raporlanabilir hale gelir:
-LOITERING "ölçülemedi" değil, **hangi somut şart yüzünden
-tetiklenemediği** yazılır.
-
-Kameradan deneme de yapıldı: `webcam_01` açıkken iki olay düştü (FALL ve
-RUN, ikisi de modelden), LOITERING yok — ama 30 saniyelik hareketsiz
-oturma yapılamadığı için bu **olumsuz kanıt sayılmaz**.
+**Bölge kuralları (ZONE_VIOLATION, LOITERING) yalnızca sabit kamerada
+anlamlıdır.** Bölge görüntü koordinatlarında tanımlıdır; döner/yakınlaşan
+(PTZ) veya elde taşınan kamerada fiziksel bir yere karşılık gelmez. Hedef
+dağıtım sabit güvenlik kamerası olduğu için bu bir hata değil, bir
+**kapsam sınırıdır**.
 
 ## Bir sonraki adım
 
-Aşama 10, 11 ve 12.1–12.4 kapandı. Kalanlar:
+Aşama 10, 11 ve 12.1–12.6 kapandı. Kod tarafında açık iş kalmadı;
+kalanlar ölçüm ve tez.
 
-### 1. LOITERING duyarlılığı — tek ölçülebilir açık madde
+### 1. LOITERING duyarlılığı — kayıt bekliyor
 
-Hiç ölçülmedi, çünkü erişilebilen hiçbir açık veri kümesinde olumlu örnek
-yok. Ama **kendi çekimimizle ölçülebilir ve bu kolay**: bölge tanımlı
-değilken kural, kişinin merkezinin kendi bbox yüksekliğinden fazla
-kaymadan `loiter_sec` (30 sn) kadraj içinde kalmasını arıyor
-(`vision/rules/loiter.py`). Tam boy kadraj gerekmez — masa başında
-oturmak yeterlidir.
+Kural düzeltildi (12.6) ve tetiklenebiliyor, ama duyarlılık ölçülemez:
+geçerli tek bir olumlu örnek yok (zone_01 hareketli kamera). Gereken:
+sabit kamerayla, **en az 30 sn bölgede veya aynı yerde duran** bir kişi.
+Dizüstü kamerası yeterli, masa başında oturmak da olur (bölge yoksa çapa
+modu: merkezin kendi boyu kadar kaymaması). Ölçüm:
+`eval/latency_watch.py --camera webcam_01`.
 
-Ölçüm için gereken: kamera açık, 35+ saniye kıpırdamadan durulan bir
-çekim, sonra `eval/latency_watch.py` ile olayın düşüp düşmediğine bakmak.
-Olumsuz örnek zaten bol (mevcut pilot klipler LOITERING üretmiyor, yani
-yanlış pozitif oranı ölçülü: sıfır).
+### 2. Alan farkı — yeniden eğitim gerektirir
 
-### 2. Alan farkı — model 1080p/4K'da 12 sahte FALL
+12.5'te kaynağı ölçüldü: girdi kayması değil, model pilot alanda
+sınıfları ayıramıyor; eşik yalnızca çalışma noktasını kaydırıyor
+(~2.4:1 sabit takas). Gerçek çözüm pilot alandan etiketli eğitim
+verisi. Veri toplama + etiketleme işi, kısa değil.
 
-320x240 gözetim kaydıyla eğitilmiş model yüksek çözünürlükte yanılıyor
-(`docs/TEZ.md` §4.2). Çözüm yolu ikisinden biri: pilot alandan eğitim
-verisi eklemek ya da ölçek artırma. Araştırma işi, kısa değil.
+### 3. Tez metni
 
-### 3. Tez metni — hazır, yazılmayı bekliyor
-
-`docs/TEZ_METIN.md` içinde §4.1'in yerine geçecek metin ve "Yöntem
-Değişiklikleri ve Gerekçeleri" bölümü hazır. Kullanıcı kararıyla proje
-bitene kadar bekletiliyor.
+`docs/TEZ_METIN.md` hazır; 12.4 (gecikme), 12.5 (alan farkı) ve 12.6
+(LOITERING, sabit kamera sınırı) sonuçları henüz o metne işlenmedi.
+Sayılar `docs/TEZ.md`'de.
 
 ### 4. Yapılamayacaklar — iddia edilmeyecek
 
@@ -3010,8 +3058,9 @@ bitene kadar bekletiliyor.
 - **4K'da gecikme**: bu donanımda hat kaynağın kendi FPS'ini tutturamıyor
 - **8 saatten uzun koşu**: RSS'teki saatte ~25 MB sürüklenme sürüyor mu
   bilinmiyor
-- **Faz 2 yüz tanıma**: bilinçli kapsam dışı (ayrı model, ayrı veri kümesi,
-  KVKK); Kur/Bırak modunun kendisi Aşama 12.3'te yapıldı
+- **Hareketli / PTZ kamera**: bölge kuralları görüntü koordinatında,
+  yalnız sabit kamerada anlamlı
+- **Faz 2 yüz tanıma**: bilinçli kapsam dışı
 
 ### Sistemi açmak
 
