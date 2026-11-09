@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from vision.rules.engine import RuleEngine, Thresholds, Zone  # noqa: E402
 from vision.rules.fall import FallRule  # noqa: E402
 from vision.rules.fight import FightRule  # noqa: E402
-from vision.rules.loiter import LoiterRule  # noqa: E402
+from vision.rules.loiter import STALE_FRAMES, LoiterRule  # noqa: E402
 from vision.rules.run import GAIT_LOOKBACK, RunRule  # noqa: E402
 from vision.rules.zone import ZoneRule  # noqa: E402
 from vision.stages.features import KP, FeatureEngine, FrameFeatures, TrackWindow  # noqa: E402
@@ -247,6 +247,91 @@ def test_loiter_rule() -> None:
         ts = i * 0.05
         early = rule_short.check(_window(8, [_feat(i, ts=ts, centroid=anchor)]), th)
     assert early is None
+
+
+# --- LOITERING: sinir titremesi (eval/loiter_probe.py, docs/DURUM.md) -------
+# zone_01'de 1 numarali iz 32.5 sn kesintisiz goruldu ama bolgede en uzun
+# ARALIKSIZ kalisi 11.7 sn cikti: ayak noktasi bolge sinirinda tek kare (0.04
+# sn) disari tasiyor ve 30 sn'lik birikim sifirlaniyordu. Kapinin onunde
+# hareketsiz duran kisi (klibin kendi ihlal cercevesi kirmiziyken) 1.88 sn
+# "bolge disi" sayildi. Asagidaki testler o davranisi sabitler.
+
+_KARE = 0.04                       # 25 FPS
+_BOLGE = Zone(name="kapi", zone_type="forbidden",
+              polygon=np.array([[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]]))
+_ICERI = np.array([0.5, 0.5])
+_DISARI = np.array([0.05, 0.05])
+
+
+def _bolge_kosusu(ayaklar: list[np.ndarray], loiter_sec: int = 5) -> list:
+    """Her kare icin ayak noktasini verir, LOITERING adaylarini toplar."""
+    th = Thresholds(loiter_sec=loiter_sec)
+    rule = LoiterRule([_BOLGE])
+    adaylar = []
+    for i, ayak in enumerate(ayaklar):
+        cand = rule.check(_window(9, [_feat(i, ts=i * _KARE, foot=ayak)]), th)
+        if cand is not None:
+            adaylar.append(cand)
+    return adaylar
+
+
+def test_loiter_bolgede_kesintisiz_kalis_tetikler() -> None:
+    adaylar = _bolge_kosusu([_ICERI] * 200)          # 8 sn > 5 sn
+    assert adaylar and adaylar[0].anomaly_type == "LOITERING"
+    assert adaylar[0].zone_name == "kapi"
+
+
+def test_loiter_tek_karelik_sinir_titremesi_sayaci_sifirlamaz() -> None:
+    """Asil hata: 0.04 sn'lik cikis 30 sn'lik birikimi sifirliyordu."""
+    ayaklar = [_ICERI] * 200
+    for i in range(10, 200, 15):                      # her 0.6 sn'de bir tek kare disari
+        ayaklar[i] = _DISARI
+    adaylar = _bolge_kosusu(ayaklar)
+    assert adaylar, "tek karelik titreme sayaci sifirlamamali"
+
+
+def test_loiter_bolge_kenarinda_iki_saniyelik_kayma_sifirlamaz() -> None:
+    """zone_01 cikis 5: kapinin onunde duran kisi, ayak noktasi 1.88 sn
+    sinirin disinda. Iz kaybi toleransindan (STALE_FRAMES) kisa."""
+    ayaklar = [_ICERI] * 60 + [_DISARI] * 47 + [_ICERI] * 100
+    assert _bolge_kosusu(ayaklar), "STALE_FRAMES'ten kisa cikis sifirlamamali"
+
+
+def test_loiter_gercek_ayrilis_sayaci_sifirlar() -> None:
+    """Toleranstan uzun bolge disi = kisi gercekten ayrildi. Geri donunce
+    sayac sifirdan baslamali; 3 + 3 sn iki ayri kalistir, 6 sn degil."""
+    disari = [_DISARI] * (STALE_FRAMES + 10)
+    ayaklar = [_ICERI] * 75 + disari + [_ICERI] * 75  # 3 sn + uzun cikis + 3 sn
+    assert _bolge_kosusu(ayaklar) == []
+
+
+def test_loiter_girmeden_onceki_sure_sayilmaz() -> None:
+    """Bolge modunda sayac BOLGEYE GIRINCE baslar. Disarida gecen sure
+    bekleme sayilmamali (disarida 4 sn + iceride 2 sn = 6 sn DEGIL)."""
+    ayaklar = [_DISARI] * 100 + [_ICERI] * 50
+    assert _bolge_kosusu(ayaklar) == []
+
+
+def test_loiter_cikista_aday_uretilmez() -> None:
+    """Tolerans icindeki cikista sayac korunur ama aday YALNIZ bolgedeyken
+    uretilir -- bolge disindaki bir kare icin zone_name doldurulmaz."""
+    ayaklar = [_ICERI] * 130 + [_DISARI] * 20
+    adaylar = _bolge_kosusu(ayaklar)
+    assert adaylar and all(a.idx < 130 for a in adaylar)
+
+
+def test_loiter_cipa_modunda_kisa_kayma_sifirlamaz() -> None:
+    """Bolge yokken ayni kusur: merkez tek kare cipadan kayarsa sifirlaniyordu."""
+    th = Thresholds(loiter_sec=5)
+    rule = LoiterRule()
+    cipa, uzak = np.array([500.0, 300.0]), np.array([900.0, 300.0])  # 400 px > yukseklik 180
+    adaylar = []
+    for i in range(200):
+        merkez = uzak if i % 20 == 10 else cipa
+        cand = rule.check(_window(10, [_feat(i, ts=i * _KARE, centroid=merkez)]), th)
+        if cand is not None:
+            adaylar.append(cand)
+    assert adaylar, "cipa modunda tek karelik kayma sifirlamamali"
 
 
 def test_fight_rule() -> None:

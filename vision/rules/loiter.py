@@ -7,8 +7,21 @@ tetikledikten sonra RETRIGGER_SEC boyunca susar; yoksa 30 sn'lik bekleyis
 her karede yeni aday uretir.
 
 Iki mod, bolge tanimli olup olmamasina gore SABIT secilir (kare kare
-degil): bolge varsa ayagin bolgede kesintisiz kalisi, yoksa merkezin
-kendi yuksekliginden fazla kaymamasi.
+degil): bolge varsa ayagin bolgede kalisi, yoksa merkezin kendi
+yuksekliginden fazla kaymamasi.
+
+Kisa sapmalar sayaci SIFIRLAMAZ. Once tek bir kare yetiyordu ve kural
+pratikte hic tetiklenmiyordu -- olculdu (eval/loiter_probe.py, zone_01):
+iz 32.5 sn kesintisiz goruldu, ama ayak noktasi bolge sinirinda tek kare
+(0.04 sn) disari tasip birikimi sifirladigi icin bolgede en uzun aralik-
+siz kalis 11.7 sn cikti. Kapinin onunde hareketsiz duran kisi, klibin
+kendi ihlal cercevesi kirmiziyken 1.88 sn "bolge disi" sayildi.
+
+Tolerans STALE_FRAMES'in KENDISIDIR, bu klipten secilmedi: kural izin
+tamamen kaybolmasini zaten 90 kare tolere ediyor. Kisiyi 3.6 sn hic
+gormemeyi "hala orada" sayip ayak noktasinin tek kare sinir disina
+kaymasini "ayrildi" saymak tutarsizdi; ikisi de ayni anlama gelir:
+varligi su an dogrulayamiyorum.
 """
 
 from __future__ import annotations
@@ -31,6 +44,8 @@ class _State:
     anchor: np.ndarray
     last_seen_idx: int
     last_trigger_ts: float | None = None
+    # Bolge disina / cipadan uzaga ilk cikilan kare; None = su an yerinde.
+    away_since_idx: int | None = None
 
 
 class LoiterRule:
@@ -50,11 +65,28 @@ class LoiterRule:
             zone = None
             still = st is not None and self._drift(last, st.anchor) <= last.height
 
-        if st is None or not still:
+        if st is None:
+            # Bolge modunda sayac bolgeye GIRINCE baslar; disarida gecen sure
+            # bekleme sayilmaz. Cipa modunda ilk gorulme cipanin kendisidir.
+            if self.zones and zone is None:
+                return None
             self._state[window.track_id] = _State(last.ts, last.centroid, last.idx)
             return None
 
         st.last_seen_idx = last.idx
+        if not still:
+            if st.away_since_idx is None:
+                st.away_since_idx = last.idx
+            if last.idx - st.away_since_idx > STALE_FRAMES:
+                # Gercekten ayrildi: bolge modunda sayac sifirlanir, cipa
+                # modunda yeni konum yeni cipa olur.
+                if self.zones:
+                    del self._state[window.track_id]
+                else:
+                    self._state[window.track_id] = _State(last.ts, last.centroid, last.idx)
+            return None      # yerinde degilken aday uretilmez
+        st.away_since_idx = None
+
         dwell = last.ts - st.enter_ts
         if dwell < th.loiter_sec:
             return None

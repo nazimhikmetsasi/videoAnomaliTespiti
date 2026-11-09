@@ -350,12 +350,13 @@ Bunlar gizlenmez; tezin dürüstlüğü buradadır.
 | Konu | Durum |
 |---|---|
 | **FIGHT duyarlılığı** | **Düzeltildi: 0.07 → 0.80** (Aşama 11). Kök neden `HOLD` değil öznitelikti: uzuv hızı FIGHT'ı NORMAL'den ayırmıyor. Kural yolu hâlâ 0.12'dedir ve öyle kalır — kavgayı model tespit eder |
-| **LOITERING duyarlılığı** | Hiç ölçülmedi — hiçbir kümede olumlu örnek yok. Yanlış pozitif oranı sıfır |
-| **Model pilot alanda 12 sahte FALL** | Alan farkı; çözümü pilot alandan eğitim verisi ya da ölçek artırma |
+| **LOITERING duyarlılığı** | Ölçülemedi — geçerli olumlu örnek yok. Kural önce pratikte hiç tetiklenmiyordu (sınır titremesi, Aşama 12.6, düzeltildi); sabit kamerada 5 pilot klipte yanlış pozitif sıfır |
+| **Model pilot alanda 12 sahte FALL** | Kaynağı ölçüldü (§4.4): girdi kayması değil, model bu alanda sınıfları ayıramıyor. Çözüm pilot alandan eğitim verisi |
 | **Uçtan uca alarm gecikmesi** | Ölçüldü (§3.7): medyan 13.99 sn. Dizüstü kamerasıyla değil, gerçek zamanlı akıtılan pilot klibiyle |
 | **ReID kalitesi** | Kalabalık sahnede ID değişimi hiç ölçülmedi; pilot kliplerde en fazla 1–2 kişi var ve `--no-reid` sonucu hiç değiştirmedi |
 | **En büyük dosya < 150 satır** | Tutmadı: `vision/camera.py` 421 satır. Aşama dosyaları hedefte, kamera hattının kendisi değil |
 | **RTSP** | Kod yolu var, donanım yok, hiç denenmedi |
+| **Hareketli / PTZ kamera** | Bölge kuralları (ZONE_VIOLATION, LOITERING) görüntü koordinatında tanımlıdır ve yalnızca sabit kamerada anlamlıdır. Ölçüldü: elde taşınan kamerayla çekilmiş pilot klipte kişi yürürken LOITERING tetiklendi (değerlendirme penceresi dışında, tabloya girmez) |
 | **8 saat kesintisiz koşu** | Yapıldı (§3.5): 8.0 saat, 4 kamera, FPS sapması +0.6%. Diskin sınırsız büyümesi saklama politikasıyla kapatıldı (§3.6) |
 
 ---
