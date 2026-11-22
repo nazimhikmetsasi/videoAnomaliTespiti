@@ -45,3 +45,7 @@ frontend/dist/
 Thumbs.db
 desktop.ini
 .vs/
+
+# Yerel arastirma notlari (depoya girmez)
+research_notes/
+reports/
