@@ -103,6 +103,8 @@ class CameraHealthOut(BaseModel):
     # StreamServer gercekten acikken port, kapaliyken (JWT_SECRET yok) veya
     # belge yoksa None -- panel bunu gorunce soket ACMAZ (ASAMA8_PLAN.md 8.6 SS3).
     ws_port: int | None = None
+    # Birikimli gercek aday sayisi (nabiz haric); eski belgede yok -> None.
+    candidates: int | None = None
 
 
 # ------------------------------------------------------------------ cameras

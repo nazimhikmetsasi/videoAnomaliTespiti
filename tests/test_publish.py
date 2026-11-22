@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from stream.filters import MIN_SEC_DEFAULT_MAP, session_passes  # noqa: E402
-from vision.publish import CandidatePublisher, candidate_to_dict  # noqa: E402
+from vision.publish import CandidatePublisher, candidate_to_dict, tick_due  # noqa: E402
 from vision.rules.engine import Candidate  # noqa: E402
 
 DEFAULT_MIN_HITS = 2
@@ -36,6 +36,38 @@ def test_candidate_to_dict_track_key_sorted() -> None:
     assert body["event_time"] == 1001.0, body["event_time"]     # epoch_base + ts
     assert body["zone_name"] is None
     json.dumps(body)   # tum govde seri hale gelebilmeli
+
+
+def test_event_time_explicit_wins_else_epoch_base_plus_ts() -> None:
+    c = _cand([1], ts=1.0)
+    c.event_time = 5000.5
+    assert candidate_to_dict(c, "cam-1", epoch_base=1000.0)["event_time"] == 5000.5
+    assert candidate_to_dict(_cand([1], ts=1.0), "cam-1", epoch_base=1000.0)["event_time"] == 1001.0
+
+
+def test_tick_body_and_last_event_time() -> None:
+    pub = CandidatePublisher("localhost:1", "cam-t", queue_max=10)
+    sent: list[dict] = []
+    pub._produce = sent.append
+    pub.tick(1234.5)
+    assert sent == [{
+        "schema": 1, "camera_id": "cam-t", "anomaly_type": "_TICK",
+        "track_key": "_tick", "track_ids": [], "score": 0.0, "idx": -1,
+        "ts": 0.0, "event_time": 1234.5, "zone_name": None,
+        "decided_by": "rule", "metrics": {}, "thresholds_used": {},
+    }], sent
+    assert pub._last_event_time == 1234.5
+
+
+def test_tick_policy_counts() -> None:
+    def run(tick_sec: float) -> int:
+        last, n = None, 0
+        for t in (0.0, 0.4, 1.1, 1.5, 2.2):
+            if tick_due(last, t, tick_sec):
+                last, n = t, n + 1
+        return n
+    assert run(1.0) == 3
+    assert run(0.0) == 0
 
 
 def test_candidate_publisher_unreachable_broker_does_not_raise() -> None:

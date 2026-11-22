@@ -43,7 +43,7 @@ def _load_module(monkeypatch, **env):
         spark_types = types.ModuleType("pyspark.sql.types")
         sql.SparkSession = object
         for name in ("coalesce", "col", "concat_ws", "count", "create_map",
-                     "element_at", "from_json", "lit", "max", "max_by", "min",
+                     "current_timestamp", "element_at", "expr", "from_json", "lit", "max", "max_by", "min",
                      "session_window", "struct", "to_json"):
             setattr(functions, name, lambda *a, **k: None)
         for name in ("ArrayType", "DoubleType", "IntegerType", "MapType",

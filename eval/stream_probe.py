@@ -17,8 +17,15 @@ tek-dusme
     gelince geldi (A1 hatasi), 2 = hic gelmedi.
 
     13.1 sonrasi not: duzeltme su isaretini KAMERALARIN nabziyla ilerletir.
-    "probe_cam" nabiz basmaz; dogrulama icin yaninda en az bir kamera acik
-    olmalidir.
+    "probe_cam" nabiz basmaz; dogrulama icin yaninda en az bir kamera nabiz
+    basiyor olmalidir (kamera acik, --tick-sec 0 degil).
+
+gelecek
+    Gelecek tarihli ret (SPARK_FUTURE_SEC) calisiyor mu? probe_cam adina
+    event_time = simdi + 3600 tek aday basilir, sonra tek-dusme akisi aynen
+    kosar (yaninda nabiz basan kamera sart). Ret calismiyorsa su isareti bir
+    saat ileri sicrar, dusme gec sayilir, olay gelmez. Cikis kodlari tek-dusme
+    ile ayni: 0 = olay geldi (ret calisiyor), 1/2 = hata.
 
 saat-kaymasi
     Coklu kamerada sahne saatleri ayrisinca adaylar su isaretinin altina
@@ -40,6 +47,7 @@ saat-kaymasi
     Cikis kodu: 0 = gec aday yok, 1 = gec aday var (A2 hatasi).
 
     venv/Scripts/python.exe -m eval.stream_probe tek-dusme
+    venv/Scripts/python.exe -m eval.stream_probe gelecek
     venv/Scripts/python.exe -m eval.stream_probe saat-kaymasi --sure 280
 """
 
@@ -76,7 +84,7 @@ def _aday(tip: str, kamera: str, iz: str, event_time: float) -> dict:
             "metrics": {}, "thresholds_used": {}}
 
 
-def tek_dusme(sessizlik: float) -> int:
+def tek_dusme(sessizlik: float, gelecek_sn: float = 0.0) -> int:
     kamera, iz = "probe_cam", "777"
     cons = _consumer(["anomaly-events"])
     cons.poll(1.0)          # atamanin oturmasi icin
@@ -98,6 +106,9 @@ def tek_dusme(sessizlik: float) -> int:
                 return time.time() - bas_t
         return None
 
+    if gelecek_sn:
+        bas(_aday("FALL", kamera, iz, time.time() + gelecek_sn))
+        print(f"  gelecek tarihli (+{gelecek_sn:.0f} sn) tek aday basildi", flush=True)
     t0 = time.time()
     for k in range(3):      # hits=3 >= spark_min_hits=2, FALL min_sec=0
         bas(_aday("FALL", kamera, iz, t0 + k * 0.1))
@@ -186,10 +197,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="olayin kendiliginden gelmesi icin beklenen sure (sn)")
     p2 = alt.add_parser("saat-kaymasi", help="coklu kamerada saat kaymasi (A2)")
     p2.add_argument("--sure", type=float, default=280.0, help="dinleme suresi (sn)")
+    p3 = alt.add_parser("gelecek", help="gelecek tarihli aday reddi")
+    p3.add_argument("--sessizlik", type=float, default=45.0,
+                    help="olayin kendiliginden gelmesi icin beklenen sure (sn)")
     args = parser.parse_args(argv)
 
     if args.deney == "tek-dusme":
         return tek_dusme(args.sessizlik)
+    if args.deney == "gelecek":
+        return tek_dusme(args.sessizlik, gelecek_sn=3600.0)
     return saat_kaymasi(args.sure)
 
 

@@ -13,8 +13,12 @@ durumdur. Esik mantiginin referans kopyasi stream/filters.py'dedir; burada
 sutun ifadesiyle (create_map/element_at) ayni sey uygulanir -- streaming
 DAG'inde UDF yerine native ifade tercih edildi (Python GIL'e gecis yok).
 
-_EOS toplamadan once ELENMEZ (SS5.5): filtre groupBy'dan SONRA uygulanir,
-yoksa damga (watermark) hic ilerlemez ve _EOS'un tek islevi yok olur.
+Ic tipler ("_" ile baslar: _TICK, _EOS) toplamaya GIRER ama cikisa yazilmaz
+(SS5.5): su isareti (watermark) yalniz toplamaya giren veriyle ilerler. Suzgec
+anomaly_type'a duz bir where ile YAZILAMAZ: Catalyst, yalniz gruplama sutununa
+bakan yuklemi toplamanin ve withWatermark'in ALTINA iter; ic tipler damgaya
+hic ulasmaz ve duzeltme sessizce calismaz. Bu yuzden suzgec bir toplama
+sutununa bakar (`internal`), asagi itilemez.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ import urllib.request
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import coalesce, col, concat_ws, count, create_map
+from pyspark.sql.functions import current_timestamp, expr
 from pyspark.sql.functions import element_at, from_json, lit
 from pyspark.sql.functions import max as spark_max
 from pyspark.sql.functions import max_by
@@ -55,6 +60,15 @@ WATERMARK_SEC = int(os.getenv("SPARK_WATERMARK_SEC", "2"))
 MIN_HITS = int(os.getenv("SPARK_MIN_HITS", "2"))
 MIN_SEC_DEFAULT = float(os.getenv("SPARK_MIN_SEC_DEFAULT", "1.0"))
 MIN_SEC = json.loads(os.getenv("SPARK_MIN_SEC", json.dumps(MIN_SEC_DEFAULT_MAP)))
+# Gelecek tarihli adaylar withWatermark'tan ONCE atilir: tek bir ileri tarihli
+# event_time damgayi o kadar ileri iter, gercek adaylar "gec veri" olur.
+# 30 sn = _EOS onu (15 sn) + kap/konteyner saat kaymasi payi; -1 = kapali
+# (degerlendirme sorgusu sahne saatiyle yayinlar).
+FUTURE_SEC = int(os.getenv("SPARK_FUTURE_SEC", "30"))
+# Nabiz her saniye veri getirir; tetiksiz Spark durmadan yigin kosar.
+TRIGGER_SEC = int(os.getenv("SPARK_TRIGGER_SEC", "1"))
+INPUT_TOPIC = os.getenv("SPARK_INPUT_TOPIC", "anomaly-candidates")
+OUTPUT_TOPIC = os.getenv("SPARK_OUTPUT_TOPIC", "anomaly-events")
 SCHEMA_VERSION = 1
 # Toplama (aggregation) surumu. Spark durum deposu SEMA DENETIMI yapar:
 # groupBy/agg yapisi degisince eski checkpoint ile yeni sorgu uyusmaz ve
@@ -64,7 +78,9 @@ SCHEMA_VERSION = 1
 # basarisiz olmadi (Asama 10.5'in 1 saatlik kosusu yakaladi).
 # Cozum: agg yapisi her degistiginde bu sayi artirilir, checkpoint yolu
 # kendiliginden yenilenir. Elle volume silmeye gerek kalmaz.
-AGG_VERSION = 2
+# v3: yeni `internal` sutunu (ic tip suzgeci); canli checkpoint'in damgasi eski
+# degerlendirme kosularinca ileri itilmis olabilir, temiz baslangic.
+AGG_VERSION = 3
 CHECKPOINT_DIR = os.path.join(
     os.getenv("CHECKPOINT_DIR", "/checkpoints"), f"agg{AGG_VERSION}")
 
@@ -183,12 +199,16 @@ def main() -> None:
         print(f"  [spark_job] esikler API'den alindi: window={GAP_SEC}s "
               f"min_hits={MIN_HITS} min_sec={MIN_SEC}")
 
+    print(f"  [spark_job] konular: {INPUT_TOPIC} -> {OUTPUT_TOPIC} "
+          f"future_sec={FUTURE_SEC} trigger_sec={TRIGGER_SEC} "
+          f"checkpoint={CHECKPOINT_DIR}")
+
     spark = SparkSession.builder.appName("anomaly-spark").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
 
     raw = (spark.readStream.format("kafka")
            .option("kafka.bootstrap.servers", BOOTSTRAP)
-           .option("subscribe", "anomaly-candidates")
+           .option("subscribe", INPUT_TOPIC)
            .option("startingOffsets", "latest")
            # Kafka log'u KALICI DEGIL (docker-compose.yml karari) ama checkpoint
            # volume'u kalici: broker yeniden kurulunca topic offset'i 0'a doner,
@@ -201,8 +221,11 @@ def main() -> None:
 
     cand = (raw.select(from_json(col("value").cast("string"), CANDIDATE_SCHEMA).alias("c"))
             .select("c.*")
-            .withColumn("event_time", col("event_time").cast("timestamp"))
-            .withWatermark("event_time", f"{WATERMARK_SEC} seconds"))
+            .withColumn("event_time", col("event_time").cast("timestamp")))
+    if FUTURE_SEC >= 0:
+        cand = cand.where(col("event_time") <= current_timestamp()
+                          + expr(f"INTERVAL {FUTURE_SEC} SECONDS"))
+    cand = cand.withWatermark("event_time", f"{WATERMARK_SEC} seconds")
 
     sessions = (cand.groupBy(
                     session_window(col("event_time"), f"{GAP_SEC} seconds"),
@@ -219,10 +242,15 @@ def main() -> None:
                      # iz bir oturumda hem kural hem model adayi uretebilir.
                      max_by(col("decided_by"), col("score")).alias("decided_by"),
                      max_by(col("metrics"), col("score")).alias("metrics"),
-                     max_by(col("thresholds_used"), col("score")).alias("thresholds_used")))
+                     max_by(col("thresholds_used"), col("score")).alias("thresholds_used"),
+                     # Ic tip bayragi: where(anomaly_type) asagi itilirdi (modul
+                     # docstring'i); toplama sutunu itilemez.
+                     spark_max(col("anomaly_type").startswith("_").cast("int"))
+                     .alias("internal")))
 
     min_sec_map = build_min_sec_map()
     confirmed = sessions.where(
+        (col("internal") == 0) &
         (col("hits") >= MIN_HITS) &
         ((col("end_ts") - col("start_ts")) >=
          coalesce(element_at(min_sec_map, col("anomaly_type")), lit(MIN_SEC_DEFAULT))))
@@ -244,9 +272,10 @@ def main() -> None:
 
     (out.writeStream.format("kafka")
      .option("kafka.bootstrap.servers", BOOTSTRAP)
-     .option("topic", "anomaly-events")
+     .option("topic", OUTPUT_TOPIC)
      .option("checkpointLocation", CHECKPOINT_DIR)
      .outputMode("append")
+     .trigger(processingTime=f"{TRIGGER_SEC} seconds")
      .start().awaitTermination())
 
 

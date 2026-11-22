@@ -11,10 +11,29 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
-**Aşama 13.0 — belge düzeni tamamlandı; sıradaki iş 13.1 (akış doğruluğu,
-KRİTİK).** (2026-11-23)
+**Aşama 13.1 — kod tamam, canlı ölçüm bekliyor.** (2026-11-23)
 
-13.0'da yapılanlar:
+Uygulama sözleşmesi `docs/ASAMA13_1_PLAN.md`. Yazılan:
+
+- ortak duvar saati: `Candidate.event_time`, `CameraPipeline.consume()`
+  kare başına bir kez `time.time()` atar; süre ölçütü yine sahne zamanı
+  `ts` ile
+- kamera başına saniyede bir `_TICK` nabzı (`--tick-sec`, 0 = kapalı)
+- Spark: iç tipler toplama sütunu `internal` ile çıkıştan elenir (yalnız
+  `anomaly_type`'a bakan `where` Catalyst tarafından watermark'ın altına
+  itilirdi); gelecek tarihli ret (`SPARK_FUTURE_SEC` 30); tetik 1 sn;
+  `AGG_VERSION` 3 (temiz checkpoint)
+- değerlendirme yalıtımı: `spark-eval` servisi (`--profile eval`),
+  `eval-candidates` / `eval-events` konuları
+- kamera başına aday sayacı sağlık belgesinde; `soak_test.py` kamera
+  başına aday / olay artışı ve "aday üretiyor, olay üretmiyor" uyarısı
+- `eval/stream_probe.py gelecek` deneyi
+
+Testler: 252 geçti, 7 atlandı (veritabanı gerektirenler Docker kapalıyken
+atlanır). **Spark tarafının birim testi yok; doğrulaması canlı deneylerde**
+(aşağıda "Bir sonraki adım").
+
+13.0'da yapılanlar (2026-11-23):
 
 - Aşama 0–12.6 sonuçları `docs/DURUM_ARSIV.md`'ye **aynen** taşındı
   (2980 satır, satır satır denetlendi); bu dosya birkaç yüz satıra indi
@@ -78,7 +97,7 @@ modelde 30 → 10 FPS'te %83 → %37).
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | **13.0 tamam** — sıradaki 13.1 (`docs/YOL_HARITASI.md`) |
+| 13 | Bütünsel inceleme ve düzeltmeler | 13.0 tamam; **13.1 kod tamam, canlı ölçüm bekliyor** (`docs/YOL_HARITASI.md`) |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -124,10 +143,17 @@ dokunmazlar.
 
 ## Bir sonraki adım
 
-**Aşama 13.1 — akış doğruluğu.** Tasarım `docs/ASAMA13_PLAN.md` bölüm A
-("Düzeltme tasarımı"), kabul ölçütü `docs/YOL_HARITASI.md`'de. İlk iş
-13.1'in uygulama planını yazmak: dosya listesi, imzalar, sözleşme,
-`eval/stream_probe.py` ile öncesi/sonrası ölçümü.
+**Aşama 13.1'in canlı ölçümleri** — `docs/ASAMA13_1_PLAN.md` §6, ana
+dizinde, Docker açıkken: Spark'ı yeniden kur (eval konuları dahil), saat
+kayması, `stream_probe tek-dusme` (yanda nabız basan bir kamera),
+`stream_probe gelecek`, `saat-kaymasi` (3 dosya kamerası), gecikme
+(`latency_watch`, `fall_01` gerçek zamanlı), nabız maliyeti
+(`--tick-sec 1` / `0`), `spark-eval` yalıtımı, 30 dk kısa koşu. Sonuçlar
+buraya ve `docs/TEZ.md` §3.7'ye.
+
+Dikkat: `gelecek` deneyi başarısız olursa canlı su işareti bir saat ileri
+sıçramış olur; Spark checkpoint'i sıfırlanmadan (`AGG_VERSION` artırımı)
+canlı hat o süre olay üretmez.
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
 `docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5 ve §3.7'deki sayılar

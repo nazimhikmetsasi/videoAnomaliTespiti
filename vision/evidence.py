@@ -350,11 +350,16 @@ class EvidenceWriter:
 
     def _write_job(self, job: _Job) -> None:
         ep = job.episode
-        # events.started_at ile ayni saat (epoch_base + sahne zamani) --
+        # events.started_at ile ayni saat (aday event_time'i) --
         # dosya adi ve POST govdesi buna gore, klip/kare secimi DUVAR
         # saatine gore kalir (job.frames zaten wall_start/wall_end ile secildi).
-        event_start = self.epoch_base + ep.start_ts
-        event_end = self.epoch_base + ep.end_ts
+        # Spark min(event_time) ile ayni: adaylarin duvar saati; yoksa eski
+        # epoch_base + sahne zamani.
+        first, last = ep.candidates[0], ep.candidates[-1]
+        event_start = (first.event_time if first.event_time is not None
+                       else self.epoch_base + ep.start_ts)
+        event_end = (last.event_time if last.event_time is not None
+                     else self.epoch_base + ep.end_ts)
         stem = f"{ep.camera_id}_{ep.anomaly_type}_{int(event_start * 1000)}"
 
         # YALNIZ gercekten yazilan dosyanin yolu bildirilir. Yazilmayan bir

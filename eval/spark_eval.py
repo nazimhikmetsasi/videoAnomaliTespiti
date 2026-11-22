@@ -4,8 +4,10 @@
 `markdown_table`), kopyalamaz -- iki yerde iki farkli puanlama olmasin. Esik
 mantigi da tek yerde: `stream/filters.py` (`session_passes`); `spark_job.py`
 sutun ifadesiyle aynisini uygular (ASAMA4_PLAN.md SS5.3). Bu script Spark'a
-hic dokunmaz, yalnizca Kafka uzerinden konusur -- Spark ayrica
-`docker compose up -d spark` ile calisiyor olmalidir.
+hic dokunmaz, yalnizca Kafka uzerinden konusur. Canli akisa karismamak icin
+yalitilmis eval-candidates/eval-events konularini kullanir; bunlari okuyan
+Spark ayrica `docker compose --profile eval up -d spark-eval` ile
+calisiyor olmalidir.
 
 Table A'nin "oturum" sutunu, o an Spark ne esikle calisiyorsa onu yansitir.
 Spark permissif calisirken (SPARK_MIN_HITS=0, SPARK_MIN_SEC_DEFAULT=0 VE
@@ -14,16 +16,18 @@ icin no-op'tur cunku onlar zaten SPARK_MIN_SEC haritasinda acikca var) TUM
 oturumlar gelir; "dogrulanmis olay" sutunu bu oturumlara `session_passes`
 VARSAYILAN esiklerle cevrimdisi uygulanarak hesaplanir.
 
-anomaly-events konusuna her kosu YENI mesaj EKLER, eskiyi SILMEZ (Kafka
+Cikis konusuna (eval-events) her kosu YENI mesaj EKLER, eskiyi SILMEZ (Kafka
 topic'i temizlenmez). `consume_events` bu yuzden yalnizca BU kosunun
 event_time >= base_epoch olan mesajlarini kabul eder -- aksi halde onceki
 kosularin ciktisi (farkli esiklerle uretilmis) yeni olculumle karisir.
 
 Calistirma -- iki AYRI Spark konfigurasyonuyla iki AYRI cagri onerilir:
-    # 1) varsayilan esikli Spark calisirken (docker compose up -d spark):
+    # 1) varsayilan esikli spark-eval calisirken
+    #    (docker compose --profile eval up -d spark-eval):
     venv\\Scripts\\python.exe -m eval.spark_eval --from-cache
-    # 2) permissif Spark calisirken (SPARK_MIN_HITS=0, SPARK_MIN_SEC_DEFAULT=0,
-    #    SPARK_MIN_SEC='{}'), ayri bir dosyaya, esik supurmesi icin:
+    # 2) permissif spark-eval calisirken (spark-eval servisine SPARK_MIN_HITS=0,
+    #    SPARK_MIN_SEC_DEFAULT=0, SPARK_MIN_SEC='{}' ortam degiskenleri verilip
+    #    yeniden olusturulur), ayri bir dosyaya, esik supurmesi icin:
     venv\\Scripts\\python.exe -m eval.spark_eval --from-cache --sweep --events-out eval/out/events_sweep.jsonl
 """
 
@@ -100,7 +104,7 @@ def load_cached_candidates() -> dict[str, list[Candidate]]:
 
 
 def publish_all(by_clip: dict[str, list[Candidate]], bootstrap: str,
-                 base_epoch: float) -> tuple[dict, dict[str, float]]:
+                 base_epoch: float, topic: str = "eval-candidates") -> tuple[dict, dict[str, float]]:
     """Her klibi ayri epoch dilimine basar, klipler arasi olay zamani karismaz.
 
     `finish_wall`: klip basina EOS'un basildigi DUVAR saati. Tablo D bunu
@@ -114,7 +118,8 @@ def publish_all(by_clip: dict[str, list[Candidate]], bootstrap: str,
     with CAND_FILE.open("w", encoding="utf-8") as f:
         for i, (camera_id, cands) in enumerate(sorted(by_clip.items())):
             clip_epoch = base_epoch + i * CLIP_GAP_SEC
-            pub = CandidatePublisher(bootstrap, camera_id, epoch_base=clip_epoch)
+            pub = CandidatePublisher(bootstrap, camera_id, epoch_base=clip_epoch,
+                                   topic=topic)
             pub(cands)
             pub.close(eos=True)
             finish_wall[camera_id] = time.time()
@@ -128,7 +133,7 @@ def publish_all(by_clip: dict[str, list[Candidate]], bootstrap: str,
 
 
 def consume_events(bootstrap: str, idle_timeout: float, min_start_time: float,
-                    events_out: Path) -> list[dict]:
+                    events_out: Path, topic: str = "eval-events") -> list[dict]:
     """anomaly-events'i okur, YALNIZCA bu kosuya ait olaylari tutar.
 
     Topic her kosuda mesaj biriktirir, hic silinmez (Kafka retention 24 sn
@@ -142,7 +147,7 @@ def consume_events(bootstrap: str, idle_timeout: float, min_start_time: float,
         "group.id": f"spark-eval-{uuid.uuid4()}",
         "auto.offset.reset": "earliest",
     })
-    consumer.subscribe(["anomaly-events"])
+    consumer.subscribe([topic])
     events: list[dict] = []
     stale = 0
     last_msg = time.monotonic()
@@ -272,6 +277,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--bootstrap", default="localhost:9092")
     parser.add_argument("--from-cache", action="store_true",
                         help="GPU atla, eval/out/candidates.jsonl'den oku")
+    parser.add_argument("--topic-in", default="eval-candidates")
+    parser.add_argument("--topic-out", default="eval-events")
     parser.add_argument("--idle-timeout", type=float, default=45.0)
     parser.add_argument("--sweep", action="store_true")
     parser.add_argument("--events-out", default=str(EVENTS_FILE),
@@ -299,12 +306,13 @@ def main(argv: list[str] | None = None) -> int:
             raw_counts[clip][c.anomaly_type] = raw_counts[clip].get(c.anomaly_type, 0) + 1
 
     base_epoch = next_epoch_base()
-    pub_stats, finish_wall = publish_all(by_clip, args.bootstrap, base_epoch)
+    pub_stats, finish_wall = publish_all(by_clip, args.bootstrap, base_epoch, args.topic_in)
     for clip, (published, queued, failed, last_error) in pub_stats.items():
         if failed:
             print(f"  UYARI: {clip} yayininda {failed} basarisiz mesaj: {last_error}")
     events_out = Path(args.events_out)
-    events = consume_events(args.bootstrap, args.idle_timeout, base_epoch, events_out)
+    events = consume_events(args.bootstrap, args.idle_timeout, base_epoch, events_out,
+                           args.topic_out)
     print(f"  {len(events)} olay alindi ({events_out})")
 
     events_by_clip: dict[str, list[dict]] = defaultdict(list)

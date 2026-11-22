@@ -26,7 +26,7 @@ import numpy as np
 
 from vision.evidence import EvidenceWriter, default_mongo_url
 from vision.health_client import HealthClient
-from vision.publish import CandidatePublisher
+from vision.publish import CandidatePublisher, tick_due
 from vision.rules.engine import Candidate, RuleEngine, Zone
 from vision.settings_client import SettingsClient
 from vision.source import Frame, VideoSource
@@ -150,8 +150,12 @@ class CameraPipeline:
 
     def __init__(self, source: str, args, *, reid_model: str,
                  stream_server: StreamServer | None = None,
-                 camera_id: str = "", zones_stem: str = "", keeper=None) -> None:
+                 camera_id: str = "", zones_stem: str = "", keeper=None,
+                 clock=time.time) -> None:
         self.args, self.source_arg = args, source
+        self.clock = clock          # enjekte edilebilir: nabiz politikasi testi icin
+        self._last_tick: float | None = None
+        self.candidates_total = 0   # yayinlanan gercek aday (nabiz/_EOS haric)
         # Kameralar arasi PAYLASILAN budayici (vision/retention.py); kanit
         # yazicisi start() icinde kuruluyor, oraya tasinmali.
         self.keeper = keeper
@@ -312,6 +316,13 @@ class CameraPipeline:
             t5 = time.perf_counter()
             windows = self.feature_engine(tracks, frame.idx, ts, image.shape[:2])
             candidates = self.rule_engine(windows)
+            # Tum kameralar ayni duvar saatini kullanir: Spark su isareti ortak,
+            # sahne saati kullanilirsa yavas akan kamera geri kalir. Kare basina
+            # BIR kez okunur; nabiz da ayni degeri kullanir.
+            now = self.clock()
+            for cand in candidates:
+                cand.event_time = now
+            self.candidates_total += len(candidates)
             t6 = time.perf_counter()
             self.smooth_ms.append((t5 - t4) * 1000)
             self.rules_ms.append((t6 - t5) * 1000)
@@ -319,6 +330,10 @@ class CameraPipeline:
             if self.publisher is not None:
                 tp0 = time.perf_counter()
                 self.publisher(candidates)
+                # Nabiz isleme dongusunden cikar: hat donarsa nabiz da durur.
+                if tick_due(self._last_tick, now, getattr(args, "tick_sec", 1.0)):
+                    self.publisher.tick(now)
+                    self._last_tick = now
                 self.publish_ms.append((time.perf_counter() - tp0) * 1000)
             for cand in candidates:
                 for tid in cand.track_ids:
@@ -333,7 +348,8 @@ class CameraPipeline:
 
         if self.health_client is not None:
             self.health_client.note(
-                self.frames / (time.perf_counter() - self.started + 1e-9), infer_ms)
+                self.frames / (time.perf_counter() - self.started + 1e-9), infer_ms,
+                candidates=self.candidates_total)
 
         self.frames += 1
         self.per_frame_counts.append(len(tracks))

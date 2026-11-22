@@ -19,6 +19,7 @@ from vision.rules.engine import Candidate
 
 CANDIDATE_TOPIC = "anomaly-candidates"
 EOS_TYPE = "_EOS"
+TICK_TYPE = "_TICK"      # nabiz: aday yokken de Spark su isaretini ilerletir
 EOS_LEAD_SEC = 15.0      # akis sonu isaretcisi bu kadar ileri damgalanir (SS5.5)
 SCHEMA_VERSION = 1
 
@@ -28,13 +29,19 @@ def _track_key(track_ids: list[int]) -> str:
     return "-".join(str(t) for t in sorted(track_ids))
 
 
+def tick_due(last_tick: float | None, now: float, tick_sec: float) -> bool:
+    """Nabiz zamani geldi mi? tick_sec<=0 kapali; ilk cagri hemen nabiz atar."""
+    return tick_sec > 0 and (last_tick is None or now - last_tick >= tick_sec)
+
+
 def candidate_to_dict(cand: Candidate, camera_id: str, epoch_base: float) -> dict:
     """Candidate -> Kafka JSON govdesi (ASAMA4_PLAN.md SS4.1).
 
-    event_time sahne zamanidir, duvar saati degildir: dosya kaynagi klibi
-    kamera FPS'inden farkli hizda isleyebilir, duvar saatiyle pencerelenirse
-    Spark penceresi olculemez sekilde kayar. Canli kaynakta epoch_base=0.0
-    verilir, cand.ts zaten epoch oldugu icin iki mod ayni koda duser.
+    event_time DUVAR saatidir (CameraPipeline.consume() atar): Spark su isareti
+    butun kameralar icin ortaktir; sahne zamaniyla pencerelenirse yavas akan
+    dosya kamerasinin adaylari "gec veri" diye atilir. Sure olcutleri (min_sec)
+    yine sahne zamani `ts` ile hesaplanir. event_time yoksa (eval betikleri)
+    eski davranis: epoch_base + ts.
     """
     # int()/float(): FeatureEngine/tracker degerleri numpy skalerdir
     # (float32/int64), json.dumps bunlari seri hale getiremez.
@@ -47,7 +54,8 @@ def candidate_to_dict(cand: Candidate, camera_id: str, epoch_base: float) -> dic
         "score": float(cand.score),
         "idx": int(cand.idx),
         "ts": float(cand.ts),
-        "event_time": epoch_base + float(cand.ts),
+        "event_time": (cand.event_time if cand.event_time is not None
+                       else epoch_base + float(cand.ts)),
         "zone_name": cand.zone_name,
         "decided_by": cand.decided_by,
         "metrics": {k: float(v) for k, v in cand.metrics.items()},
@@ -107,6 +115,26 @@ class CandidatePublisher:
             body = candidate_to_dict(cand, self.camera_id, self.epoch_base)
             self._last_event_time = max(self._last_event_time, body["event_time"])
             self._produce(body)
+
+    def tick(self, event_time: float) -> None:
+        """Nabiz: aday olmasa da bu kameranin duvar saatini Spark'a iletir.
+        Bloklamaz, hata firlatmaz (_produce hatayi sayar)."""
+        self._last_event_time = max(self._last_event_time, event_time)
+        self._produce({
+            "schema": SCHEMA_VERSION,
+            "camera_id": self.camera_id,
+            "anomaly_type": TICK_TYPE,
+            "track_key": "_tick",
+            "track_ids": [],
+            "score": 0.0,
+            "idx": -1,
+            "ts": 0.0,
+            "event_time": event_time,
+            "zone_name": None,
+            "decided_by": "rule",
+            "metrics": {},
+            "thresholds_used": {},
+        })
 
     def close(self, *, eos: bool = True, timeout: float = 10.0) -> None:
         """Akis sonu isaretcisini basar ve kuyrugu bosaltir.

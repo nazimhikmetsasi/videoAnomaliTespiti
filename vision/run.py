@@ -109,6 +109,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="bu yastan eski kareler silinir; klipten uzun yasarlar")
     parser.add_argument("--storage-max-gb", type=float, default=retention.MAX_GB,
                         help="toplam depo tavani; asilirsa en eski klipler silinir")
+    parser.add_argument("--tick-sec", type=float, default=1.0,
+                        help="Spark su isareti nabzi araligi, 0 = kapali (A/B olcumu)")
     parser.add_argument("--heartbeat-sec", type=float, default=5.0, help="0 = kapali (SS7)")
     return parser.parse_args(argv)
 

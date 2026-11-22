@@ -19,5 +19,9 @@ create anomaly-candidates 3 3600000
 # Spark -> event worker. Dogrulanmis olaylar, uzun omurlu (24 saat).
 create anomaly-events 3 86400000
 
+# eval/spark_eval.py yalitimi: canli su isaretini etkilememek icin ayri konular.
+create eval-candidates 3 3600000
+create eval-events 3 86400000
+
 echo "--- mevcut topic'ler ---"
 "$KT" --bootstrap-server "$BOOTSTRAP" --list

@@ -75,6 +75,7 @@ class Candidate:
     thresholds_used: dict[str, float]
     zone_name: str | None = None
     decided_by: str = "rule"     # rule / model / hybrid — Asama 9 ablation kaynagi
+    event_time: float | None = None   # duvar saati (epoch sn); None = eski davranis
 
 
 class RuleEngine:

@@ -49,3 +49,27 @@ def test_ozet_ilk_ve_son_saati_ayirir(tmp_path, capsys) -> None:
 def test_tek_satirli_kayit_ozetlenmez(tmp_path, capsys) -> None:
     assert report(_csv(tmp_path, [_row(0)])) == 1
     assert "en az 2 satir" in capsys.readouterr().out
+
+
+def test_aday_artip_olay_artmayan_kamera_uyarilir(tmp_path, capsys) -> None:
+    rows = [_row(0, kamera_ozet="cam1:10:5;cam2:10:5"),
+            _row(30, kamera_ozet="cam1:50:5;cam2:40:9;cam3:7:0")]
+    assert report(_csv(tmp_path, rows)) == 0
+    out = capsys.readouterr().out
+    assert "UYARI: cam1 aday uretiyor, olay uretmiyor" in out
+    assert "UYARI: cam2" not in out
+    # cam3 gec basladi: ilk satirda yok, 0'dan sayilir, olay yok -> uyari
+    assert "UYARI: cam3" in out
+
+
+def test_eski_csv_sutunsuz_cokmez(tmp_path, capsys) -> None:
+    path = tmp_path / "old.csv"
+    fields = [f for f in FIELDS if f != "kamera_ozet"]
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for m in (0, 30):
+            writer.writerow({k: v for k, v in _row(m).items() if k in fields})
+    assert report(path) == 0
+    out = capsys.readouterr().out
+    assert "UYARI" not in out and "olay sayisi" in out

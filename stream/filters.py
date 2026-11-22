@@ -20,11 +20,16 @@ MIN_SEC_DEFAULT_MAP: dict[str, float] = {
     "FIGHT": 0.5,
 }
 
+# Ic tipler (_TICK, _EOS) Spark'a su isaretini ilerletmek icin gider, olay olmaz.
+INTERNAL_PREFIX = "_"
+
 
 def session_passes(hits: int, duration_sec: float, anomaly_type: str,
                     min_hits: int, min_sec: dict[str, float] | None = None,
                     min_sec_default: float = 1.0) -> bool:
     """SS5.3 filtresi: hits >= min_hits VE duration_sec >= tipe gore min_sec."""
+    if anomaly_type.startswith(INTERNAL_PREFIX):
+        return False
     table = MIN_SEC_DEFAULT_MAP if min_sec is None else min_sec
     threshold = table.get(anomaly_type, min_sec_default)
     return hits >= min_hits and duration_sec >= threshold

@@ -39,7 +39,8 @@ sys.stderr.reconfigure(errors="replace")
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CSV = ROOT / "logs" / "soak.csv"
 FIELDS = ("ts", "gecen_dk", "kamera", "fps_toplam", "fps_min", "dusen_toplam",
-          "infer_ms_ort", "goru_rss_mb", "gpu_mb", "olay_sayisi", "storage_mb")
+          "infer_ms_ort", "goru_rss_mb", "gpu_mb", "olay_sayisi", "storage_mb",
+          "kamera_ozet")
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -95,6 +96,12 @@ def sample(base: str, headers: dict, storage: Path, started: float) -> dict:
     fps = [c.get("fps_actual") or 0.0 for c in live]
     infer = [c.get("infer_ms") or 0.0 for c in live]
     events = httpx.get(f"{base}/api/events?limit=1", headers=headers, timeout=10).json()
+    # Kamera basina "ad:aday:olay"; aday sayaci yoksa (eski goru) 0.
+    parts = []
+    for c in live:
+        per = httpx.get(f"{base}/api/events?camera_id={c['camera_id']}&limit=1",
+                        headers=headers, timeout=10).json()
+        parts.append(f"{c['name']}:{c.get('candidates') or 0}:{per.get('total', 0)}")
     return {
         "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
         "gecen_dk": round((time.time() - started) / 60, 1),
@@ -107,7 +114,19 @@ def sample(base: str, headers: dict, storage: Path, started: float) -> dict:
         "gpu_mb": round(gpu_mb(), 1),
         "olay_sayisi": events.get("total", 0),
         "storage_mb": round(dir_mb(storage), 1),
+        "kamera_ozet": ";".join(parts),
     }
+
+
+def _parse_ozet(text: str | None) -> dict[str, tuple[int, int]]:
+    """'ad:aday:olay;...' -> {ad: (aday, olay)}. Bos/eksik sutun -> {}."""
+    out = {}
+    for item in (text or "").split(";"):
+        name, _, rest = item.rpartition(":")
+        name, _, cand = name.rpartition(":")
+        if name and cand.isdigit() and rest.isdigit():
+            out[name] = (int(cand), int(rest))
+    return out
 
 
 def report(csv_path: Path) -> int:
@@ -134,6 +153,15 @@ def report(csv_path: Path) -> int:
         print(f"  {label:<22} {a:12.1f} {b:12.1f} {change:>10}")
     print(f"\n  olay sayisi          : {rows[0]['olay_sayisi']} -> {rows[-1]['olay_sayisi']}")
     print(f"  dusen kare (toplam)  : {rows[-1]['dusen_toplam']}")
+    a0, a1 = _parse_ozet(rows[0].get("kamera_ozet")), _parse_ozet(rows[-1].get("kamera_ozet"))
+    if a1:
+        print(f"\n  {'kamera':<22} {'aday artisi':>12} {'olay artisi':>12}")
+    for name, (cand, ev) in a1.items():
+        # Gec baslayan kamera ilk satirda yok: farki 0'dan say.
+        c0, e0 = a0.get(name, (0, 0))
+        print(f"  {name:<22} {cand - c0:12} {ev - e0:12}")
+        if cand > c0 and ev <= e0:
+            print(f"  UYARI: {name} aday uretiyor, olay uretmiyor")
     print("\n  Not: canli kaynakta yuksek dusen kare NORMALDIR -- kamera ~30 FPS")
     print("  uretir, hat ~5 tuketir, gerisi tasarim geregi atilir.")
     return 0

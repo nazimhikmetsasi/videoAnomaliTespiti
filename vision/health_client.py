@@ -33,6 +33,7 @@ class HealthClient:
         self._ws_port = ws_port
 
         self._fps_actual = 0.0
+        self._candidates: int | None = None
         self._infer_ms = 0.0
         self.sent = 0
         self.failures = 0
@@ -40,9 +41,10 @@ class HealthClient:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
-    def note(self, fps: float, infer_ms: float) -> None:
+    def note(self, fps: float, infer_ms: float, candidates: int | None = None) -> None:
         """run.py her karede besler; en son deger sonraki atimda kullanilir."""
         self._fps_actual, self._infer_ms = fps, infer_ms
+        self._candidates = candidates
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._loop, name="health-client", daemon=True)
@@ -88,6 +90,7 @@ class HealthClient:
                 "dropped": self._source.frames_dropped,
                 "infer_ms": self._infer_ms, "gpu_mem": gpu_mem,
                 "ws_port": self._ws_port,
+                "candidates": self._candidates,
                 # ponytail: VideoSource kuyruk derinligini disari acmiyor (Asama 6
                 # kapsami disinda), dogrudan ic alana bakiliyor. Kamu API'si
                 # gerekirse `VideoSource.queue_depth` property'si eklenir.

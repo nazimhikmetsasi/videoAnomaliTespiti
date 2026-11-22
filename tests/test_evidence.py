@@ -125,6 +125,21 @@ def test_unwritten_paths_are_reported_as_none() -> None:
     assert writer.written_clips == 0 and writer.written_frames == 0
 
 
+def test_post_start_time_is_first_candidate_event_time() -> None:
+    source = SimpleNamespace(fps=25.0, snapshot=lambda: [])
+    writer = EvidenceWriter(source, storage_dir="unused", epoch_base=1000.0)
+    posted = {}
+    writer._post_evidence = lambda ep, s, e, clip, frame, trunc, ref: posted.update(s=s, e=e)
+    tracker = EpisodeTracker(gap_sec=3.0, min_hits=1)
+    a, b = _cand([1], 0.0), _cand([1], 0.5)
+    a.event_time, b.event_time = 9000.0, 9000.5
+    tracker.update("cam1", [a], now_ts=0.0)
+    tracker.update("cam1", [b], now_ts=0.5)
+    ep = tracker.update("cam1", [], now_ts=4.0)[0]
+    writer._write_job(_Job(episode=ep, frames=[], truncated=False, pose_samples=[]))
+    assert posted == {"s": 9000.0, "e": 9000.5}, posted
+
+
 def test_pose_buffers_of_vanished_tracks_are_pruned() -> None:
     """Gorulen her track_id icin acilan tampon sozlukte kalici olsaydi
     gunlerce donen bir kamerada sinirsiz birikirdi."""

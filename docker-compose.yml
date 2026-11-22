@@ -130,6 +130,39 @@ services:
       - spark_checkpoints:/checkpoints
       - spark_ivy:/ivy
 
+  # Degerlendirme (eval/spark_eval.py) icin yalitilmis ikinci Spark: ayri konular
+  # ve checkpoint, canli su isaretine dokunmaz. Varsayilan `up`'ta ACILMAZ:
+  #   docker compose --profile eval up -d spark-eval
+  # Esik API'si (SETTINGS_API_URL) bilerek YOK: permissif supurme esikleri
+  # ortam degiskeniyle (SPARK_MIN_HITS vb.) bu servise verilir, API ezmesin.
+  spark-eval:
+    image: apache/spark:3.5.4-scala2.12-java17-python3-ubuntu
+    container_name: anomaly-spark-eval
+    profiles: ["eval"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    user: root
+    entrypoint: ["/opt/spark/bin/spark-submit"]
+    command:
+      - "--master"
+      - "local[2]"
+      - "--packages"
+      - "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.4"
+      - "--conf"
+      - "spark.jars.ivy=/ivy"
+      - "/app/spark_job.py"
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+      CHECKPOINT_DIR: /checkpoints
+      SPARK_INPUT_TOPIC: eval-candidates
+      SPARK_OUTPUT_TOPIC: eval-events
+      SPARK_FUTURE_SEC: "-1"
+    volumes:
+      - ./stream:/app:ro
+      - spark_eval_checkpoints:/checkpoints
+      - spark_ivy:/ivy
+
   api:
     build: ./api
     container_name: anomaly-api
@@ -211,3 +244,4 @@ volumes:
   # Kalici gerekirse: KAFKA_LOG_DIRS + named volume + uid 1000 sahiplik ayari.
   spark_checkpoints:
   spark_ivy:   # ilk indirmeden sonra --packages'i cevrimdisi baslatir
+  spark_eval_checkpoints:
