@@ -104,6 +104,14 @@ yani kaçırmıyor.
 
 ## 3.5 Uzun koşu dayanıklılığı (8 saat, 4 kamera)
 
+> **⚠ Aşama 13 bulgusu — olay sayıları düzeltilecek.** Görüntü hattının
+> ölçümleri (FPS, bellek, GPU, kesintisizlik) geçerlidir. Ancak bu koşuda
+> `fall_01` ve `run_01` ilk ~20 dakikadan sonra **7 saat boyunca sıfır olay**
+> üretti: dosya kameralarının sahne saatleri ayrıştı ve Spark geride kalanın
+> adaylarını geç veri diye attı (`docs/ASAMA13_PLAN.md` A2). Aşağıdaki
+> "506 yeni olay" neredeyse tamamen tek kameradandır. 13.1'den sonra koşu
+> tekrarlanacak; **bu bölümün olay sayıları o zamana kadar teze aktarılmamalı.**
+
 `scripts/soak_test.py`, 60 saniyede bir ölçüm, 459 ölçüm, kesintisiz.
 Kameralar: `webcam_01` (dizüstü kamerası), `zone_01`, `run_01`, `fall_01`.
 
@@ -167,6 +175,13 @@ aşım 60 saniyede ~22 MB'dır, 20 GB tavanın binde biri.
 ---
 
 ## 3.7 Uçtan uca alarm gecikmesi
+
+> **⚠ Aşama 13 bulgusu — değer büyük olasılıkla şişkin.** Spark'ın su işareti
+> yalnız yeni veri gelince ilerliyor (`docs/ASAMA13_PLAN.md` A1, ölçüldü).
+> Ölçüm döngüdeki 7,9 sn'lik klibe dayandığı için her düşme olayı bir sonraki
+> döngünün adaylarını beklemiş olabilir: 7,9 sn + 5 sn taban ≈ 14 sn. Gerçek
+> değerin ~5–6 sn olması bekleniyor — **hipotez**. 13.1'den sonra yeniden
+> ölçülecek; **13,99 sn o zamana kadar teze aktarılmamalı.**
 
 Gecikme `events` tablosunun kendi damgalarından hesaplanır: `started_at`
 (anomalinin başlangıcı), `ended_at` (bitişi) ve `created_at` (olay

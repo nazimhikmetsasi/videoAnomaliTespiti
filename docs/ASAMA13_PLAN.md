@@ -36,6 +36,9 @@ Deney (veritabanı kirletilmeden — kamera adı veritabanında yok, Spark'ın
           olay bundan 5,3 sn SONRA geldi (düşmeden 50,8 sn sonra)
 ```
 
+Deney depoda (`eval/stream_probe.py tek-dusme`) ikinci kez, bağımsız
+koşuldu: 45 sn olay yok, ilgisiz aday basıldıktan **6,7 sn** sonra geldi.
+
 **Sonuç:** tek kameralı bir evde düşüp hareketsiz kalan biri için alarm
 **hiç** çalmaz. Bu, sistemin birinci kullanım senaryosudur.
 
@@ -74,8 +77,13 @@ konusu birden dinlendi:
 | run_01 | 30 | 2175 | **1636 (%75)** | 11 | 6 → 16 sn |
 
 Sahne saatleri tahmin edilen hızda ayrışıyor (11,1/25 = 0,44 ile
-11,1/30 = 0,37) ve geride kalma **doğrusal büyüyor**. 4 dakikada %75–80
-kayıp; saatler içinde %100.
+11,1/30 = 0,37) ve geride kalma **doğrusal büyüyor**.
+
+"Su işaretinin altında" sütunu **anlık** su işaretiyle hesaplandı (görülen
+en büyük olay zamanı − 2 sn). Spark'ın gerçek su işareti bir mikro-yığın
+geriden gelir; dolayısıyla bu sayı atılan aday için **üst sınırdır**, kesin
+kayıp oranı değildir. Kesin kanıt yukarıdaki 8 saatlik koşunun olay
+sayılarıdır: iki kamera 7 saat boyunca sıfır olay.
 
 **Tez etkisi:** `docs/TEZ.md` §3.5'teki "8 saat, 4 kamera, kesintisiz,
 506 olay" sonucunun görüntü hattı kısmı doğru (FPS, bellek, kararlılık),
@@ -145,9 +153,12 @@ ilerliyor.
 6. **Kamera başına izleme.** `soak_test.py` kamera başına olay oranını
    kaydeder ve aday üreten ama olay üretmeyen kamerayı işaretler.
 
-**Doğrulama:** iki deney betiği `eval/stream_probe.py` olarak kalıcılaşır
-(tek düşme + çoklu kamera kayması) ve düzeltmeden sonra **aynı deneyler**
-koşar. Beklenen: tek düşme ~5–6 sn içinde yayılır; üç kamerada geç aday
+**Doğrulama:** iki deney betiği depoda: `eval/stream_probe.py`
+(`tek-dusme`, `saat-kaymasi`). Çıkış kodu hatayı kodlar: bugün `tek-dusme`
+1 döner (A1), düzeltmeden sonra 0 dönmeli. Düzeltmeden sonra **aynı
+deneyler** koşar. `tek-dusme` için yanında en az bir kamera açık olmalı:
+düzeltme su işaretini kameraların nabzıyla ilerletir, deneyin kendi sahte
+kamerası nabız basmaz. Beklenen: tek düşme ~5–6 sn içinde yayılır; üç kamerada geç aday
 sıfıra iner. Ardından gecikme ve kısa bir çoklu kamera koşusu yeniden
 ölçülür, `docs/TEZ.md` §3.5 ve §3.7 düzeltilir.
 

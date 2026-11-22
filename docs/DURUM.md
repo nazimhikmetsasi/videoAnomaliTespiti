@@ -3,27 +3,39 @@
 Bu dosya her aşama sonunda güncellenir. Yeni oturum açıldığında önce
 `docs/PLAN.md` sonra bu dosya okunur ve kaldığı yerden devam edilir.
 
-**Son güncelleme:** 2026-09-10
+**Son güncelleme:** 2026-11-10
 
 ---
 
 ## Şu an neredeyiz
 
-**Aşama 8.4 — canlı izleme tamamlandı.** Panel artık gerçek kareyi
-gösteriyor: ızgara (1 / 2x2 / 3x3), kutu / iskelet / bölge / ID katmanları,
-kopmada kendiliğinden yeniden bağlanma ve `/ws/alerts` kırmızı alarmı.
+**Aşama 13 — bütünsel inceleme yapıldı, plan yazıldı; sıradaki iş 13.1.**
+(2026-11-10)
 
-Onay kriteri ölçüldü: **tarayıcıda 25.2 FPS** (v1: 0.67; hedef 20+).
-Tarayıcı sunucunun ürettiği her kareyi çiziyor — istemci darboğaz değil.
-Tam hat (Kafka + Spark + consumer + Telegram) aynı makinede çalışırken
-görü döngüsünün kendisi ~10 FPS'e iniyor; bu, kayıtlı CPU rekabeti açık
-sorusunun tazelenmiş kanıtı.
+Proje baştan, koddan okundu. Bütün bulgular, kanıt düzeyleri ve sıralama:
+**`docs/ASAMA13_PLAN.md`** — yeni oturumda bu dosyadan devam edilir.
 
-Alarm zinciri uçtan uca çalıştı: 11 yeni olay, 11 gerçek Telegram
-bildirimi, panelde toast + kırmızı kutu.
+En önemli bulgu: **Spark akışı olayları sessizce kaybediyor**, iki yoldan,
+ikisi de deneyle ölçüldü:
 
-Sıradaki iş 8.5 (yazma ekranları): kamera ekle/düzenle/sil, bölge poligon
-çizimi, eşik ayar formu, olay durumu güncelleme, kullanıcı yönetimi.
+- **Sessiz sahnede tek düşme hiç alarm üretmiyor** (A1). Su işareti yalnız
+  yeni veri gelince ilerliyor; düşmeden sonra hiçbir kameradan aday gelmezse
+  olay yazılmıyor. `eval/stream_probe.py tek-dusme` iki kez üretti: 45 sn
+  olay yok, ilgisiz bir aday basılınca 5–7 sn sonra geliyor.
+- **Çoklu kamerada olaylar kayboluyor** (A2). Dosya kameralarının sahne
+  saatleri farklı hızda akıyor; ortak su işareti geride kalanın adaylarını
+  "geç veri" diye atıyor. 8 saatlik koşuda iki kamera 7 saat sıfır olay
+  üretti.
+
+Bu yüzden `docs/TEZ.md` §3.5 (8 saatlik koşunun olay sayıları) ve §3.7
+(13,99 sn gecikme) 13.1'den sonra yeniden ölçülüp düzeltilecek; iki bölüme
+de uyarı düşüldü. **O sayılar düzeltilmeden teze aktarılmamalı.**
+
+**Çalışma ortamı notları:**
+
+- Proje dizini taşındı: `C:\Users\pc\OneDrive\Masaüstü\projeler\videoAnomaliTespiti`
+- Kullanıcının terminali **Windows PowerShell 5.1**: `&&` çalışmıyor,
+  kullanıcıya verilen komutlar `;` ile birleştirilir.
 
 ## Aşama durumu
 
@@ -42,6 +54,9 @@ Sıradaki iş 8.5 (yazma ekranları): kamera ekle/düzenle/sil, bölge poligon
 | 8 | Panel (kullanıcı şablonu) | Tamamlandı (8.1–8.6) |
 | 9 | TCN modeli ve yeni sınıflar | Tamamlandı (9.1–9.5) |
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
+| 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
+| 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
+| 13 | Bütünsel inceleme ve geliştirme | **Plan yazıldı** (`docs/ASAMA13_PLAN.md`) — sıradaki 13.1 |
 
 ---
 
@@ -3025,34 +3040,73 @@ anlamlıdır.** Bölge görüntü koordinatlarında tanımlıdır; döner/yakın
 dağıtım sabit güvenlik kamerası olduğu için bu bir hata değil, bir
 **kapsam sınırıdır**.
 
+## Aşama 13 — Bütünsel inceleme (2026-11-10)
+
+Proje baştan, koddan okundu (`api/`, `vision/`, `stream/`, `models/`,
+`frontend/js/`, `infra/`, `docker-compose.yml`). Bulgular, kanıt düzeyleri
+(ölçüldü / koddan / hipotez) ve düzeltme tasarımı `docs/ASAMA13_PLAN.md`'de;
+burada yalnızca kayıt.
+
+### Ölçülenler
+
+| bulgu | ölçüm |
+|---|---|
+| A1 — sessiz sahnede tek düşme | 3 FALL adayı, sonra sessizlik: **45 sn olay yok**; ilgisiz tek aday basılınca 5,3 sn ve 6,7 sn sonra geldi (iki bağımsız koşu) |
+| A2 — çoklu kamerada kayıp, gerçek veri | 8 saatlik koşuda `fall_01` ve `run_01` ilk ~20 dk'dan sonra **7 saat sıfır olay**; `zone_01` saatte ~60 |
+| A2 — kontrollü deney | 3 dosya kamerası, 4 dk: zone_01 (25 FPS) ortak saati sürükledi; fall_01 adaylarının %80'i, run_01'inkilerin %75'i su işaretinin altında (anlık yaklaşım, üst sınır) |
+| C1 — sağlık sorgusu | 1 haftalık sentetik veride (483.840 belge) **445 ms → 1 ms**; dizinle eşleşen sıralama `DISTINCT_SCAN`'e geçiyor |
+
+### Neden şimdiye kadar görülmedi
+
+Bütün ölçümler döngüdeki kliplerle yapıldı: sürekli aday geldi, su işareti
+hep ilerledi (A1 gizlendi). `scripts/soak_test.py` yalnız **toplam** olay
+sayısını izliyordu; toplam, tek kamera sayesinde düzgün arttı (A2
+gizlendi). 12.4'teki 13,99 sn gecikmesi de büyük olasılıkla A1'in ürünü:
+her düşme, su işaretini ilerletecek bir sonraki klip döngüsünü bekledi
+(7,9 sn döngü + 5 sn taban ≈ 14 sn) — **hipotez, 13.1'den sonra ölçülecek.**
+
+### Deney betikleri depoda
+
+`eval/stream_probe.py` — `tek-dusme` ve `saat-kaymasi`. Çıkış kodu hatayı
+kodlar; bugün `tek-dusme` 1 döner, 13.1'den sonra 0 dönmeli. Veritabanına
+dokunmazlar.
+
+---
+
 ## Bir sonraki adım
 
-Aşama 10, 11 ve 12.1–12.6 kapandı. Kod tarafında açık iş kalmadı;
-kalanlar ölçüm ve tez.
+### 1. Aşama 13.1 — akış doğruluğu (KRİTİK, sıradaki iş)
 
-### 1. LOITERING duyarlılığı — kayıt bekliyor
+`docs/ASAMA13_PLAN.md` bölüm A ve "Düzeltme tasarımı": tek ortak
+pencereleme saati, kamera başına su işareti nabzı (`_TICK`), Spark'ta iç
+tiplerin açık süzgeci, gelecek tarihli verinin reddi, değerlendirmenin
+canlı hattan yalıtımı, `soak_test.py`'de kamera başına olay oranı.
 
-Kural düzeltildi (12.6) ve tetiklenebiliyor, ama duyarlılık ölçülemez:
-geçerli tek bir olumlu örnek yok (zone_01 hareketli kamera). Gereken:
-sabit kamerayla, **en az 30 sn bölgede veya aynı yerde duran** bir kişi.
-Dizüstü kamerası yeterli, masa başında oturmak da olur (bölge yoksa çapa
-modu: merkezin kendi boyu kadar kaymaması). Ölçüm:
-`eval/latency_watch.py --camera webcam_01`.
+Doğrulama: `eval/stream_probe.py` iki deneyi (öncesi/sonrası), ardından
+gecikme ve kısa çoklu kamera koşusunun yeniden ölçümü, sonra `docs/TEZ.md`
+§3.5 ve §3.7'nin düzeltilmesi.
 
-### 2. Alan farkı — yeniden eğitim gerektirir
+### 2. Aşama 13.2–13.5
 
-12.5'te kaynağı ölçüldü: girdi kayması değil, model pilot alanda
-sınıfları ayıramıyor; eşik yalnızca çalışma noktasını kaydırıyor
-(~2.4:1 sabit takas). Gerçek çözüm pilot alandan etiketli eğitim
-verisi. Veri toplama + etiketleme işi, kısa değil.
+Plandaki sırayla: güvenlik ve performans hızlı düzeltmeleri (XSS, açık
+portlar, sağlık sorgusu dizini, kamera başına JPEG kapısı), düşme sonrası
+hareketsizlik, yön ihlali ve bölgede koşma, panel alarm sesi/onayı ve
+kamera nabzı. Ayrıntı: `docs/ASAMA13_PLAN.md` bölüm F.
 
-### 3. Tez metni
+### 3. Tez metni — bekliyor
 
-`docs/TEZ_METIN.md` hazır; 12.4 (gecikme), 12.5 (alan farkı) ve 12.6
-(LOITERING, sabit kamera sınırı) sonuçları henüz o metne işlenmedi.
-Sayılar `docs/TEZ.md`'de.
+`docs/TEZ_METIN.md` hazır ama 12.4–12.6 ve Aşama 13 sonuçları işlenmedi.
+**§3.5 ve §3.7'deki sayılar 13.1'den önce teze aktarılmamalı.**
 
-### 4. Yapılamayacaklar — iddia edilmeyecek
+### 4. Veri/kayıt bekleyenler
+
+- **LOITERING duyarlılığı**: kural 12.6'da düzeltildi ama geçerli olumlu
+  örnek yok. Gereken: sabit kamerada en az 30 sn aynı yerde duran bir kişi
+  (dizüstü kamerası yeterli).
+- **Alan farkı**: 12.5'te ölçüldü, model pilot alanda sınıfları
+  ayıramıyor; çözüm pilot alandan etiketli eğitim verisi.
+
+### 5. Yapılamayacaklar — iddia edilmeyecek
 
 - **RTSP**: kod yolu var, IP kamera donanımı yok, hiç denenmedi
 - **4K'da gecikme**: bu donanımda hat kaynağın kendi FPS'ini tutturamıyor
