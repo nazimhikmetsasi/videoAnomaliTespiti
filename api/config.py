@@ -37,7 +37,7 @@ JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "720"))
 
 API_PORT = int(os.getenv("API_PORT", "8000"))
 
-# consumer.py (Asama 5, ikinci ajan) bunu kullanir; vision/ zaten kendi
+# consumer.py (Asama 5) bunu kullanir; vision/ zaten kendi
 # KAFKA_BOOTSTRAP_HOST'unu okur, burasi yalnizca api/ konteynerlerinedir.
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", os.getenv("KAFKA_BOOTSTRAP_INTERNAL", "localhost:9092"))
 

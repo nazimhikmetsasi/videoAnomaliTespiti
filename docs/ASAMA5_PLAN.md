@@ -1,12 +1,12 @@
 # Aşama 5 — Veri Katmanı ve API (uygulama sözleşmesi)
 
-Bu dosya, Aşama 5'in kod uygulamasını üstlenecek alt ajan için tek bağlam
-kaynağıdır. Alt ajan soğuk başlar: burada yazmayan şey yoktur sayılır.
+Bu dosya, Aşama 5'in kod uygulamasının tek bağlam kaynağıdır: burada
+yazmayan şey yoktur sayılır.
 
 Okuma sırası: `docs/PLAN.md` (§6 şema, §7 Aşama 5) → `docs/DURUM.md`
 (Aşama 4 sonucu, karar günlüğü) → bu dosya.
 
-**Ajana uyarı:** Ölçüm bölümündeki (§12) sayılar rapora girer. Kötü sayıyı
+**Uygulayıcıya not:** Ölçüm bölümündeki (§12) sayılar rapora girer. Kötü sayıyı
 saklama, eşiği güzelleştirmek için oynatma, "muhtemelen çalışıyor" yazma.
 Çalışmayan bir şey varsa çalışmadığını yaz.
 
@@ -540,7 +540,7 @@ Mevcut düzen korunur: saf fonksiyonlar test edilir, altyapı test edilmez.
 
 ## 12. Zorunlu ölçümler (rapora ve `docs/DURUM.md`'ye girer)
 
-Ajan bunları çalıştırır ve **ham çıktıyı** rapor eder. Sayı kötüyse kötü
+Uygulayıcı bunları çalıştırır ve **ham çıktıyı** rapor eder. Sayı kötüyse kötü
 yazılır.
 
 1. **Uçtan uca zincir.** `docker compose up -d` → `scripts/seed_pilot.py` →

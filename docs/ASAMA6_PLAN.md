@@ -1,12 +1,12 @@
 # Aşama 6 — Canlı Görüntü ve Kanıt (uygulama sözleşmesi)
 
-Bu dosya, Aşama 6'nın kod uygulamasını üstlenecek alt ajan için tek bağlam
-kaynağıdır. Alt ajan soğuk başlar: burada yazmayan şey yoktur sayılır.
+Bu dosya, Aşama 6'nın kod uygulamasının tek bağlam kaynağıdır: burada
+yazmayan şey yoktur sayılır.
 
 Okuma sırası: `docs/PLAN.md` (§4 veri hattı, §7 Aşama 6) → `docs/DURUM.md`
 (Aşama 5 sonucu, bilinen sınırlar, karar günlüğü) → bu dosya.
 
-**Ajana uyarı:** §12'deki sayılar rapora girer. Kötü sayıyı saklama, eşiği
+**Uygulayıcıya not:** §12'deki sayılar rapora girer. Kötü sayıyı saklama, eşiği
 güzelleştirmek için oynatma, "muhtemelen çalışıyor" yazma. Çalışmayan bir şey
 varsa çalışmadığını yaz.
 

@@ -42,15 +42,14 @@ FPS'te çalışırken aynı 50 karelik pencere 2 sn yerine 5–10 sn kapsıyor.
 - `docs/DURUM.md` (~3300 satır) ikiye ayrılır: `docs/DURUM.md` yalnız
   "şu an / sıradaki / sistemi açmak / açık sorular / karar günlüğü";
   aşama sonuçları **aynen** `docs/DURUM_ARSIV.md`'ye taşınır.
-- Plan belgelerinin dili sadeleştirilir: `ASAMA4/5/6_PLAN.md` ve
-  `DURUM.md`'deki uygulama ekibine dönük ifadeler ("alt ajan", "ajana
-  uyarı", "paralel ajan" vb.) nötr dile çevrilir ("uygulayıcıya not");
-  anlam ve ölçümler değişmez.
-- `docs/ASAMA13_PLAN.md` §F, bu dosyaya işaret eden tek satırla
-  değiştirilir.
+- Plan belgelerinin ve kod yorumlarının dili sadeleştirilir: iş bölümüne
+  dair ifadeler nötr dile çevrilir; anlam ve ölçümler değişmez.
+- `docs/ASAMA13_PLAN.md` §F, bu dosyaya işaret eden notla değiştirilir.
+- DURUM.md'deki "Açık sorular" ayıklanır: kapananlar "Kapanan sorular"a,
+  açık kalanlara ilgili aşama numarası.
 
-**Kabul:** DURUM.md tek okumada okunuyor (< 300 satır); arşivde hiçbir
-satır kaybolmamış (satır sayısı denetimi); test paketi yeşil.
+**Kabul:** DURUM.md tek okumada okunuyor; arşiv taşınan bloğun birebir
+kopyası (satır satır denetim); test paketi yeşil.
 
 **Commit:** `docs: asama 13.0 - durum arsivi ve belge duzeni`
 
@@ -85,8 +84,6 @@ satır kaybolmamış (satır sayısı denetimi); test paketi yeşil.
 - C1 sağlık sorgusu dizine uygun sıralama (ölçülen 445 → 1 ms)
 - C2 JPEG / meta kodlaması kamera başına istemci sayısına bağlanır
 - C3 `GET /api/evidence` sayfalama
-- panel betiklerindeki kopya yardımcılar (`_fetchAuthedBlobUrl`,
-  `ROLE_ADI` vb.) `app.js`'e
 - `scripts/build_frontend.py` önbellek etiketi (`?v=`) satır sonundan
   bağımsız hesaplanır; testler izlenen dosyaları değiştirmez
 

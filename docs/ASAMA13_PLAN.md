@@ -228,14 +228,7 @@ hem operasyon hem tez tabloları için.
 
 ## F. Sıralama
 
-| aşama | içerik | neden bu sırada |
-|---|---|---|
-| **13.1** | A — akış doğruluğu: ortak saat, nabız, süzgeç, gelecek reddi, değerlendirme yalıtımı, kamera başına izleme; deneylerle doğrulama; gecikme ve çoklu kamera yeniden ölçümü; TEZ düzeltmesi | sessiz veri kaybı; tezdeki iki sonucu etkiliyor |
-| **13.2** | Hızlı düzeltmeler: B1, B2, B4, C1, C2, C3 | her biri küçük ve bağımsız |
-| **13.3** | E1 — düşme sonrası hareketsizlik | en yüksek alan değeri |
-| **13.4** | E2 — yön ihlali ve bölgede koşma | altyapı hazır |
-| **13.5** | E3 + E4 — panel alarm sesi/onay ve kamera nabzı | operatör deneyimi |
-| sonra | B3 giriş sınırı, B5, E5 dışa aktarma, alan farkı için pilot alan verisi | |
-
-Her aşamanın sonunda durulur, durum `docs/DURUM.md`'ye yazılır, commit
-mesajı verilir.
+**2026-11-23'ten itibaren sıra ve numaralar `docs/YOL_HARITASI.md`'dedir.**
+Bu bölümdeki ilk tablo yerine geçti: 13.1 ve 13.2 aynı kaldı; araya zaman
+tabanlı pencereleme (13.3) girdi; E1 → 13.4, E2 → 13.5, E3 + E4 → 13.6,
+B3 / B5 / E5 → 13.7 oldu.

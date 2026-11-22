@@ -1,7 +1,7 @@
 # Aşama 7 — LLM Raporu ve Telegram Bildirimi (uygulama sözleşmesi)
 
 Bu belge `docs/PLAN.md` § 7 "Aşama 7 — LLM ve Telegram" maddesinin uygulama
-sözleşmesidir. Kod yazan ajan bu dosyayı ve `docs/DURUM.md`'yi okur.
+sözleşmesidir. Uygulama bu dosyayı ve `docs/DURUM.md`'yi esas alır.
 
 **Onay kriteri (PLAN.md'den):** telefona fotoğraflı Türkçe ihbar geliyor;
 LLM API çökse bile alarm zinciri sürüyor.

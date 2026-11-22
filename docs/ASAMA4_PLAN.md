@@ -463,7 +463,7 @@ Akış:
 - **Tablo D** — gecikme: `event_time` → mesajın `anomaly-events`'e düşüşü
   (duvar saati), medyan ve p95.
 
-**Ajana uyarı:** eşikler tabloyu güzelleştirmek için oynatılmaz. Ölçüm ne
+**Uygulayıcıya not:** eşikler tabloyu güzelleştirmek için oynatılmaz. Ölçüm ne
 söylüyorsa o yazılır; FALL veya RUN kötüleşirse **kötüleşmiş hâliyle**
 raporlanır. Aşama 3'te tam olarak bu tuzağa düşülmüştü.
 

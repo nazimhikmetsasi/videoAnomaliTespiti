@@ -2,7 +2,7 @@
 karsiligi (docs/PLAN.md SS6.1). create_all() COAGRILMAZ: tablolari init.sql
 yaratir, burasi yalnizca var olan semayi tarif eder (ASAMA5_PLAN.md SS2).
 Sema kaymasini yakalayan koruma tests/test_schema_sync.py'dedir (bu aşamanin
-disinda, ikinci ajan yazacak).
+disinda, sonraki adimda yazilacak).
 """
 
 from __future__ import annotations
