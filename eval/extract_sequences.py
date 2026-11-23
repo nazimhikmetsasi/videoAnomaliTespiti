@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import sys
 from pathlib import Path
 
@@ -140,7 +141,12 @@ def main() -> int:
                 fps, n_frames, per_track = clip_tracks(clip, detector)
                 events = urfd.get(clip.stem) if name == "FALL" else None
                 data = pack(fps, n_frames, per_track, events)
-                np.savez_compressed(target, **data)
+                # Once gecici dosyaya, sonra tek adimda yerine: yarida kesilen
+                # kosu bozuk npz birakiyordu ve devam eden kosu onu atliyordu.
+                tmp = target.with_suffix(".tmp")
+                with open(tmp, "wb") as fh:
+                    np.savez_compressed(fh, **data)
+                os.replace(tmp, target)
                 frame, track = data["frame"], data["track"]
             samples += len(frame)
             tracks += len(np.unique(track))

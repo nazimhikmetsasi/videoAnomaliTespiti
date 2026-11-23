@@ -11,7 +11,7 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
-**Aşama 13.3c kodu tamam, iz çıkarımı sürüyor; sıradaki eğitim ve B2.** (2026-11-24)
+**Aşama 13.3c kodu tamam (461338e); iz çıkarımı yarıda kesildi (218/1080), devam edilecek; sonra eğitim ve B2.** (2026-11-24)
 
 Plan: `docs/ASAMA13_3_PLAN.md`.
 
@@ -553,18 +553,33 @@ Sözleşme `docs/ASAMA13_3_PLAN.md` §6.
      RUN 2, eski 1).
    - Sınıf dengesizliği zaten ağırlıklı kayıpla karşılanıyor.
 
-**Yeniden çıkarım başladı:** `data/tracks/`, kayıt `logs/extract_tracks.log`.
-Eski model `runs/tcn_kare_tabanli/` altında; özet sağlaması aynı.
+Kod commit'li ve `main`'de: `461338e`. Eski model
+`runs/tcn_kare_tabanli/` altında; özet sağlaması aynı.
+
+**Yeniden çıkarım yarıda kesildi** (2026-11-24): oturum kapandı. Durum:
+- 1080 klipten 218'i yazılı: NORMAL 218/600; FALL, RUN, FIGHT 0.
+- Son dosya yarım yazılmıştı (`casia_angleview_p08_walk_a2.npz`, "not a
+  zip file"); silindi.
+- `extract_sequences` artık önce `.tmp` dosyasına yazıp sonra yerine
+  koyuyor (`os.replace`), böylece kesinti bozuk dosya bırakmıyor. Bu
+  düzeltme `fix: asama 13.3 - iz cikariminda atomik yazim` commit'iyle
+  girdi. Testler: 318 geçti, 8 atlandı.
 
 ---
 
 ## Bir sonraki adım
 
-**13.3c'nin kalanı** (`docs/ASAMA13_3_PLAN.md` §7). İz çıkarımı bitince
-ve kod `main`'e alındıktan sonra ana dizinde:
+**13.3c'nin kalanı** (`docs/ASAMA13_3_PLAN.md` §7):
 
-1. `venv/Scripts/python.exe -m models.tcn --train`. Hız başına doğrulama
-   F1'i buraya yazılır.
+0. **İz çıkarımına devam**, ana dizinde. Betik kaldığı yerden sürer: var
+   olan dosyaları atlıyor. Süre ~1,5–2 sa, arka planda:
+
+       venv/Scripts/python.exe -m eval.extract_sequences > logs/extract_tracks.log 2>&1
+
+   Bitince sınıf başına dosya sayısı eğitim klibi sayısına eşit olmalı:
+   600 / 66 / 144 / 270.
+1. Eğitim, ana dizinde: `venv/Scripts/python.exe -m models.tcn --train`.
+   Hız başına doğrulama F1'i buraya yazılır.
 2. B2:
 
        venv/Scripts/python.exe -m eval.tcn_eval --modes rule,hybrid --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b2.json
