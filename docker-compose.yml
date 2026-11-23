@@ -12,8 +12,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     ports:
-      # 127.0.0.1: kimliksiz Kafka ve veritabanlari yerel aga acik kaliyordu
+      # Yalniz geri dongu: kimliksiz Kafka ve veritabanlari yerel aga acik
+      # kaliyordu. [::1] de sart: Windows'ta "localhost" once ::1'e cozulur,
+      # yalniz 127.0.0.1 baglaninca her yeni baglanti 2-3 sn bekliyordu.
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "[::1]:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
@@ -33,6 +36,7 @@ services:
       MONGO_INITDB_DATABASE: ${MONGO_DB}
     ports:
       - "127.0.0.1:${MONGO_PORT:-27017}:27017"
+      - "[::1]:${MONGO_PORT:-27017}:27017"
     volumes:
       - mongo_data:/data/db
       - ./infra/mongo/init.js:/docker-entrypoint-initdb.d/10-init.js:ro
@@ -51,6 +55,7 @@ services:
     ports:
       # 9092 host icin (vision/ native calisiyor), 29092 docker agi icin
       - "127.0.0.1:9092:9092"
+      - "[::1]:9092:9092"
     environment:
       KAFKA_NODE_ID: 1
       CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw

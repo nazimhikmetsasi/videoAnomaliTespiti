@@ -11,10 +11,16 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
-**Aşama 13.2 — kod tamam, canlı doğrulama bekliyor.** (2026-11-23)
-Sözleşme `docs/ASAMA13_2_PLAN.md`; kabul adımları §5 (API imajını yeniden
-derle, portlar, `explain`, seed, Gemini, test sonrası `git status`).
-Testler: 261 geçti, 7 atlandı.
+**Aşama 13.2 tamamlandı; sıradaki iş 13.3 (zaman tabanlı pencereleme).**
+(2026-11-23)
+
+Sekiz hızlı düzeltme canlı yığında doğrulandı (ayrıntı aşağıda "Aşama 13.2
+sonucu"): XSS (9 yer), veritabanı ve Kafka portları yalnız geri dönüşe,
+Gemini anahtarı başlıkta, sağlık sorgusu dizine uygun, JPEG kapısı kamera
+başına, kanıt sayfalama, göreli kamera kaynağı, satır sonundan bağımsız
+önbellek etiketi. Yolda: yalnız `127.0.0.1`'e bağlanan portlar Windows'ta
+her yeni bağlantıya 2–3 sn ekliyordu (`localhost` önce `::1`'e çözülüyor);
+portlar `[::1]`'e de bağlandı.
 
 **Aşama 13.1 tamamlandı.** (2026-11-23)
 
@@ -71,7 +77,7 @@ değerlendirmeyle ölçülecek.
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | 13.0, **13.1 tamam** — sıradaki 13.2 (`docs/YOL_HARITASI.md`) |
+| 13 | Bütünsel inceleme ve düzeltmeler | 13.0, 13.1, **13.2 tamam** — sıradaki 13.3 (`docs/YOL_HARITASI.md`) |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -214,14 +220,56 @@ FPS etkisi temiz koşullarda 16'da yeniden ölçülecek.
 
 ---
 
+## Aşama 13.2 sonucu — hızlı düzeltmeler (2026-11-23)
+
+Sözleşme `docs/ASAMA13_2_PLAN.md`. Testler: 261 geçti, 7 atlandı; tam
+paket iki kez koşunca `frontend/` farkı birebir aynı (testler artık izlenen
+dosyaları değiştirmiyor).
+
+| madde | yapılan | canlı doğrulama |
+|---|---|---|
+| B1 XSS | `olaylar.js`'teki kamera adı/konum açığı + taramada bulunan, sunucu hata mesajını kaçışlamadan basan 8 yer `_escXml`'den geçiyor; kalan `innerHTML`'ler sabit metin veya zaten kaçışlı | statik testler |
+| B2 portlar | Postgres / Mongo / Kafka yalnız `127.0.0.1` ve `[::1]` | yerel ağ adresinden (192.168.1.104) 5433 / 27018 / 9092 **kapalı**, `localhost`'tan açık; API 8000 ağa açık kaldı |
+| B4 Gemini | anahtar URL'den `x-goog-api-key` başlığına; hata çıktılarına sızmadığı testli | tüketici konteynerinde gerçek çağrı `mod=llm`, 0,76 sn |
+| C1 sağlık sorgusu | sıralama `{camera_id: 1, ts: -1}` | gerçek veride (1108 belge) plan `IXSCAN` → `DISTINCT_SCAN`, 3 → 2 ms, sonuç aynı; uç kalıcı bağlantıda 6 ms |
+| C2 JPEG kapısı | istemci sayacı `(tür, kamera)` başına, `StreamServer.clients()` | birim testi (gerçek sunucu, iki kamera) |
+| C3 kanıt | `limit` (50, tavan 500) / `offset` | `limit=3` → 3 satır, `limit=9999` → 500 |
+| kamera kaynağı | seed göreli yazar (`data/pilot/<ad>.mp4`), var olanı günceller | 6 satır güncellendi; başlatıcı kamerayı göreli yolla açtı |
+| önbellek etiketi | özet CRLF → LF normalleştirilerek | iki tam koşu sonrası `frontend/` değişmedi |
+
+### Yolda bulunan: yalnız `127.0.0.1` bağlaması 2–3 sn gecikme ekledi
+
+Portlar yalnız `127.0.0.1`'e bağlanınca ana makinedeki her istemci önce
+`::1`'i denedi — Windows `localhost`'u önce IPv6'ya çözer, kapalı porta
+bağlanma denemesi de hemen reddedilmez:
+
+| bağlantı | yalnız `127.0.0.1` | `127.0.0.1` + `[::1]` |
+|---|---|---|
+| Kafka gidiş-dönüş (`check_kafka.py`) | 2906 ms, her istemcide `Connect to ipv6#[::1]:9092 failed` | **734 ms**, hata yok |
+| Postgres | `::1` için 3 sn zaman aşımı, sonra IPv4 | doğrudan |
+
+Atılacak bir konteynerle Docker Desktop'ın `[::1]` bağlamasını desteklediği
+önce sınandı (`localhost` 8 ms). Üç port iki adrese de bağlandı; yerel ağ
+adresinden yine kapalı.
+
+### Ölçülen ama sorun olmayan
+
+- Sağlık ucu yeni bir HTTP bağlantısıyla ~270 ms, kalıcı bağlantıyla 6 ms;
+  `/health` da aynı. Maliyet istemcinin her istekte bağlantı (ve TLS
+  bağlamı) kurmasında, uçta değil. Panel bağlantıyı açık tutar.
+- Seed betiği modül olarak ve `.env` değişkenleriyle koşar (aşağıda
+  "Sistemi açmak").
+
+---
+
 ## Bir sonraki adım
 
-**Aşama 13.2 — hızlı düzeltmeler.** Kapsam ve kabul ölçütü
-`docs/YOL_HARITASI.md`'de: XSS, portların `127.0.0.1`'e bağlanması, Gemini
-anahtarının başlığa taşınması, sağlık sorgusu, kamera başına JPEG kapısı,
-kanıt sayfalama, kamera kaynağının göreli yazılması, `build_frontend.py`
-önbellek etiketinin satır sonundan bağımsız olması. İlk iş 13.2'nin
-uygulama planı.
+**Aşama 13.3 — zaman tabanlı pencereleme.** Kapsam ve kabul ölçütü
+`docs/YOL_HARITASI.md`'de. **İlk iş ölçüm, değişiklik değil:** çevrimdışı
+değerlendirme kümesi 25 / 10 / 5 FPS'e alt örneklenir (düzenli ve
+düzensiz kare kaybıyla), kural ve hibrit F1'in FPS'e karşı eğrisi
+çıkarılır. Sorunun büyüklüğü bu eğriyle belgelenmeden kod değişmez. Sonra
+13.3'ün uygulama planı. `Zone.active_at` (ASAMA13_PLAN D1) da bu aşamada.
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
 `docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5'in olay sayıları
@@ -236,6 +284,11 @@ venv/Scripts/python.exe scripts/run_pilot_cameras.py --cameras webcam_01,zone_01
 
 `--cameras` boş bırakma: varsayılan **3** kamera açar, 4 kameralık
 ölçümlerle karşılaştırılamaz.
+
+`api/` değiştiyse imaj yeniden derlenir: `docker compose up -d --build api
+consumer`. Pilot kamera satırları (`scripts/seed_pilot.py`) proje kökünden,
+`.env` değişkenleri yüklü olarak modül şeklinde koşar
+(`venv/Scripts/python.exe -m scripts.seed_pilot`); tekrar koşmak güvenli.
 
 Yığın kontrolü konteyner sağlığıyla bitmez — ana makineden gerçek istek at:
 
@@ -352,6 +405,11 @@ Panel `http://localhost:8000`, kullanıcı `admin`, şifre `.env`'deki
 | 2026-11-23 | `spark.sql.shuffle.partitions` 200 → 2 | `local[2]`'de 200 görevlik yığın 4–5 sn sürüyordu; nabızla Spark ~%290 CPU yaktı, gecikme 15,2 sn oldu. 2 bölümle yığın < 1 sn, gecikme 7,58 sn |
 | 2026-11-23 | Gelecek tarihli aday `withWatermark`'tan önce reddedilir (30 sn pay) | Tek bir ileri tarihli mesaj su işaretini sıçratıp sistemi susturabiliyordu. 30 sn = `_EOS` önü (15 sn) + saat kayması payı; ölçülen kap/konteyner kayması 0,32 sn |
 | 2026-11-23 | Değerlendirme ayrı Spark servisi (`spark-eval`, `--profile eval`) ve ayrı konular | `spark_eval.py` su işaretini ~1,4 saat ileri itiyordu ve checkpoint kalıcı olduğu için canlı hattı susturuyordu (A3). Eşik API'si bu servise bağlanmadı: değerlendirme eşikleri ortam değişkeniyle verilir |
+| 2026-11-23 | Postgres / Mongo / Kafka portları yalnız geri dönüşe: `127.0.0.1` **ve** `[::1]` | Kimliksiz Kafka ve veritabanları yerel ağa açıktı. Yalnız `127.0.0.1` yetmedi: Windows `localhost`'u önce `::1`'e çözüyor, her yeni bağlantı 2–3 sn bekledi (Kafka gidiş-dönüş 2906 → 734 ms) |
+| 2026-11-23 | Gemini anahtarı `x-goog-api-key` başlığında | URL vekil sunucu ve erişim kayıtlarına düşer |
+| 2026-11-23 | WebSocket istemci sayacı `(tür, kamera)` başına | Tek süreç çoklu kamerada bir kamerayı izleyen istemci bütün kameralara her karede JPEG kodlatıyordu |
+| 2026-11-23 | Kamera kaynağı proje köküne göreli | Mutlak yol, proje taşınınca bütün dosya kameralarını açılmaz yaptı (13.1) |
+| 2026-11-23 | Önbellek etiketi CRLF → LF normalleştirilmiş içerikten | Aynı içerik farklı satır sonuyla farklı etiket veriyor, test paketi her koşuda izlenen HTML'leri değiştiriyordu |
 
 ## Açık sorular
 
