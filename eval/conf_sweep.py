@@ -52,13 +52,13 @@ def pilot_olasiliklari(clips_dir: Path, clf: TCNClassifier, model: str) -> np.nd
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="tcn_min_conf esik taramasi")
-    parser.add_argument("--sequences", default="data/sequences")
+    parser.add_argument("--tracks", default="data/tracks")
     parser.add_argument("--clips", default="data/pilot")
     parser.add_argument("--model", default="")
     args = parser.parse_args(argv)
 
     clf = TCNClassifier()
-    val_p, val_y = val_olasiliklari(Path(args.sequences), clf)
+    val_p, val_y = val_olasiliklari(Path(args.tracks), clf)
     pilot_p = pilot_olasiliklari(Path(args.clips), clf, args.model)
 
     val_tahmin = val_p.argmax(axis=1)

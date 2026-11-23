@@ -110,11 +110,11 @@ def run_clip(path: Path, detector: PoseDetector, engine,
     return candidates, kept, seen / fps if fps else 0.0
 
 
-def holdout_clips(train_root: Path, sequences_root: Path, limit: int) -> list[tuple[Path, str]]:
+def holdout_clips(train_root: Path, tracks_root: Path, limit: int) -> list[tuple[Path, str]]:
     """Egitimde kullanilmayan klipler — bolme kurali models/tcn.py ile ayni."""
     out: list[tuple[Path, str]] = []
     for name in CLASSES:
-        files = sorted((sequences_root / name).glob("*.npz"))
+        files = sorted((tracks_root / name).glob("*.npz"))
         picked = [f for i, f in enumerate(files) if i % VAL_EVERY == 0]
         if limit:
             picked = picked[:limit]
@@ -344,7 +344,7 @@ def main() -> int:
     parser.add_argument("--clips", default="data/pilot")
     parser.add_argument("--annotations", default="eval/annotations")
     parser.add_argument("--train", default="data/train")
-    parser.add_argument("--sequences", default="data/sequences")
+    parser.add_argument("--tracks", default="data/tracks")
     parser.add_argument("--zones", default="eval/zones.json")
     parser.add_argument("--modes", default=",".join(MODES))
     parser.add_argument("--min-conf", type=float, default=0.60)
@@ -368,7 +368,7 @@ def main() -> int:
     classifier = TCNClassifier(detector.device)
     annotations = Path(args.annotations)
     pilot = sorted(Path(args.clips).glob("*.mp4"))
-    holdout = holdout_clips(Path(args.train), Path(args.sequences), args.limit)
+    holdout = holdout_clips(Path(args.train), Path(args.tracks), args.limit)
     print(f"  pilot {len(pilot)} klip, holdout {len(holdout)} klip, "
           f"tcn_min_conf={args.min_conf}, {len(configs)} yapilandirma\n")
 

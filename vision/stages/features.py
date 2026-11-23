@@ -68,8 +68,6 @@ class TrackWindow:
     @property
     def last(self) -> FrameFeatures:
         return self.frames[-1]
-    def recent(self, n: int) -> list[FrameFeatures]:
-        return list(self.frames)[-n:]
     def append(self, feat: FrameFeatures) -> None:
         self.frames.append(feat)
         # Siniri asan TEK kare kalir: covering(retain_sec) hala cevap verebilsin.

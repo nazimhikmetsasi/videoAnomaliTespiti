@@ -452,6 +452,7 @@ def build_engine(args, zones: list[Zone]):
                                 min_conf=args.tcn_min_conf)
         print(f"  TCN hakemi acik (tcn_min_conf={args.tcn_min_conf})")
         return wrapped
-    except (FileNotFoundError, OSError, KeyError) as exc:
+    except (FileNotFoundError, OSError, KeyError, ValueError) as exc:
+        # ValueError: kare tabanli girdiyle egitilmemis eski agirlik
         print(f"  TCN agirligi yok, yalniz kural: {exc}")
         return engine

@@ -29,7 +29,7 @@ import time
 
 import numpy as np
 
-from models.tcn import CHANNELS, MIN_POSE_RATIO, WINDOW, frame_vector
+from models.tcn import resample
 from vision.rules.engine import Candidate, RuleEngine
 from vision.rules.fight import close_pairs
 from vision.stages.features import EPS, TrackWindow
@@ -41,22 +41,19 @@ MODEL_EVERY_SEC = 0.2   # iki model kosusu arasi en az sure; 25 FPS'te 5 kare
 
 
 def window_tensor(window: TrackWindow) -> np.ndarray | None:
-    """TrackWindow -> (50, 53); pencere kisa veya cok pozsuzsa None."""
-    frames = window.recent(WINDOW)
-    if len(frames) < WINDOW:
-        return None
-    if sum(f.has_pose for f in frames) / WINDOW < MIN_POSE_RATIO:
-        return None
+    """TrackWindow -> (50, 53) zaman izgarasi (son kareden 1.96 sn geriye);
+    iz o kadar eski degil, cok pozsuz ya da bbox'siz kare varsa None."""
+    frames = list(window.frames)
     if any(f.bbox is None for f in frames):
         return None
-    out = np.empty((WINDOW, CHANNELS), dtype=np.float32)
-    prev = None
-    for i, frame in enumerate(frames):
-        dt = frame.ts - prev.ts if prev is not None else 0.0
-        out[i] = frame_vector(frame.bbox, frame.keypoints,
-                              None if prev is None else prev.bbox, dt)
-        prev = frame
-    return out
+    ts = np.array([f.ts for f in frames])
+    bbox = np.array([f.bbox for f in frames], dtype=np.float64)
+    kp = np.zeros((len(frames), 17, 3), dtype=np.float64)
+    for i, f in enumerate(frames):
+        if f.keypoints is not None:
+            kp[i] = f.keypoints
+    has_pose = np.array([f.keypoints is not None for f in frames])
+    return resample(ts, bbox, kp, has_pose, t_end=window.last.ts)
 
 
 class HybridArbiter:

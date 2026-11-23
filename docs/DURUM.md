@@ -11,15 +11,20 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
-**Aşama 13.3b kodu tamam; sıradaki iş B1 ölçümü.** (2026-11-23)
+**Aşama 13.3c kodu tamam, iz çıkarımı sürüyor; sıradaki eğitim ve B2.** (2026-11-24)
 
-13.3'ün planı `docs/ASAMA13_3_PLAN.md`. 13.3b'de kural, öznitelik ve
-izleyici sabitleri saniyeye çevrildi (ayrıntı aşağıda "Aşama 13.3b").
-13.3a'da ölçüm aracı yazıldı;
-hat koduna dokunulmadı. B0 sorunun büyüklüğünü ölçtü: holdout'ta
-hibritin F1'i özgün hızda 0,67, 10 FPS'te ~0,2, 5 FPS'te 0. Kural ve
-hibrit 5 FPS'te 59 klibin hiçbirinde aday üretmiyor. Ayrıntı aşağıda
-"Aşama 13.3 — B0".
+Plan: `docs/ASAMA13_3_PLAN.md`.
+
+- **B0** (değişiklikten önce) sorunun büyüklüğünü ölçtü. Holdout'ta
+  hibritin F1'i özgün hızda 0,67, 10 FPS'te ~0,2, 5 FPS'te 0. 5 FPS'te
+  59 klibin hiçbirinde aday yok.
+- **13.3b:** kural, öznitelik ve izleyici sabitleri saniyeye çevrildi.
+- **B1:** kural modunda holdout F1 10 FPS'te 0,20 → 0,34 (özgün hızda
+  0,37), 5 FPS'te 0 → 0,16.
+- Hibritin düşük FPS'teki çöküşü 13.3c'nin işi: TCN hâlâ 50 gözlenmiş
+  kare istiyor.
+
+Ayrıntı aşağıda: "Aşama 13.3 — B0", "Aşama 13.3b", "Aşama 13.3 — B1".
 
 **Aşama 13.2 tamamlandı.** (2026-11-23)
 
@@ -86,7 +91,7 @@ değerlendirmeyle ölçülecek.
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.2 tamam; 13.3a + B0 tamam, **13.3b kodu tamam**, sıradaki B1 (`docs/ASAMA13_3_PLAN.md`) |
+| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.2 tamam; 13.3a + B0, 13.3b + B1 tamam; **13.3c kodu tamam**, sıradaki eğitim + B2 (`docs/ASAMA13_3_PLAN.md`) |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -448,20 +453,127 @@ sabit bugünkü 25 FPS karşılığından türetildi (dönüşüm tablosu plan �
     kayboluyor: 5 FPS'te son iki karede eğim 41,3° ve 45,3°, eşik 45°.
   - B1 kümenin tamamında ölçecek.
 
+## Aşama 13.3 — B1: kurallar saniyeye çevrildikten sonra (2026-11-23)
+
+Komut (ana dizinde, `89bad51`):
+
+    venv/Scripts/python.exe -m eval.tcn_eval --modes rule --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b1.json
+
+Ham sonuçlar `logs/fps_b1.json` ve `logs/fps_b1.log` dosyalarında. Küme
+B0 ile aynı: holdout klip listesi birebir aynı, `--compare` uyarı
+vermedi.
+
+**Kural modu, holdout, F1 (ham) — B0 → B1:**
+
+| | özgün | 10 düzenli | 10 düzensiz | 5 düzenli | 5 düzensiz |
+|---|---|---|---|---|---|
+| F1 | 0,41 → 0,37 | 0,20 → **0,34** | 0,16 → **0,32** [0,31–0,34] | 0,00 → **0,16** | 0,00 → **0,13** [0,12–0,15] |
+| duyarlılık | 0,30 → 0,25 | 0,11 → 0,23 | 0,09 → 0,21 | 0,00 → 0,09 | 0,00 → 0,08 |
+| süzgeçli F1 | 0,32 → 0,32 | 0,13 → 0,35 | 0,10 → 0,27 | 0,00 → 0,12 | 0,00 → 0,08 |
+
+- 10 FPS'te kural, özgün hızdaki F1'ine neredeyse geri döndü (0,37'ye
+  karşı 0,34).
+  - RUN TP 3 → 7; özgün hızda da 7.
+  - Aday üreten holdout klibi 6 → 14; özgün hızda 16.
+- 5 FPS'te 0'dan çıktı; aday üreten klip 0 → 7. Hâlâ özgün hızın çok
+  altında.
+- FALL 10 FPS'te 3/14 (özgün 4/14). Pilot `fall_01` 10 ve 5 FPS'te hâlâ
+  bulunmuyor: iz düşüşten hemen sonra kayboluyor. Hibritte FALL'ın
+  çoğunu model buluyordu (özgün 9/14); 13.3c'de görülecek.
+- FIGHT kural modunda her hızda 0. Kural tabanlı FIGHT zaten zayıftı
+  (Aşama 11); asıl yükü model taşıyor.
+- Pilot: RUN 10 ve 5 FPS'te yeniden bulunuyor; duyarlılık
+  0,25 → 0,50.
+
+**Özgün hızdaki fark (0,41 → 0,37) aday düzeyinde açıklandı.** Değişen 18
+klip var.
+
+- **25 FPS'lik kliplerde dönüşüm doğrulandı.** `zone_01` ve
+  `casia_angleview_p01_faint_a1` eski (`e4fd3c9`) ve yeni kodla aynı
+  algılayıcıyla kare kare koşuldu.
+  - İzler birebir aynı.
+  - Farklı çıkan 21 adayın **21'i de** izde son ~2 sn içinde boşluk olan
+    karelerde: eski pencere gözlenen kareyi, yeni pencere süreyi sayıyor
+    (plan §1).
+  - Boşluksuz pencerede tek fark yok.
+- **Kaybedilen 2 TP ikisi de 30 FPS'lik klipte:**
+  - `urfd_fall-25-cam0`: tek FALL adayı vardı
+  - `bitint_kick_0016`: tek FIGHT adayı vardı
+
+  30 FPS'te eski pencereler zamanca %17 kısaydı. Örneğin FALL'ın eğim
+  tutması 3 kare = 0,067 sn idi, şimdi 0,08 sn (4 kare). İki aday da
+  sınırdaydı. Eşik oynatılmadı.
+- Bir FP gitti: `bitint_bend_0007` (NORMAL, 30 FPS), tek RUN adayı.
+- Kabul ölçütü (özgün hızda gerileme yok) B2 için tanımlı. B1 bir ara
+  noktadır; bu fark B2'de kural satırında yine görülecek.
+
+## Aşama 13.3c — TCN girdisi zaman ızgarasına, kod (2026-11-24)
+
+Sözleşme `docs/ASAMA13_3_PLAN.md` §6.
+
+- `models/tcn.py`:
+  - `resample` (25 Hz, 50 nokta = 1,96 sn), güven puanını hesaba katan
+    ara değerle. Satırlar yine `frame_vector`'dan geçiyor.
+  - pencereleme artık eğitim sırasında yapılıyor: `split_runs`,
+    `clip_windows`
+  - kare düşürme artırımı (`augment_keep`, 15 / 10 / 5 FPS)
+  - `build_split`: doğrulama hız başına ayrı tutuluyor
+  - sabit tohum
+  - `TCNClassifier`, meta verisinde `grid_hz` yoksa `ValueError` atıyor;
+    eski ağırlık yeni girdiyle sessizce çalışmıyor. `camera.build_engine`
+    bunu yakalayıp yalnız kurala düşüyor.
+- `arbiter.window_tensor` → `resample(..., t_end=son kare)`.
+  `TrackWindow.recent` kalktı.
+- `eval/extract_sequences.py` artık ham iz yazıyor:
+  `data/tracks/<SINIF>/<klip>.npz`. Alanlar: kare indeksi, iz, bbox,
+  eklemler, poz bayrağı, URFD olay kareleri. Pencere kurmuyor.
+- `tcn_eval`, `conf_sweep`, `domain_gap`: `--sequences` → `--tracks`.
+- Testler: **318 geçti, 8 atlandı**. 13 yeni test var; holdout listesi
+  testi `data/tracks` olmayan dizinde atlanıyor. Testlerin kapsadıkları:
+  - 25 FPS'e oturan girdi, eski kare kare vektörleri 1e-5 içinde veriyor;
+    düşük güvenli eklem ve pozsuz kare dahil
+  - sabit hızlı iz 10 ve 5 FPS'te 25 FPS'tekine yakın çıkıyor
+  - bölme klip bazında, sızıntı yok
+- `resample` pencere başına 0,44 ms.
+
+**Gözden geçirmede bulunan iki sorun, ikisi de düzeltildi:**
+
+1. **Pencere sonu hedeften önceki örneğe çekiliyordu.** 30 FPS'lik
+   klipte ilk hedef 1,96 sn; ondan önceki örnek 1,933 sn'de kalıyordu ve
+   pencere 1,96 sn'yi kapsamadığı için `resample` `None` döndürüyordu.
+   Sonuç: 2,6 sn'lik FIGHT klibinden **hiç pencere çıkmıyordu**. Son artık
+   hedeften sonraki ilk örnek; kapsam garanti.
+2. **Kaydırma bütün sınıflarda 0,4 sn** (plan: FALL 0,4, diğerleri 1,0).
+   - Eski pencere 50 gözlenmiş kareydi: 30 FPS klipte 1,67 sn. Yeni
+     pencere 1,96 sn.
+   - 1 sn kaydırmayla kısa klipler yarı pencere veriyordu
+     (`bitint_box_0002`: 10 → 5). FIGHT kliplerinin ortancası 2,8 sn.
+   - 0,4 sn ile deneme kliplerinin hepsinde pencere sayısı eskiye eşit
+     veya üstünde (FIGHT 4 / 10 = eski; FALL 20 / 15 / 5, eski 17 / 14 / 5;
+     RUN 2, eski 1).
+   - Sınıf dengesizliği zaten ağırlıklı kayıpla karşılanıyor.
+
+**Yeniden çıkarım başladı:** `data/tracks/`, kayıt `logs/extract_tracks.log`.
+Eski model `runs/tcn_kare_tabanli/` altında; özet sağlaması aynı.
+
 ---
 
 ## Bir sonraki adım
 
-**B1 ölçümü** (`docs/ASAMA13_3_PLAN.md` §5). 13.3b commit'lenip `main`'e
-alındıktan sonra ana dizinde (yalnız kural, ~30 dk):
+**13.3c'nin kalanı** (`docs/ASAMA13_3_PLAN.md` §7). İz çıkarımı bitince
+ve kod `main`'e alındıktan sonra ana dizinde:
 
-    venv/Scripts/python.exe -m eval.tcn_eval --modes rule --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b1.json
+1. `venv/Scripts/python.exe -m models.tcn --train`. Hız başına doğrulama
+   F1'i buraya yazılır.
+2. B2:
 
-B1 sonrası `--compare logs/fps_b0.json logs/fps_b1.json`. 25 FPS'lik
-kliplerin özgün hız satırı B0'a eşit veya çok yakın olmalı; fark aday
-düzeyinde açıklanır. Ardından 13.3c (TCN zaman ızgarası). Plandan sapma:
-yol haritasındaki hız artırımı (0,5x–2x) uygulanmıyor; gerekçe plan
-§6.2'de.
+       venv/Scripts/python.exe -m eval.tcn_eval --modes rule,hybrid --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b2.json
+
+   Ardından `--compare` B0 → B2 ve B1 → B2.
+3. Canlı duman testi: `fall_01`, `--realtime --loop`, TCN açık.
+
+Plandan sapma: yol haritasındaki hız artırımı (0,5x–2x) uygulanmıyor;
+gerekçe plan §6.2'de.
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
 `docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5'in olay sayıları

@@ -76,7 +76,7 @@ geçemez.
 | `arbiter.py` | `EVERY = 5` (`idx % 5`) | `MODEL_EVERY_SEC = 0.2` | son model koşusunun `ts`'i |
 | `tracker.py` | `track_buffer = 60` | `TRACK_BUFFER_SEC = 2.4` | §4.3 |
 | `models/tcn.py` | 50 gözlenmiş kare | 25 Hz'de 50 ızgara noktası (1,96 sn) | §6.1 |
-| `models/tcn.py` | `STRIDE = 25`, FALL için `--stride 10` | `STRIDE_SEC = 1.0`, FALL `0.4` | §6.2 |
+| `models/tcn.py` | `STRIDE = 25`, FALL için `--stride 10` | `STRIDE_SEC = 0.4` (bütün sınıflar; §6.2) | §6.2 |
 
 `run.py`'deki isabet oranı `hits >= ceil(MIN_HIT_RATIO * len - EPS)` ile
 hesaplanır. 25 FPS'te 10 karede 6 isabet, eskisiyle aynı.
@@ -380,13 +380,17 @@ koşmak (1080 klip, dakikada 7–10 klip, ~2 sa) kabul edilemez.
     (`vision.stages.features`'tan alınır)
   - pencere sonları `koşu_başı + WINDOW_SEC` noktasından başlar ve
     `STRIDE_SEC` adımla ilerler
-  - her son, o ana kadarki **en yeni gerçek örneğe** çekilir. Çalışma
+  - her son, hedeften **sonraki ilk gerçek örneğe** çekilir. Çalışma
     zamanında da pencere sonu hep gerçek bir karedir. Aynı örneğe çekilen
-    sonlar bir kez sayılır.
+    sonlar bir kez sayılır. (Uygulamada düzeltildi: ilk sürüm sonu
+    hedeften önceki örneğe çekiyordu. Pencere 1,96 sn'yi kapsamıyordu ve
+    30 FPS'lik kısa kliplerden hiç pencere çıkmıyordu.)
   - URFD'de pencere `[t_end - WINDOW_SEC, t_end]` aralığına düşen bir
     `event_ts` içermiyorsa düşer
-  - `STRIDE_SEC = 1.0`, FALL için `0.4`; eski kare değerlerinin 25 FPS
-    karşılığı
+  - `STRIDE_SEC = 0.4`, bütün sınıflarda. Plan FALL için 0,4,
+    diğerleri için 1,0 diyordu; uygulamada değişti. Sebep: pencere 1,67
+    sn'den (30 FPS'te 50 kare) 1,96 sn'ye uzadı ve 1 sn kaydırmayla kısa
+    FIGHT klipleri yarı pencere veriyordu (`docs/DURUM.md`, 13.3c).
 - **Artırım:** her klip özgün hıza ek olarak 15, 10 ve 5 FPS'e
   `FrameDropper(mode="jitter", seed=crc32(stem))` ile seyreltilir. Kareler
   klip düzeyinde atılır, yani o anki bütün izlerden birlikte. Seyreltici,

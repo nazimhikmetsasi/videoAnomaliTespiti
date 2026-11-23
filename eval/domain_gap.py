@@ -27,7 +27,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from models.tcn import CHANNELS, WINDOW  # noqa: E402
+from models.tcn import (CHANNELS, STRIDE_SEC, WINDOW,  # noqa: E402
+                        clip_windows)
 
 # frame_vector() yerlesimi (models/tcn.py):
 GRUPLAR = {
@@ -38,18 +39,23 @@ GRUPLAR = {
 
 
 def egitim_pencereleri(root: Path) -> dict[str, np.ndarray]:
-    """data/sequences/<SINIF>/*.npz -> sinif basina (N, WINDOW, CHANNELS)."""
+    """data/tracks/<SINIF>/*.npz -> sinif basina (N, WINDOW, CHANNELS), ozgun hiz.
+
+    Pencereler egitimdekiyle ayni yardimcidan (models.tcn.clip_windows) gelir;
+    egitim + dogrulama birlikte, kare dusurme kopyasi yok.
+    """
     out: dict[str, np.ndarray] = {}
     for sinif_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        adim = STRIDE_SEC
         parcalar = []
         for npz in sorted(sinif_dir.glob("*.npz")):
             with np.load(npz) as veri:
-                for anahtar in veri.files:
-                    dizi = veri[anahtar]
-                    if dizi.ndim == 3 and dizi.shape[1:] == (WINDOW, CHANNELS):
-                        parcalar.append(dizi)
-                    elif dizi.ndim == 2 and dizi.shape == (WINDOW, CHANNELS):
-                        parcalar.append(dizi[None])
+                data = {k: veri[k] for k in veri.files}
+            if not len(data["frame"]):
+                continue
+            yigin, _ = clip_windows(data, adim)
+            if yigin.shape[0]:
+                parcalar.append(yigin)
         if parcalar:
             out[sinif_dir.name] = np.concatenate(parcalar, axis=0)
     return out
@@ -60,7 +66,7 @@ def pilot_pencereleri(clips: list[Path], detector, stride: int = 25) -> np.ndarr
 
     Pencere EGITIMDEKI ile ayni fonksiyondan gecer (`window_tensor` ->
     `frame_vector`); ayri bir kopya yazilsaydi olculen fark modelin gordugu
-    fark olmazdi. `stride` egitimdeki kaydirmayla ayni (models/tcn.STRIDE).
+    fark olmazdi. `stride` = kare sayisi, egitimdeki 1 sn kaydirmanin 25 FPS karsiligi.
     """
     from vision.rules.arbiter import window_tensor
     from vision.source import VideoSource
@@ -114,14 +120,14 @@ def ozet(ad: str, pencereler: np.ndarray) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="alan farkinin kaynagi")
-    parser.add_argument("--sequences", default="data/sequences")
+    parser.add_argument("--tracks", default="data/tracks")
     parser.add_argument("--clips", default="data/pilot")
     parser.add_argument("--model", default="")
     args = parser.parse_args(argv)
 
-    egitim = egitim_pencereleri(Path(args.sequences))
+    egitim = egitim_pencereleri(Path(args.tracks))
     if not egitim:
-        print("  egitim penceresi bulunamadi:", args.sequences)
+        print("  egitim penceresi bulunamadi:", args.tracks)
         return 1
 
     print("=" * 70)
