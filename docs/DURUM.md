@@ -11,72 +11,42 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
-**Aşama 13.1 — kod tamam, canlı ölçüm bekliyor.** (2026-11-23)
+**Aşama 13.1 tamamlandı; sıradaki iş 13.2 (hızlı düzeltmeler).**
+(2026-11-23)
 
-Uygulama sözleşmesi `docs/ASAMA13_1_PLAN.md`. Yazılan:
+Spark akışının iki sessiz olay kaybı giderildi ve canlı deneylerle
+doğrulandı (ayrıntı aşağıda "Aşama 13.1 sonucu"):
 
-- ortak duvar saati: `Candidate.event_time`, `CameraPipeline.consume()`
-  kare başına bir kez `time.time()` atar; süre ölçütü yine sahne zamanı
-  `ts` ile
-- kamera başına saniyede bir `_TICK` nabzı (`--tick-sec`, 0 = kapalı)
-- Spark: iç tipler toplama sütunu `internal` ile çıkıştan elenir (yalnız
-  `anomaly_type`'a bakan `where` Catalyst tarafından watermark'ın altına
-  itilirdi); gelecek tarihli ret (`SPARK_FUTURE_SEC` 30); tetik 1 sn;
-  `AGG_VERSION` 3 (temiz checkpoint)
-- değerlendirme yalıtımı: `spark-eval` servisi (`--profile eval`),
-  `eval-candidates` / `eval-events` konuları
-- kamera başına aday sayacı sağlık belgesinde; `soak_test.py` kamera
-  başına aday / olay artışı ve "aday üretiyor, olay üretmiyor" uyarısı
-- `eval/stream_probe.py gelecek` deneyi
+- **A1 — sessiz sahnede tek düşme:** önce 45 sn olay yok; şimdi 7,5–7,9 sn
+- **A2 — çoklu kamerada kayıp:** önce `fall_01` adaylarının %80'i,
+  `run_01`'inkilerin %75'i geç sayılıp atılıyordu; şimdi 0
+- **Alarm gecikmesi:** 13,99 → **7,58 sn** (medyan, 11/11 düşme)
+- Yolda bulunan üçüncü kök neden: Spark'ın varsayılan 200 shuffle bölümü
+  her yığını 4–5 sn yapıyordu; 2 bölümle < 1 sn
 
-Testler: 252 geçti, 7 atlandı (veritabanı gerektirenler Docker kapalıyken
-atlanır). **Spark tarafının birim testi yok; doğrulaması canlı deneylerde**
-(aşağıda "Bir sonraki adım").
+`docs/TEZ.md` §3.7 yeni sayılarla yazıldı. §3.5'in (8 saatlik koşu) olay
+sayıları hâlâ geçersiz; düzeltilmiş sayılar 24 saatlik koşudan (18) gelecek.
 
-13.0'da yapılanlar (2026-11-23):
-
-- Aşama 0–12.6 sonuçları `docs/DURUM_ARSIV.md`'ye **aynen** taşındı
-  (2980 satır, satır satır denetlendi); bu dosya birkaç yüz satıra indi
-- Kalan iş `docs/YOL_HARITASI.md`'de sıralandı: 13.0–19, her aşamanın
-  kabul ölçütü ve commit mesajıyla. Yeni aşamalar: **13.3 zaman tabanlı
-  pencereleme** ve **14.5 olay doğrulaması**; yüz tanıma (Faz 2) artık
-  kapsamda (15)
-- Açık sorular ayıklandı, her birine kapatılacağı aşama yazıldı
-- Plan belgelerinin ve iki kod yorumunun dili sadeleştirildi
-
-Açık iki kritik bulgu:
-
-**1. Spark akışı olayları sessizce kaybediyor (13.1).** İki yoldan, ikisi
-de deneyle ölçüldü:
-
-- **Sessiz sahnede tek düşme hiç alarm üretmiyor** (A1). Su işareti yalnız
-  yeni veri gelince ilerliyor; düşmeden sonra hiçbir kameradan aday gelmezse
-  olay yazılmıyor. `eval/stream_probe.py tek-dusme` iki kez üretti: 45 sn
-  olay yok, ilgisiz bir aday basılınca 5–7 sn sonra geliyor.
-- **Çoklu kamerada olaylar kayboluyor** (A2). Dosya kameralarının sahne
-  saatleri farklı hızda akıyor; ortak su işareti geride kalanın adaylarını
-  "geç veri" diye atıyor. 8 saatlik koşuda iki kamera 7 saat sıfır olay
-  üretti.
-
-Bu yüzden `docs/TEZ.md` §3.5 (8 saatlik koşunun olay sayıları) ve §3.7
-(13,99 sn gecikme) 13.1'den sonra yeniden ölçülüp düzeltilecek; iki bölüme
-de uyarı düşüldü. **O sayılar düzeltilmeden teze aktarılmamalı.**
-
-**2. Canlı kamerada doğruluk kare hızına bağlı (13.3).** Kural pencereleri
-(`fall.py`, `run.py`, `zone.py`, `loiter.py`, `features.py`), TCN girdisi
-(50 kare) ve izleyici tamponu (`track_buffer`, Ultralytics 8.4'te FPS'e
-göre ölçeklenmiyor) kare sayısıyla tanımlı. Çevrimdışı değerlendirme her
-kareyi işler (25–30 FPS, 50 kare = 2 sn); tam yığında canlı kamera 5–10
-FPS'te çalışır ve aynı pencere 5–10 sn'ye uzar. **Koddan çıkarım**;
-büyüklüğü 13.3'ün ilk adımında alt örneklenmiş değerlendirmeyle ölçülecek.
-Dış kaynaklarda aynı rejimde ciddi düşüş raporlanıyor (iskelet tabanlı
-modelde 30 → 10 FPS'te %83 → %37).
+**Açık kritik bulgu — canlı kamerada doğruluk kare hızına bağlı (13.3).**
+Kural pencereleri (`fall.py`, `run.py`, `zone.py`, `loiter.py`,
+`features.py`), TCN girdisi (50 kare) ve izleyici tamponu (`track_buffer`,
+Ultralytics 8.4'te FPS'e göre ölçeklenmiyor) kare sayısıyla tanımlı.
+Çevrimdışı değerlendirme her kareyi işler (25–30 FPS, 50 kare = 2 sn); tam
+yığında canlı kamera ~10 FPS'te çalışır ve aynı pencere ~5 sn'ye uzar.
+**Koddan çıkarım**; büyüklüğü 13.3'ün ilk adımında alt örneklenmiş
+değerlendirmeyle ölçülecek.
 
 **Çalışma ortamı notları:**
 
 - Proje dizini: `C:\Users\pc\OneDrive\Masaüstü\projeler\videoAnomaliTespiti`
 - Terminal bazen cmd.exe, bazen Windows PowerShell 5.1: komutlar
   zincirlenmeden (`;`, `&&` yok), her biri ayrı satırda çalıştırılır.
+- Ölçümden önce GPU'yu kullanan oyun / tarayıcı kapatılır: 13.1'de açık
+  kalan bir oyun görü FPS'ini üçte bire düşürdü ve bir FPS karşılaştırmasını
+  geçersiz kıldı.
+- `api/` değiştiğinde API imajı yeniden derlenir
+  (`docker compose up -d --build api`); konteyner kodu imajın içindedir,
+  `stream/` ise bağlanmış klasördür, yeniden başlatmak yeter.
 
 ## Aşama durumu
 
@@ -97,7 +67,7 @@ modelde 30 → 10 FPS'te %83 → %37).
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | 13.0 tamam; **13.1 kod tamam, canlı ölçüm bekliyor** (`docs/YOL_HARITASI.md`) |
+| 13 | Bütünsel inceleme ve düzeltmeler | 13.0, **13.1 tamam** — sıradaki 13.2 (`docs/YOL_HARITASI.md`) |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -131,7 +101,9 @@ hep ilerledi (A1 gizlendi). `scripts/soak_test.py` yalnız **toplam** olay
 sayısını izliyordu; toplam, tek kamera sayesinde düzgün arttı (A2
 gizlendi). 12.4'teki 13,99 sn gecikmesi de büyük olasılıkla A1'in ürünü:
 her düşme, su işaretini ilerletecek bir sonraki klip döngüsünü bekledi
-(7,9 sn döngü + 5 sn taban ≈ 14 sn) — **hipotez, 13.1'den sonra ölçülecek.**
+(7,9 sn döngü + 5 sn taban ≈ 14 sn) — hipotez. **13.1'de ölçüldü: kısmen
+doğru.** Gecikmenin bir kaynağı A1'di, öteki Spark'ın 200 shuffle bölümü;
+ikisi giderilince 7,58 sn.
 
 ### Deney betikleri depoda
 
@@ -141,23 +113,115 @@ dokunmazlar.
 
 ---
 
+## Aşama 13.0 sonucu — belge düzeni (2026-11-23)
+
+- Aşama 0–12.6 sonuçları `docs/DURUM_ARSIV.md`'ye **aynen** taşındı
+  (2980 satır, satır satır denetlendi); bu dosya birkaç yüz satıra indi
+- Kalan iş `docs/YOL_HARITASI.md`'de sıralandı: 13.0–19, her aşamanın
+  kabul ölçütü ve commit mesajıyla. Yeni aşamalar: **13.3 zaman tabanlı
+  pencereleme** ve **14.5 olay doğrulaması**; yüz tanıma (Faz 2) artık
+  kapsamda (15)
+- Açık sorular ayıklandı, her birine kapatılacağı aşama yazıldı
+- Plan belgelerinin ve iki kod yorumunun dili sadeleştirildi
+
+---
+
+## Aşama 13.1 sonucu — akış doğruluğu (2026-11-23)
+
+Uygulama sözleşmesi `docs/ASAMA13_1_PLAN.md`. Yazılan:
+
+- ortak duvar saati: `Candidate.event_time`; `CameraPipeline.consume()`
+  kare başına bir kez `time.time()` atar. Süre ölçütü yine sahne zamanı `ts`
+- kamera başına saniyede bir `_TICK` nabzı (`--tick-sec`, 0 = kapalı)
+- Spark: iç tipler toplama sütunu `internal` ile çıkıştan elenir; gelecek
+  tarihli ret (`SPARK_FUTURE_SEC` 30); tetik 1 sn; shuffle bölümü 2;
+  `AGG_VERSION` 4
+- değerlendirme yalıtımı: `spark-eval` servisi (`--profile eval`),
+  `eval-candidates` / `eval-events` konuları
+- kamera başına aday sayacı sağlık belgesinde; `soak_test.py` kamera
+  başına aday / olay artışı ve "aday üretiyor, olay üretmiyor" uyarısı
+- `eval/stream_probe.py gelecek` deneyi
+
+Testler: 252 geçti, 7 atlandı.
+
+### Ölçümler (ana dizin, Docker yığını, 2026-11-23)
+
+| deney | önce | sonra |
+|---|---|---|
+| A1 — sessiz sahnede tek düşme (`stream_probe tek-dusme`) | nabız kapalı: 45 sn olay yok, ilgisiz aday gelince 7,7 sn sonra (çıkış 1) | nabız açık: **7,5 / 7,7 / 7,9 sn** (çıkış 0) |
+| gelecek tarihli ret (`stream_probe gelecek`, +3600 sn) | — | ret çalışıyor; ardından düşme 7,8 sn'de (çıkış 0) |
+| A2 — 3 dosya kamerası, 280 sn (`saat-kaymasi`) | `fall_01` adaylarının %80'i, `run_01`'inkilerin %75'i geç | geç aday **0**; Spark olayı fall_01 10, run_01 13, zone_01 8 |
+| tespit → alarm (`latency_watch`, `fall_01` gerçek zamanlı) | 13,99 sn (12.4, n=4) | **7,58 sn** medyan, 7,23–8,09 (n=11, 11 düşmenin 11'i) |
+| değerlendirme yalıtımı (`spark-eval` + `spark_eval --from-cache`) | canlı su işaretini ~1,4 sa ileri itiyordu | Aşama 4 tablosu birebir (F1 0,50 → 0,60); hemen ardından canlı `tek-dusme` 9,1 sn (çıkış 0) |
+| 30 dk kısa koşu, 3 kamera (`soak_test`) | 8 sa koşuda iki kamera 7 sa sıfır olay | kamera başına olay artışı fall_01 72, run_01 74, zone_01 35; uyarı yok; toplam FPS 29,3 sabit, düşen kare 0 |
+| kap ↔ Spark konteyneri saat kayması | — | 0,32 sn |
+
+### Yolda bulunan üçüncü kök neden: 200 shuffle bölümü
+
+İlk A1 koşusu düzeltmeyle geçti ama olay **15,2 sn**'de geldi, beklenen
+5–7 değil. Spark kayıtları: her mikro-yığın 4–5 sn sürüyor ve tetik
+aralığını (1 sn) aşıyordu; Spark sürekli **~%294 CPU** yakıyordu. Sebep
+Spark'ın varsayılan `spark.sql.shuffle.partitions = 200`'ü: durumlu
+toplama, `local[2]`'de her yığında 200 görev koşuyordu. Nabız Spark'a her
+saniye veri getirdiği için bu maliyet artık sürekliydi.
+
+Ayrı bir test konteyneriyle (`--conf spark.sql.shuffle.partitions=2`,
+ayrı checkpoint) ölçüldü: yığın < 1 sn, CPU **~%68**, A1 olayı 15,2 →
+**7,5–7,9 sn**. Ayar `stream/spark_job.py`'ye kondu; bölüm sayısı
+checkpoint'e yazıldığı için `AGG_VERSION` 4. 12.4'te "ayrıştırılmadı"
+denen ~9 sn'lik Spark payı buydu.
+
+### Nabzın maliyeti
+
+| durum | Spark CPU |
+|---|---|
+| boşta (kamera yok) | ~%0,5 |
+| yalnız nabız (aday üretmeyen tek kamera) | ~%33–42 |
+| 3 dosya kamerası, adaylarla | ~%45–77 (nabız açık / kapalı ayırt edilmedi) |
+
+Görü FPS'ine etkisi **ölçülemedi**: aynı ayarla ardışık koşularda toplam
+FPS 36,3 → 24,9 → 11,8 → 11,3 → 11,2'ye kaydı. Sebep sonradan bulundu:
+ölçüm sırasında GPU'da bir oyun açıktı (GPU %51, 87 °C, 3,3 GB). Oyun
+kapatılınca 3 kamera 30 dakika boyunca 29,3 FPS'te sabit kaldı. Nabzın
+FPS etkisi temiz koşullarda 16'da yeniden ölçülecek.
+
+### Yolda bulunan diğer arızalar
+
+1. **Veritabanındaki kamera kaynakları eski dizini gösteriyordu.**
+   `scripts/seed_pilot.py` mutlak yol yazıyor; proje 2026-11'de
+   `projeler\` altına taşınınca 6 dosya kamerası açılamadı ("kaynak
+   açılamadı"). Yerel veritabanında yollar yeni dizine çevrildi (6 satır);
+   kalıcı çözüm 13.2'de (göreli yol).
+2. **API konteyneri eski koddu.** `api/` imaja gömülü (`build: ./api`);
+   yeni `candidates` alanı imaj yeniden derlenene kadar dönmedi. Derleme
+   ilk denemede Docker Hub TLS zaman aşımına düştü, ikincide geçti.
+3. Docker Desktop ölçüm sırasında bir kez kapandı;
+   `docker desktop start` ile açıldı, yığın kendiliğinden kalktı.
+
+### Sınırlar
+
+- Ölçümler gerçek zamanlı akıtılan dosya kliplerle; kameranın önünde
+  gerçek bir olayla gecikme hâlâ ölçülmedi (14).
+- Bir süreç kapanırken attığı `_EOS` su işaretini ~13 sn ileri iter; aynı
+  anda çalışan **başka** bir görü sürecinin adayları o süre geç sayılır.
+  Tek süreçli dağıtımda geçerli değil.
+- `Zone.active_at` dosya kaynağında hâlâ sahne saniyesiyle çağrılıyor
+  (ASAMA13_PLAN D1) — 13.3'te.
+
+---
+
 ## Bir sonraki adım
 
-**Aşama 13.1'in canlı ölçümleri** — `docs/ASAMA13_1_PLAN.md` §6, ana
-dizinde, Docker açıkken: Spark'ı yeniden kur (eval konuları dahil), saat
-kayması, `stream_probe tek-dusme` (yanda nabız basan bir kamera),
-`stream_probe gelecek`, `saat-kaymasi` (3 dosya kamerası), gecikme
-(`latency_watch`, `fall_01` gerçek zamanlı), nabız maliyeti
-(`--tick-sec 1` / `0`), `spark-eval` yalıtımı, 30 dk kısa koşu. Sonuçlar
-buraya ve `docs/TEZ.md` §3.7'ye.
-
-Dikkat: `gelecek` deneyi başarısız olursa canlı su işareti bir saat ileri
-sıçramış olur; Spark checkpoint'i sıfırlanmadan (`AGG_VERSION` artırımı)
-canlı hat o süre olay üretmez.
+**Aşama 13.2 — hızlı düzeltmeler.** Kapsam ve kabul ölçütü
+`docs/YOL_HARITASI.md`'de: XSS, portların `127.0.0.1`'e bağlanması, Gemini
+anahtarının başlığa taşınması, sağlık sorgusu, kamera başına JPEG kapısı,
+kanıt sayfalama, kamera kaynağının göreli yazılması, `build_frontend.py`
+önbellek etiketinin satır sonundan bağımsız olması. İlk iş 13.2'nin
+uygulama planı.
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
-`docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5 ve §3.7'deki sayılar
-13.1'den önce teze aktarılmamalı.**
+`docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5'in olay sayıları
+teze aktarılmamalı** (24 saatlik koşu, 18).
 
 ### Sistemi açmak
 
@@ -278,6 +342,12 @@ Panel `http://localhost:8000`, kullanıcı `admin`, şifre `.env`'deki
 | 2026-09-10 | Ortak canlı akış mantığı `live.js`'te, sayfa betiklerinde değil | Canlı izleme ve kamera detay aynı WS + çizim işini yapıyor; iki kopya, ölçek dönüşümü gibi ince bir hatayı iki kez düzeltmek demekti. `build_frontend.py` canlı sayfalara ikinci betiği ekliyor |
 | 2026-09-10 | Panel FPS'i hedefin altına düşerse önce görü döngüsüne bakılır | Ölçüm: tarayıcı FPS'i sunucu döngü FPS'iyle örtüşüyor (25.2 / 25.1). İstemci kare atlamıyor; düşüş her seferinde hattın kendisinde (CPU rekabeti) |
 | 2026-09-10 | Postgres `connect_timeout=3`, Mongo `serverSelectionTimeoutMS=3000` | Docker kapalıyken test paketi 8 sn yerine 5+ dakika sürüyordu: her canlı-veritabanı testi işletim sisteminin varsayılan bağlantı zaman aşımını bekliyordu. Sağlık ucu da aynı sebeple asılı kalırdı |
+| 2026-11-23 | Spark pencereleme saati adayın **işlendiği anın duvar saati**, sahne zamanı değil (2026-08-27 kararının yerine) | Su işareti bütün kameralar için ortak; sahne zamanında yavaş akan dosya kamerası geride kalıp adayları "geç veri" diye atılıyordu (A2). Süre ölçütü (`min_sec`) yine sahne zamanı `ts` ile, kuralların anlamı değişmedi |
+| 2026-11-23 | Kamera başına saniyede bir `_TICK` nabzı, işleme döngüsünden | Su işareti yalnız veriyle ilerliyor; sessiz sahnede düşme oturumu hiç kapanmıyordu (A1). Ayrı zamanlayıcı değil döngü: hat donarsa nabız da durur, oturum yanlışlıkla kapanmaz |
+| 2026-11-23 | İç tipler çıkıştan **toplama sütunuyla** (`internal`) elenir | Yalnız `anomaly_type`'a bakan `where`'i Catalyst toplamanın ve `withWatermark`'ın altına iter; iç tipler su işaretine ulaşmaz ve düzeltme sessizce çalışmaz |
+| 2026-11-23 | `spark.sql.shuffle.partitions` 200 → 2 | `local[2]`'de 200 görevlik yığın 4–5 sn sürüyordu; nabızla Spark ~%290 CPU yaktı, gecikme 15,2 sn oldu. 2 bölümle yığın < 1 sn, gecikme 7,58 sn |
+| 2026-11-23 | Gelecek tarihli aday `withWatermark`'tan önce reddedilir (30 sn pay) | Tek bir ileri tarihli mesaj su işaretini sıçratıp sistemi susturabiliyordu. 30 sn = `_EOS` önü (15 sn) + saat kayması payı; ölçülen kap/konteyner kayması 0,32 sn |
+| 2026-11-23 | Değerlendirme ayrı Spark servisi (`spark-eval`, `--profile eval`) ve ayrı konular | `spark_eval.py` su işaretini ~1,4 saat ileri itiyordu ve checkpoint kalıcı olduğu için canlı hattı susturuyordu (A3). Eşik API'si bu servise bağlanmadı: değerlendirme eşikleri ortam değişkeniyle verilir |
 
 ## Açık sorular
 
@@ -287,16 +357,18 @@ Her maddenin yanında kapatılacağı aşama (`docs/YOL_HARITASI.md`).
   izleyici tamponu kare sayısıyla tanımlı; canlı 5–10 FPS'te zaman ölçeği
   2,5–5 kat uzuyor. Çevrimdışı değerlendirme her kareyi işlediği için
   görmüyor (bkz. "Şu an neredeyiz")
-- **Gerçek kamerada alarm gecikmesi** (→ 13.1): 12.4'teki 13,99 sn gerçek
-  zamanlı akıtılan klipte ölçüldü ve A1 yüzünden büyük olasılıkla şişkin;
-  kameranın önünde gerçek bir olayla hiç ölçülmedi
+- **Gerçek kamerada alarm gecikmesi** (→ 14): 13.1'de gerçek zamanlı
+  akıtılan klipte 7,58 sn ölçüldü; kameranın önünde gerçek bir olayla hâlâ
+  ölçülmedi (14'ün çekim oturumunda)
 - **`zone_01`'in sahte RUN'ı** (→ 13.3): 35 vuruş, 1.80 sn, Spark'tan
   geçiyor. Süzgeç gürültüyü eler, kural hatasını düzeltmez — kök neden RUN
   kuralının kendisinde
 - **`police_run` hiç aday üretmiyor** (→ 13.3, 17): 15 FPS, hız tepesi 1.77
   (eşik 1.80), adım medyanı 0.52. Düşük kare hızının adım kanıtını bastırıp
   bastırmadığı 13.3'ün FPS taramasında görülecek; derinlik yönündeki hız
-  17'nin zemin kalibrasyonuyla
+  17'nin zemin kalibrasyonuyla. 13.1 yan gözlemi: aynı klip gerçek zamanlı
+  döngüde (`--realtime --loop`) 41 aday üretti, hiçbiri olaya dönüşmedi —
+  kaynağı (döngü sarımı mı, kare düşmesi mi) incelenmedi
 - **Olay 1023 (RUN) çelişkisi** (→ 14): telemetride `norm_speed_max` 0.142,
   eşik 1.8 — panelde "EŞİK ALTINDA" görünen bir metrikle olay üretilmiş.
   Kuralın hangi kanıtla tetiklendiği (adım ritmi mi) telemetriden

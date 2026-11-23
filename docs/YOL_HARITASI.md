@@ -84,6 +84,9 @@ kopyası (satır satır denetim); test paketi yeşil.
 - C1 sağlık sorgusu dizine uygun sıralama (ölçülen 445 → 1 ms)
 - C2 JPEG / meta kodlaması kamera başına istemci sayısına bağlanır
 - C3 `GET /api/evidence` sayfalama
+- `scripts/seed_pilot.py` kamera kaynağını mutlak yol yazıyor; proje
+  taşınınca dosya kameraları açılmadı (13.1'de görüldü, veritabanı elle
+  düzeltildi). Kaynak proje köküne göreli yazılmalı
 - `scripts/build_frontend.py` önbellek etiketi (`?v=`) satır sonundan
   bağımsız hesaplanır; testler izlenen dosyaları değiştirmez
 
@@ -226,8 +229,10 @@ dağılımı gerçek kamera kaydında.
 
 - **CPU rekabeti:** tam yığın açıkken görü FPS'i ~36'dan 12–15'e
   düşüyor, profillenmedi. Süreç başına CPU ölçümü; Docker servislerine
-  CPU sınırı; Spark tetik aralığı ve çekirdek sayısı (gecikmenin ~9
-  sn'lik ayrıştırılmamış payı)
+  CPU sınırı. Spark'ın yığın payı 13.1'de çözüldü (shuffle bölümü 2).
+  13.1'de görülen: aynı ayarla ardışık koşularda FPS 36 → 11'e kaydı
+  (makinenin kendi sürüklenmesi — ısınma veya arka plan yükü); ölçüm
+  düzeni bunu ayırmalı
 - **TensorRT FP16:** önce aynı klipte PyTorch FP16 ile karşılaştırma;
   kazanç yoksa vazgeçilir. INT8 kullanılmaz (pose modelinde doğruluk
   çöküyor)

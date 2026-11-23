@@ -80,7 +80,13 @@ SCHEMA_VERSION = 1
 # kendiliginden yenilenir. Elle volume silmeye gerek kalmaz.
 # v3: yeni `internal` sutunu (ic tip suzgeci); canli checkpoint'in damgasi eski
 # degerlendirme kosularinca ileri itilmis olabilir, temiz baslangic.
-AGG_VERSION = 3
+# v4: shuffle bolum sayisi 200 -> 2. Durumlu sorguda bolum sayisi checkpoint'e
+# yazilir; eski checkpoint yeni degeri yok sayar, o yuzden yeni yol.
+AGG_VERSION = 4
+# Varsayilan 200 bolum, local[2]'de her yiginda 200 gorev demek: nabizla Spark
+# durmadan 4-5 sn'lik yigin kostu, ~%290 CPU yakti ve olay gecikmesi 15 sn'ye
+# cikti. 2 bolumle yigin < 1 sn, CPU ~%70, gecikme ~7.5 sn (Asama 13.1 olcumu).
+SHUFFLE_PARTITIONS = os.getenv("SPARK_SHUFFLE_PARTITIONS", "2")
 CHECKPOINT_DIR = os.path.join(
     os.getenv("CHECKPOINT_DIR", "/checkpoints"), f"agg{AGG_VERSION}")
 
@@ -203,7 +209,9 @@ def main() -> None:
           f"future_sec={FUTURE_SEC} trigger_sec={TRIGGER_SEC} "
           f"checkpoint={CHECKPOINT_DIR}")
 
-    spark = SparkSession.builder.appName("anomaly-spark").getOrCreate()
+    spark = (SparkSession.builder.appName("anomaly-spark")
+             .config("spark.sql.shuffle.partitions", SHUFFLE_PARTITIONS)
+             .getOrCreate())
     spark.sparkContext.setLogLevel("WARN")
 
     raw = (spark.readStream.format("kafka")

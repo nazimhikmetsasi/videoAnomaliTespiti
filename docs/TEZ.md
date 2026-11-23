@@ -109,8 +109,10 @@ yani kaçırmıyor.
 > `fall_01` ve `run_01` ilk ~20 dakikadan sonra **7 saat boyunca sıfır olay**
 > üretti: dosya kameralarının sahne saatleri ayrıştı ve Spark geride kalanın
 > adaylarını geç veri diye attı (`docs/ASAMA13_PLAN.md` A2). Aşağıdaki
-> "506 yeni olay" neredeyse tamamen tek kameradandır. 13.1'den sonra koşu
-> tekrarlanacak; **bu bölümün olay sayıları o zamana kadar teze aktarılmamalı.**
+> "506 yeni olay" neredeyse tamamen tek kameradandır. Hata Aşama 13.1'de
+> giderildi (ortak duvar saati; üç dosya kamerasıyla 280 sn'lik denemede geç
+> aday 0, üç kamera da olay üretiyor). Düzeltilmiş olay sayıları 24 saatlik
+> koşudan (Aşama 18) gelecek; **bu bölümün olay sayıları teze aktarılmamalı.**
 
 `scripts/soak_test.py`, 60 saniyede bir ölçüm, 459 ölçüm, kesintisiz.
 Kameralar: `webcam_01` (dizüstü kamerası), `zone_01`, `run_01`, `fall_01`.
@@ -176,47 +178,52 @@ aşım 60 saniyede ~22 MB'dır, 20 GB tavanın binde biri.
 
 ## 3.7 Uçtan uca alarm gecikmesi
 
-> **⚠ Aşama 13 bulgusu — değer büyük olasılıkla şişkin.** Spark'ın su işareti
-> yalnız yeni veri gelince ilerliyor (`docs/ASAMA13_PLAN.md` A1, ölçüldü).
-> Ölçüm döngüdeki 7,9 sn'lik klibe dayandığı için her düşme olayı bir sonraki
-> döngünün adaylarını beklemiş olabilir: 7,9 sn + 5 sn taban ≈ 14 sn. Gerçek
-> değerin ~5–6 sn olması bekleniyor — **hipotez**. 13.1'den sonra yeniden
-> ölçülecek; **13,99 sn o zamana kadar teze aktarılmamalı.**
-
 Gecikme `events` tablosunun kendi damgalarından hesaplanır: `started_at`
 (anomalinin başlangıcı), `ended_at` (bitişi) ve `created_at` (olay
 satırının veritabanına yazılması). Üç sayı ayrı raporlanır; en anlamlısı
 anomali bittikten sonra alarma kalan süredir.
 
-`data/pilot/fall_01.mp4`, gerçek zamanlı akıtma, 4 olay:
+`data/pilot/fall_01.mp4`, gerçek zamanlı akıtma, 11 olay (Aşama 13.1; klibin
+11 döngüsündeki 11 düşmenin tamamı):
 
 | ölçüt | medyan | en düşük | en yüksek |
 |---|---|---|---|
-| tespit → alarm | **13,99 sn** | 12,74 | 15,09 |
-| toplam (ilk kanıttan) | 14,03 sn | 12,77 | 15,13 |
+| tespit → alarm | **7,58 sn** | 7,23 | 8,09 |
+| toplam (ilk kanıttan) | 7,63 sn | 7,26 | 8,12 |
 
-**Bu sürenin 5 saniyesi tasarım gereğidir ve kısaltılamaz:** Apache Spark
-oturum penceresi 3 saniyelik sessizlikten sonra kapanır ve su işareti
-(watermark) 2 saniyedir. Kalan yaklaşık 9 saniye Spark mikro-yığın
-gecikmesi ile tüketici süresidir; akış sorgusuna açık bir tetikleyici
-(`trigger`) verilmediğinden Spark varsayılan davranışla, önceki yığın
-tamamlanır tamamlanmaz yeni yığını işler ve kullanılan donanımda yığın
-başına süre saniyeler mertebesindedir. Bu iki bileşenin ayrımı ayrıca
-ölçülmemiştir.
+**Bu sürenin 5 saniyesi tasarım gereğidir:** Apache Spark oturum penceresi
+3 saniyelik sessizlikten sonra kapanır ve su işareti (watermark) 2
+saniyedir. Kalan ~2,6 saniye su işareti nabzının aralığı (en çok 1 sn),
+1 saniyelik tetik aralığı ile yığın süresi ve tüketicidir.
+
+**Önceki ölçüm 13,99 saniyeydi (Aşama 12.4) ve iki hatanın ürünüydü.** İkisi
+de ayrı ayrı ölçülerek bulundu ve giderildi:
+
+1. *Su işareti yalnız yeni veriyle ilerliyordu.* Düşme oturumu, döngüdeki
+   klibin bir sonraki turunun adaylarını bekliyordu; gerçek bir sessiz
+   sahnede hiç kapanmıyordu. Sessiz sahnede tek düşme deneyi: düzeltmeden
+   önce 45 saniye boyunca olay yok; her kameranın saniyede bir su işareti
+   nabzı basmasıyla olay 7,5–7,9 saniyede geldi (dört koşu).
+2. *Spark'ın varsayılan 200 shuffle bölümü.* İki çekirdekli yerel modda her
+   mikro-yığın 4–5 saniye sürüyordu; nabız eklenince gecikme 15,2 saniyeye
+   çıktı ve Spark sürekli ~%290 CPU kullandı. Bölüm sayısı 2'ye
+   indirildiğinde yığın süresi 1 saniyenin altına, CPU ~%70'e indi.
+
+Nabzın kendi maliyeti: aday üretmeyen tek kamerada Spark CPU'su boştaki
+~%0,5'ten ~%35–40'a çıkar.
 
 **Operatörün gördüğü ilk uyarı bu değildir.** Panelin canlı görüntü katmanı
 aday anomalileri (`pre_alarms`) her karede WebSocket üzerinden alır; aday
-uyarısı operatörün ekranında saniyenin altında belirir. Yukarıdaki 13,99
+uyarısı operatörün ekranında saniyenin altında belirir. Yukarıdaki 7,58
 saniye, **doğrulanmış olayın** veritabanına yazılıp bildirime dönüşme
 süresidir. İki sayı farklı şeyleri ölçer ve karıştırılmamalıdır.
 
 ### Ölçümün geçerlilik şartı
 
-Dosya kaynağında olay zaman damgası sahne zamanından türer
-(`epoch_base + kare_indeksi / FPS`). Dosya diskin izin verdiği hızda
-okunursa sahne zamanı duvar saatinden kayar ve bu kayma doğrudan
-"gecikme" olarak raporlanır. Bu nedenle ölçüm yalnızca kaynağın **kendi
-kare hızında** akıtıldığı koşularda geçerlidir; kaynak bu hızda
+Olay zaman damgası adayın **işlendiği anın** duvar saatidir; bütün
+kameralar aynı saati paylaşır. Dosya diskin izin verdiği hızda okunursa
+işlenme anı sahnedeki anı temsil etmez. Bu nedenle ölçüm yalnızca kaynağın
+**kendi kare hızında** akıtıldığı koşularda geçerlidir; kaynak bu hızda
 akıtılamazsa ölçüm otomatik olarak geçersiz işaretlenir (gecikmenin koşu
 boyunca büyümesi sınanır).
 
