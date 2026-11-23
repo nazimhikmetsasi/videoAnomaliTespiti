@@ -8,13 +8,13 @@ uzun iz 32.5 sn. O olcum ilk-son gorulme ARALIGIYDI, kesintisiz sure degil.
 Bu betik kuralin (vision/rules/loiter.py) sayaci sifirlayan IKI sartini ayri
 ayri olcer, cunku hangisinin sorun oldugu cozumu degistirir:
 
-  1. iz kopmasi   -- iz STALE_FRAMES (90) kareden uzun gorulmezse durum duser
+  1. iz kopmasi   -- iz STALE_SEC (3.6 sn) boyunca gorulmezse durum duser
   2. bolge disi   -- bolge modunda ayak TEK KARE bolge disina cikarsa
                      `still = False` ve sayac sifirlanir
 
 Iz basina raporlanan:
   aralik           ilk-son gorulme (dunku olcum)
-  kesintisiz iz    STALE_FRAMES'ten uzun bosluk olmadan gorulme
+  kesintisiz iz    STALE_SEC'ten uzun bosluk olmadan gorulme
   kesintisiz bolge ayak noktasinin bolgede ARALIKSIZ kaldigi en uzun sure
                    -- kuralin gercekte biriktirdigi sey budur
   cikis sayisi     bolgeden cikis (sayac sifirlamasi) adedi
@@ -35,7 +35,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from vision.rules.engine import Thresholds  # noqa: E402
-from vision.rules.loiter import STALE_FRAMES, LoiterRule  # noqa: E402
+from vision.rules.loiter import LoiterRule  # noqa: E402
+from vision.stages.features import EPS, STALE_SEC  # noqa: E402
 
 
 def kayit_topla(clip: Path, zones_path: str, model: str) -> tuple[dict, float, list]:
@@ -67,7 +68,7 @@ def kayit_topla(clip: Path, zones_path: str, model: str) -> tuple[dict, float, l
                 continue
             image = pre(frame.image)
             ts = frame.idx / src.fps
-            tracks = sm(tracker.update(det([image])[0], image), ts)
+            tracks = sm(tracker.update(det([image])[0], image, ts), ts)
             for tid, window in feats(tracks, frame.idx, ts, image.shape[:2]).items():
                 last = window.last
                 if not last.has_pose:
@@ -79,12 +80,13 @@ def kayit_topla(clip: Path, zones_path: str, model: str) -> tuple[dict, float, l
 
 def en_uzun_kosu(ornekler: list, fps: float, sart) -> tuple[float, list[float]]:
     """`sart` saglanan ardisik orneklerin en uzun suresi + kesilen bosluklar.
-    Ornekler arasi bosluk STALE_FRAMES'i asarsa kosu da kopar (kuralla ayni)."""
-    en_uzun, bas, onceki_idx = 0.0, None, None
+    Ornekler arasi bosluk STALE_SEC'i asarsa kosu da kopar (kuralla ayni)."""
+    en_uzun, bas, onceki_ts = 0.0, None, None
     cikislar: list[float] = []
     cikis_bas = None
     for idx, ts, bolgede in ornekler:
-        kopuk = onceki_idx is not None and idx - onceki_idx > STALE_FRAMES
+        # Bosluk = idx farki / fps = ts farki (ts = idx / fps).
+        kopuk = onceki_ts is not None and ts - onceki_ts > STALE_SEC + EPS
         if kopuk:
             bas = None
         if sart(bolgede):
@@ -98,7 +100,7 @@ def en_uzun_kosu(ornekler: list, fps: float, sart) -> tuple[float, list[float]]:
             if bas is not None and cikis_bas is None:
                 cikis_bas = ts
             bas = None
-        onceki_idx = idx
+        onceki_ts = ts
     return en_uzun, cikislar
 
 
@@ -115,8 +117,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"\n  klip          : {clip.name}  ({fps:.0f} FPS)")
     print(f"  mod           : {'BOLGE (' + ', '.join(z.name for z in zones) + ')' if zones else 'CIPA'}")
-    print(f"  esik          : {esik} sn,  iz kopma siniri {STALE_FRAMES} kare "
-          f"({STALE_FRAMES / fps:.1f} sn)\n")
+    print(f"  esik          : {esik} sn,  iz kopma siniri {STALE_SEC:.1f} sn\n")
     print(f"  {'iz':>4} {'ornek':>6} {'aralik':>8} {'kesintisiz':>11} "
           f"{'kesintisiz':>11} {'cikis':>6} {'en kisa':>8}")
     print(f"  {'':>4} {'':>6} {'(sn)':>8} {'iz (sn)':>11} "
@@ -155,10 +156,10 @@ def main(argv: list[str] | None = None) -> int:
 
 def toleransli_kalis(ornekler: list, tolerans: float) -> float:
     """Bolge disinda `tolerans` saniyeden kisa kalinan bosluklari yok sayarak
-    bolgede en uzun kalis. Iz kopmasi (STALE_FRAMES) yine kosuyu keser."""
-    en_uzun, bas, disari, onceki_idx = 0.0, None, None, None
+    bolgede en uzun kalis. Iz kopmasi (STALE_SEC) yine kosuyu keser."""
+    en_uzun, bas, disari, onceki_ts = 0.0, None, None, None
     for idx, ts, bolgede in ornekler:
-        if onceki_idx is not None and idx - onceki_idx > STALE_FRAMES:
+        if onceki_ts is not None and ts - onceki_ts > STALE_SEC + EPS:
             bas, disari = None, None
         if bolgede:
             disari = None
@@ -170,7 +171,7 @@ def toleransli_kalis(ornekler: list, tolerans: float) -> float:
                 disari = ts
             if ts - disari > tolerans:
                 bas = None
-        onceki_idx = idx
+        onceki_ts = ts
     return en_uzun
 
 

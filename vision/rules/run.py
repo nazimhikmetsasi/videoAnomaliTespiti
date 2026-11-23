@@ -1,7 +1,7 @@
 """RUN kurali: surekliligi olan yuksek yatay hiz (PLAN.md #4).
 
-Son 10 karenin en az 6'sinda esik asilmali -- suzulme sarti tek karelik
-dedektor sicramasini eler.
+Son 0.36 sn'deki karelerin en az %60'inda esik asilmali (25 FPS'te 10
+karede 6) -- suzulme sarti tek karelik dedektor sicramasini eler.
 
 SS10.3: norm_speed (goruntu yatay hizi) ozne kamera eksenine dogru/kameradan
 uzaklasarak hareket ederse veya kamera ozneyi takip ederse gozlemlenemez
@@ -12,35 +12,36 @@ geometrisinden bagimsizdir; ikinci, bagimsiz tetikleyici olarak eklendi.
 
 from __future__ import annotations
 
+import math
 import statistics
 
 from vision.rules.engine import Candidate, Thresholds
-from vision.stages.features import TrackWindow
+from vision.stages.features import EPS, TrackWindow
 
-LOOKBACK = 10
-MIN_HITS = 6
+SPEED_SEC = 0.36     # yer degistirme kaniti penceresi; 25 FPS'te 10 kare
+MIN_HIT_RATIO = 0.6  # penceredeki karelerin esigi asmasi gereken orani; 25 FPS'te 6/10
 # Adim kanitinin penceresi yer degistirme kanitininkinden UZUNDUR. Olculdu:
-# 10 karelik medyanda yuruyusun tek adimlik sicramasi kosu bandina giriyor
+# 10 karelik (0.36 sn) medyanda yuruyusun tek adimlik sicramasi kosu bandina giriyor
 # (NORMAL p95 1.28, gercek kosu 1.45 -- ayrisma yok), 50 karede yuruyus
 # p95'i 1.00'a duserken kosu 1.46'da kaliyor. Bedeli: kosu 2 saniye once
 # degil, 2 saniye sonra bildirilir.
-GAIT_LOOKBACK = 50
+GAIT_SEC = 1.96      # 25 FPS'te 50 kare
 
 
 class RunRule:
     def check(self, window: TrackWindow, th: Thresholds) -> Candidate | None:
-        recent = window.recent(LOOKBACK)
-        if len(recent) < LOOKBACK:
+        recent = window.covering(SPEED_SEC)
+        if recent is None:
             return None
 
         speeds = [f.norm_speed for f in recent]
-        gait_window = window.recent(GAIT_LOOKBACK)
+        gait_window = window.covering(GAIT_SEC)
         hits = sum(1 for s in speeds if s >= th.run_norm_speed)
         # Medyan, tepe degil: tek karelik keypoint sicramasi yuruyuste de
         # gait_median'i sisirebilir (olculen fall_01 5.34 sn: limb_speed 3.26).
         gait_median = (statistics.median(f.limb_speed for f in gait_window)
-                       if len(gait_window) >= GAIT_LOOKBACK else 0.0)
-        if hits < MIN_HITS and gait_median < th.run_gait_speed:
+                       if gait_window is not None else 0.0)
+        if hits < math.ceil(MIN_HIT_RATIO * len(recent) - EPS) and gait_median < th.run_gait_speed:
             return None
 
         median = statistics.median(speeds)

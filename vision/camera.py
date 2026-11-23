@@ -304,12 +304,12 @@ class CameraPipeline:
         self.infer_ms.append(infer_ms)
         t2 = time.perf_counter()
         self._known_ids = set(self.tracker.seen_ids)
-        tracks = self.tracker.update(result, image)
+        ts = frame.ts if self.source.is_live else frame.idx / self.source.fps
+        tracks = self.tracker.update(result, image, ts)
         self.track_ms.append((time.perf_counter() - t2) * 1000)
 
         active_labels: dict[int, str] = {}
         candidates: list[Candidate] = []
-        ts = frame.ts if self.source.is_live else frame.idx / self.source.fps
         if args.rules:
             t4 = time.perf_counter()
             tracks = self.smoother(tracks, ts)

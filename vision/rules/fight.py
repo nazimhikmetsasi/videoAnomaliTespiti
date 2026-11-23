@@ -12,7 +12,7 @@ import itertools
 import numpy as np
 
 from vision.rules.engine import Candidate, Thresholds
-from vision.stages.features import TrackWindow
+from vision.stages.features import EPS, TrackWindow
 
 
 def pair_proximity(wi: TrackWindow, wj: TrackWindow) -> float:
@@ -41,14 +41,14 @@ def close_pairs(windows: dict[int, TrackWindow], th: Thresholds) -> set[int]:
             close.add(wj.track_id)
     return close
 
-HOLD = 3                    # cift bazli sart surekliligi, kare sayisi
+HOLD_SEC = 0.08             # cift bazli sart surekliligi; 25 FPS'te 3 kare
 FIGHT_LIMB_SPEED = 2.0       # normalize uzuv hizi esigi (1/sn)
 
 
 class FightRule:
     def __init__(self, limb_speed_th: float = FIGHT_LIMB_SPEED) -> None:
         self.limb_speed_th = limb_speed_th
-        self._streak: dict[tuple[int, int], int] = {}
+        self._since: dict[tuple[int, int], float] = {}   # sartin ilk saglandigi ts
 
     def check_all(self, windows: dict[int, TrackWindow], th: Thresholds) -> list[Candidate]:
         candidates: list[Candidate] = []
@@ -61,9 +61,9 @@ class FightRule:
                 candidates.append(cand)
 
         # Bu karede birlikte gorulmeyen ciftlerin serisi anlamsiz -- dus.
-        for pair in list(self._streak):
+        for pair in list(self._since):
             if pair not in seen:
-                del self._streak[pair]
+                del self._since[pair]
         return candidates
 
     def _check_pair(self, wi: TrackWindow, wj: TrackWindow, pair: tuple[int, int],
@@ -75,11 +75,10 @@ class FightRule:
                and fi.limb_speed >= self.limb_speed_th
                and fj.limb_speed >= self.limb_speed_th)
         if not met:
-            self._streak[pair] = 0
+            self._since.pop(pair, None)
             return None
 
-        self._streak[pair] = self._streak.get(pair, 0) + 1
-        if self._streak[pair] < HOLD:
+        if fi.ts - self._since.setdefault(pair, fi.ts) < HOLD_SEC - EPS:
             return None
 
         limb_min = min(fi.limb_speed, fj.limb_speed)

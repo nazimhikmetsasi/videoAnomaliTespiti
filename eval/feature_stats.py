@@ -50,8 +50,8 @@ def run_clip_features(path: Path, detector: PoseDetector,
                 continue
             image = preprocess(frame.image)
             result = detector([image])[0]
-            tracks = tracker.update(result, image)
             ts = frame.idx / source.fps
+            tracks = tracker.update(result, image, ts)
             tracks = smoother(tracks, ts)
             windows = features(tracks, frame.idx, ts, image.shape[:2])
             for window in windows.values():

@@ -17,9 +17,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from vision.stages.features import EPS, STALE_SEC
 from vision.stages.tracker import Track
-
-STALE_FRAMES = 90     # bu kadar kare gorulmeyen izin durumu duser
 
 
 @dataclass
@@ -28,7 +27,6 @@ class _State:
     dx_prev: np.ndarray      # (17, 2)
     t_prev: float
     last: np.ndarray         # (17, 3) -- son duzlestirilmis deger (hold icin)
-    age: int = 0
 
 
 def _alpha(cutoff: np.ndarray | float, dt: float) -> np.ndarray | float:
@@ -53,7 +51,7 @@ class Smoother:
                 continue
             seen.add(track.track_id)
             track.keypoints_smoothed = self._smooth(track.track_id, track.keypoints, ts)
-        self._cleanup(seen)
+        self._cleanup(seen, ts)
         return tracks
 
     def _smooth(self, track_id: int, raw: np.ndarray, ts: float) -> np.ndarray:
@@ -73,7 +71,7 @@ class Smoother:
             smoothed = raw.copy()
             st.x_prev = raw[:, :2].copy()
             st.dx_prev = np.zeros((17, 2), dtype=np.float64)
-            st.t_prev, st.last, st.age = ts, smoothed, 0
+            st.t_prev, st.last = ts, smoothed
             return smoothed
 
         x = raw[:, :2]
@@ -93,14 +91,11 @@ class Smoother:
 
         st.x_prev[mask] = x_hat[mask]
         st.dx_prev[mask] = dx_hat[mask]
-        st.t_prev, st.last, st.age = ts, smoothed, 0
+        st.t_prev, st.last = ts, smoothed
         return smoothed
 
-    def _cleanup(self, seen: set[int]) -> None:
+    def _cleanup(self, seen: set[int], ts: float) -> None:
+        # Son gorulme zamani t_prev; STALE_SEC tek kaynak (features.py).
         for track_id in list(self._state):
-            if track_id in seen:
-                continue
-            st = self._state[track_id]
-            st.age += 1
-            if st.age > STALE_FRAMES:
+            if track_id not in seen and ts - self._state[track_id].t_prev > STALE_SEC + EPS:
                 del self._state[track_id]

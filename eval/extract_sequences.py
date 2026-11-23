@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 
 from vision.source import VideoSource
-from vision.stages.features import STALE_FRAMES
+from vision.stages.features import EPS, STALE_SEC
 from vision.stages.pose_detector import DEFAULT_WEIGHTS, PoseDetector
 from vision.stages.preprocess import Preprocessor
 from vision.stages.smoother import Smoother
@@ -79,8 +79,8 @@ def clip_tracks(path: Path, detector: PoseDetector) -> tuple[float, dict[int, li
                 continue
             fps = source.fps
             image = preprocess(frame.image)
-            tracks = smoother(tracker.update(detector([image])[0], image),
-                              frame.idx / source.fps)
+            ts = frame.idx / source.fps
+            tracks = smoother(tracker.update(detector([image])[0], image, ts), ts)
             for track in tracks:
                 kp = track.keypoints_smoothed if track.keypoints_smoothed is not None \
                     else track.keypoints
@@ -88,18 +88,18 @@ def clip_tracks(path: Path, detector: PoseDetector) -> tuple[float, dict[int, li
     return fps, per_track
 
 
-def split_runs(samples: list[tuple]) -> list[list[tuple]]:
-    """Iz STALE_FRAMES'ten uzun kayboluyorsa pencere zinciri kopar.
+def split_runs(samples: list[tuple], fps: float) -> list[list[tuple]]:
+    """Iz STALE_SEC'ten uzun kayboluyorsa pencere zinciri kopar.
 
     Uretimde de oyle: FeatureEngine bu kadar gorulmeyen izin penceresini
-    dusurur (vision/stages/features.py STALE_FRAMES). Daha kisa bosluklar
+    dusurur (vision/stages/features.py STALE_SEC). Daha kisa bosluklar
     korunur — pencere "son 50 GORULME"dir, 50 ardisik kare degil; kesintisiz
     50 kare sarti kliplerin neredeyse tamamini eliyordu (izler 91-198 kare
     yasiyor ama her ~15 karede bir kare atliyor).
     """
     runs, current = [], [samples[0]]
     for prev, item in zip(samples, samples[1:]):
-        if item[0] - prev[0] > STALE_FRAMES:
+        if (item[0] - prev[0]) / fps > STALE_SEC + EPS:
             runs.append(current)
             current = []
         current.append(item)
@@ -115,7 +115,7 @@ def clip_windows(samples: list[tuple], fps: float, stride: int = STRIDE,
     iceriyorsa tutulur (URFD kare bazli etiketi).
     """
     kept, dropped = [], 0
-    for run in split_runs(samples):
+    for run in split_runs(samples, fps):
         for start in range(0, max(len(run) - WINDOW + 1, 0), stride):
             chunk = run[start:start + WINDOW]
             if sum(kp is not None for _, _, kp in chunk) / WINDOW < MIN_POSE_RATIO:

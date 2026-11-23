@@ -83,7 +83,7 @@ def pilot_pencereleri(clips: list[Path], detector, stride: int = 25) -> np.ndarr
                     continue
                 image = preprocess(frame.image)
                 ts = frame.idx / source.fps
-                tracks = smoother(tracker.update(detector([image])[0], image), ts)
+                tracks = smoother(tracker.update(detector([image])[0], image, ts), ts)
                 pencereler = features(tracks, frame.idx, ts, image.shape[:2])
                 sayac += 1
                 if sayac % stride:

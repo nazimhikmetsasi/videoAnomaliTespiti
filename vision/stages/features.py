@@ -16,8 +16,14 @@ from vision.stages.tracker import Track
 KP = {"nose": 0, "l_sho": 5, "r_sho": 6, "l_wri": 9, "r_wri": 10,
       "l_hip": 11, "r_hip": 12, "l_knee": 13, "r_knee": 14,
       "l_ank": 15, "r_ank": 16}          # COCO-17
-STALE_FRAMES = 90      # bu kadar kare gorulmeyen izin penceresi duser
-LIMB_HIST = 3           # limb_speed'in baktigi yer degistirme penceresi (kare)
+# Sure sabitleri saniye cinsinden: canli kamera 5-10 FPS'te kosar, kare sayisi
+# ayni sureyi 2.5-5 kat uzatirdi. Karsiliklar 25 FPS icindir (docs/ASAMA13_3_PLAN.md).
+EPS = 1e-6              # zaman karsilastirmalarinda kayan nokta payi
+STALE_SEC = 3.6         # bu kadar gorulmeyen izin durumu duser; 25 FPS'te 90 kare
+VELOCITY_SEC = 0.2      # hizin baktigi geri aralik; 25 FPS'te 5 kare
+LIMB_SEC = 0.12         # limb_speed'in baktigi geri aralik; 25 FPS'te 3 kare
+RETAIN_SEC = 2.0        # pencerede tutulan sure; GAIT_SEC (1.96) ve TCN penceresinden buyuk olmali
+WINDOW_MAXLEN = 250     # yalniz bellek tavani (50 FPS x 2 sn = 100'un uzerinde pay)
 LIMB_KEYPOINTS = (KP["l_wri"], KP["r_wri"], KP["l_ank"], KP["r_ank"])
 
 def _avg_point(kp: np.ndarray, idxs: tuple[int, ...], conf_th: float) -> np.ndarray | None:
@@ -48,28 +54,50 @@ class FrameFeatures:
     limb_speed: float         # bilek/ayak bilegi icinde en yuksek normalize hiz
     # Asagidaki ikisi kurallarin isine yaramaz; TCN penceresi (Asama 9) ham
     # iskeleti ister ve pencereyi ikinci bir tampondan kurmaktansa buradan
-    # okumak tek kaynak birakir. Bedeli iz basina 50 x (17x3 + 4) float.
+    # okumak tek kaynak birakir. Bedeli iz basina RETAIN_SEC x FPS x (17x3 + 4) float.
     bbox: np.ndarray | None = None        # xyxy, letterbox kare uzayinda
     keypoints: np.ndarray | None = None   # (17, 3) duzlestirilmis; poz yoksa None
 
 class TrackWindow:
-    """Tek izin son `window_frames` karesi."""
+    """Tek izin son `retain_sec` saniyelik karesi."""
 
-    def __init__(self, track_id: int, maxlen: int) -> None:
-        self.track_id, self.frames = track_id, collections.deque(maxlen=maxlen)
+    def __init__(self, track_id: int, maxlen: int = WINDOW_MAXLEN,
+                 retain_sec: float = RETAIN_SEC) -> None:
+        self.track_id, self.retain_sec = track_id, retain_sec
+        self.frames = collections.deque(maxlen=maxlen)
     @property
     def last(self) -> FrameFeatures:
         return self.frames[-1]
     def recent(self, n: int) -> list[FrameFeatures]:
         return list(self.frames)[-n:]
+    def append(self, feat: FrameFeatures) -> None:
+        self.frames.append(feat)
+        # Siniri asan TEK kare kalir: covering(retain_sec) hala cevap verebilsin.
+        cutoff = feat.ts - self.retain_sec + EPS
+        while len(self.frames) >= 2 and self.frames[1].ts <= cutoff:
+            self.frames.popleft()
+    def since(self, sec: float) -> list[FrameFeatures]:
+        """Son `sec` saniyedeki kareler (kismi pencere serbest, son kare hep var)."""
+        floor = self.last.ts - sec - EPS
+        return [f for f in self.frames if f.ts >= floor]
+    def covering(self, sec: float) -> list[FrameFeatures] | None:
+        """Son kareden, en az `sec` once alinmis ilk kareye kadar (o dahil).
+        Iz o kadar eski degilse None: eski 'len < N ise cik' desenin karsiligi."""
+        newest = self.last.ts
+        out: list[FrameFeatures] = []
+        for f in reversed(self.frames):
+            out.append(f)
+            if newest - f.ts >= sec - EPS:
+                out.reverse()
+                return out
+        return None
 
 class FeatureEngine:
-    def __init__(self, *, window_frames: int = 50, kp_conf: float = 0.5,
-                 velocity_lookback: int = 5) -> None:
-        self.window_frames, self.kp_conf, self.velocity_lookback = window_frames, kp_conf, velocity_lookback
+    def __init__(self, *, kp_conf: float = 0.5, velocity_sec: float = VELOCITY_SEC) -> None:
+        self.kp_conf, self.velocity_sec = kp_conf, velocity_sec
         self._windows: dict[int, TrackWindow] = {}
         self._kp_hist: dict[int, collections.deque[tuple[float, np.ndarray]]] = {}
-        self._age: dict[int, int] = {}
+        self._last_seen: dict[int, float] = {}
 
     def __call__(self, tracks: list[Track], idx: int, ts: float,
                  frame_shape: tuple[int, int]) -> dict[int, TrackWindow]:
@@ -78,11 +106,11 @@ class FeatureEngine:
         seen: dict[int, TrackWindow] = {}
         for track in tracks:
             window = self._windows.setdefault(
-                track.track_id, TrackWindow(track.track_id, self.window_frames))
-            window.frames.append(self._compute(track, window, idx, ts, h, w))
-            self._age[track.track_id] = 0
+                track.track_id, TrackWindow(track.track_id))
+            window.append(self._compute(track, window, idx, ts, h, w))
+            self._last_seen[track.track_id] = ts
             seen[track.track_id] = window
-        self._cleanup(seen.keys())
+        self._cleanup(seen.keys(), ts)
         return seen
 
     def _compute(self, track: Track, window: TrackWindow, idx: int, ts: float,
@@ -119,15 +147,18 @@ class FeatureEngine:
 
     def _velocity(self, window: TrackWindow, centroid: np.ndarray, height: float,
                   ts: float) -> tuple[float, float]:
-        # velocity_lookback kare geriden: kareden kareye tek karelik gurultu hizi ikiye katliyor.
-        frames = window.frames
+        # velocity_sec geriden: kareden kareye tek karelik gurultu hizi ikiye katliyor.
+        if height <= 0:
+            return 0.0, 0.0
         # Pencere dolmadan hiz UretILMEZ. Kisa pencerede en eski kareye
         # bakmak dt'yi tek kareye kadar dusuruyor ve iz dogarken kutunun
         # oturma titremesi hiz gibi okunuyordu: normal_01 klibi 0.4 sn'de
-        # 25 RUN adayi uretiyordu. Bedeli iz basina 5 karelik (0.2 sn) sessizlik.
-        if len(frames) < self.velocity_lookback or height <= 0:
+        # 25 RUN adayi uretiyordu. Bedeli iz basina 0.2 sn sessizlik.
+        # Baslangic: sureyi dolduran EN YENI onceki kare (25 FPS'te frames[-5]).
+        limit = ts - self.velocity_sec + EPS
+        old = next((f for f in reversed(window.frames) if f.ts <= limit), None)
+        if old is None:
             return 0.0, 0.0
-        old = frames[-self.velocity_lookback]
         dt = ts - old.ts
         if dt <= 0:
             return 0.0, 0.0
@@ -150,7 +181,10 @@ class FeatureEngine:
         return min(angles) if angles else 180.0
 
     def _limb_speed(self, track_id: int, kp: np.ndarray, height: float, ts: float) -> float:
-        hist = self._kp_hist.setdefault(track_id, collections.deque(maxlen=LIMB_HIST))
+        hist = self._kp_hist.setdefault(track_id, collections.deque())
+        # Sinirin ardindaki tek kare kalir (25 FPS'te 3 kare geri); iz dogarken en eskisi.
+        while len(hist) >= 2 and hist[1][0] <= ts - LIMB_SEC + EPS:
+            hist.popleft()
         speed = 0.0
         if hist and height > 0:
             old_ts, old_kp = hist[0]
@@ -162,12 +196,11 @@ class FeatureEngine:
         hist.append((ts, kp))
         return speed
 
-    def _cleanup(self, seen) -> None:
+    def _cleanup(self, seen, ts: float) -> None:
         seen = set(seen)
         for track_id in list(self._windows):
             if track_id in seen:
                 continue
-            self._age[track_id] = self._age.get(track_id, 0) + 1
-            if self._age[track_id] > STALE_FRAMES:
-                del self._windows[track_id], self._age[track_id]
+            if ts - self._last_seen[track_id] > STALE_SEC + EPS:
+                del self._windows[track_id], self._last_seen[track_id]
                 self._kp_hist.pop(track_id, None)

@@ -9,17 +9,17 @@ from __future__ import annotations
 from vision.rules.engine import Candidate, Thresholds
 from vision.stages.features import TrackWindow
 
-HOLD = 3            # body_tilt esiginin hepsini gecmesi gereken kare sayisi
-VY_LOOKBACK = 15     # norm_vy tepe degerinin arandigi kare sayisi
+HOLD_SEC = 0.08     # body_tilt esiginin hepsini gecmesi gereken sure; 25 FPS'te 3 kare
+VY_SEC = 0.56       # norm_vy tepe degerinin arandigi sure; 25 FPS'te 15 kare
 
 
 class FallRule:
     def check(self, window: TrackWindow, th: Thresholds) -> Candidate | None:
-        held = window.recent(HOLD)
-        if len(held) < HOLD or not all(f.body_tilt >= th.fall_tilt_deg for f in held):
+        held = window.covering(HOLD_SEC)
+        if held is None or not all(f.body_tilt >= th.fall_tilt_deg for f in held):
             return None
 
-        vy_window = [f.norm_vy for f in window.recent(VY_LOOKBACK)]
+        vy_window = [f.norm_vy for f in window.since(VY_SEC)]
         vy_max = max(vy_window, default=0.0)
         if vy_max < th.fall_norm_vy:
             return None

@@ -103,7 +103,7 @@ def run_clip(path: Path, detector: PoseDetector, engine,
                 continue
             kept += 1
             image = preprocess(frame.image)
-            tracks = smoother(tracker.update(detector([image])[0], image), ts)
+            tracks = smoother(tracker.update(detector([image])[0], image, ts), ts)
             windows = features(tracks, frame.idx, ts, image.shape[:2])
             candidates.extend(engine(windows))
         fps = source.fps

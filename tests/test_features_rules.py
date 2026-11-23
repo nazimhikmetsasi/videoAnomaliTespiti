@@ -10,6 +10,7 @@ FrameFeatures nesneleriyle CPU'da kosar.
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -19,15 +20,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from vision.rules.engine import RuleEngine, Thresholds, Zone  # noqa: E402
 from vision.rules.fall import FallRule  # noqa: E402
 from vision.rules.fight import FightRule  # noqa: E402
-from vision.rules.loiter import STALE_FRAMES, LoiterRule  # noqa: E402
-from vision.rules.run import GAIT_LOOKBACK, RunRule  # noqa: E402
+from vision.rules.loiter import LoiterRule  # noqa: E402
+from vision.rules.run import GAIT_SEC, RunRule  # noqa: E402
 from vision.rules.zone import ZoneRule  # noqa: E402
-from vision.stages.features import KP, FeatureEngine, FrameFeatures, TrackWindow  # noqa: E402
+from vision.stages.features import KP, STALE_SEC, FeatureEngine, FrameFeatures, TrackWindow  # noqa: E402
 from vision.stages.smoother import Smoother  # noqa: E402
 from vision.stages.tracker import Track  # noqa: E402
 
 FPS = 25.0
 DT = 1.0 / FPS
+GAIT_N = round(GAIT_SEC * FPS) + 1     # 25 FPS'te 50 kare
+STALE_N = round(STALE_SEC * FPS)        # 25 FPS'te 90 kare
 
 
 def _track(track_id: int, kp: np.ndarray | None, bbox=(470.0, 200.0, 530.0, 380.0)) -> Track:
@@ -163,7 +166,7 @@ def test_velocity_warmup_is_silent() -> None:
     # Iz dogarken kutu oturana kadar hiz uretilmemeli: kisa pencerede dt tek
     # kareye kadar duser ve titreme hiz gibi okunur (normal_01 klibi 0.4 sn'de
     # 25 RUN adayi uretiyordu). Pencere dolana kadar hiz 0.
-    fe = FeatureEngine(velocity_lookback=5)
+    fe = FeatureEngine(velocity_sec=0.2)
     jitter = [0.0, 14.0, -12.0, 11.0, -9.0]      # kutunun oturma titremesi
     for i, dx in enumerate(jitter):
         cx = 500.0 + dx
@@ -199,18 +202,18 @@ def test_run_rule() -> None:
 
     # SS10.3: kamera oznesi takip ederken norm_speed dusuk kalir, ama adim
     # ritmi (limb_speed medyani) esigi asarsa yine tetiklemeli. Adim kaniti
-    # GAIT_LOOKBACK kare ister; kisa pencere tetiklememelidir.
-    gait_short = [_feat(i, speed=0.3, limb=1.6) for i in range(GAIT_LOOKBACK - 1)]
+    # GAIT_SEC (50 kare) ister; kisa pencere tetiklememelidir.
+    gait_short = [_feat(i, speed=0.3, limb=1.6) for i in range(GAIT_N - 1)]
     assert RunRule().check(_window(5, gait_short), th) is None
 
-    gait_only = [_feat(i, speed=0.3, limb=1.6) for i in range(GAIT_LOOKBACK)]
+    gait_only = [_feat(i, speed=0.3, limb=1.6) for i in range(GAIT_N)]
     cand_gait = RunRule().check(_window(6, gait_only), th)
     assert cand_gait is not None and cand_gait.anomaly_type == "RUN"
 
     # Yuruyuste tek adimlik sicrama: pencerenin besde biri yuksek, medyan
     # dusuk kalmali -- 10 karelik pencerede bu tetikliyordu.
-    burst = [_feat(i, speed=0.3, limb=3.4 if i < GAIT_LOOKBACK // 5 else 0.4)
-             for i in range(GAIT_LOOKBACK)]
+    burst = [_feat(i, speed=0.3, limb=3.4 if i < GAIT_N // 5 else 0.4)
+             for i in range(GAIT_N)]
     assert RunRule().check(_window(7, burst), th) is None
 
 
@@ -220,11 +223,11 @@ def test_zone_rule() -> None:
                 polygon=np.array([[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]]))
 
     inside = [_feat(i, foot=np.array([0.5, 0.5])) for i in range(3)]
-    cand = ZoneRule([zone]).check(_window(5, inside), th)
+    cand = ZoneRule([zone], time.time).check(_window(5, inside), th)
     assert cand is not None and cand.anomaly_type == "ZONE_VIOLATION"
 
     outside = [_feat(i, foot=np.array([0.05, 0.05])) for i in range(3)]
-    assert ZoneRule([zone]).check(_window(6, outside), th) is None
+    assert ZoneRule([zone], time.time).check(_window(6, outside), th) is None
 
 
 def test_loiter_rule() -> None:
@@ -292,15 +295,15 @@ def test_loiter_tek_karelik_sinir_titremesi_sayaci_sifirlamaz() -> None:
 
 def test_loiter_bolge_kenarinda_iki_saniyelik_kayma_sifirlamaz() -> None:
     """zone_01 cikis 5: kapinin onunde duran kisi, ayak noktasi 1.88 sn
-    sinirin disinda. Iz kaybi toleransindan (STALE_FRAMES) kisa."""
+    sinirin disinda. Iz kaybi toleransindan (STALE_SEC) kisa."""
     ayaklar = [_ICERI] * 60 + [_DISARI] * 47 + [_ICERI] * 100
-    assert _bolge_kosusu(ayaklar), "STALE_FRAMES'ten kisa cikis sifirlamamali"
+    assert _bolge_kosusu(ayaklar), "STALE_SEC'ten kisa cikis sifirlamamali"
 
 
 def test_loiter_gercek_ayrilis_sayaci_sifirlar() -> None:
     """Toleranstan uzun bolge disi = kisi gercekten ayrildi. Geri donunce
     sayac sifirdan baslamali; 3 + 3 sn iki ayri kalistir, 6 sn degil."""
-    disari = [_DISARI] * (STALE_FRAMES + 10)
+    disari = [_DISARI] * (STALE_N + 10)
     ayaklar = [_ICERI] * 75 + disari + [_ICERI] * 75  # 3 sn + uzun cikis + 3 sn
     assert _bolge_kosusu(ayaklar) == []
 
@@ -336,28 +339,19 @@ def test_loiter_cipa_modunda_kisa_kayma_sifirlamaz() -> None:
 
 def test_fight_rule() -> None:
     th = Thresholds()
-    close_a = _window(1, [_feat(0, centroid=np.array([500.0, 300.0]), limb=3.0)])
-    close_b = _window(2, [_feat(0, centroid=np.array([600.0, 300.0]), limb=3.0)])
-    rule = FightRule()
-    cands = []
-    for _ in range(3):
-        cands = rule.check_all({1: close_a, 2: close_b}, th)
-    assert any(c.anomaly_type == "FIGHT" for c in cands)
 
-    far_b = _window(2, [_feat(0, centroid=np.array([3000.0, 300.0]), limb=3.0)])
-    rule_far = FightRule()
-    cands_far = []
-    for _ in range(3):
-        cands_far = rule_far.check_all({1: close_a, 2: far_b}, th)
-    assert cands_far == []
+    def run(dist: float, limb: float) -> list:
+        # Seri artik ts ile olculur: ayni kareyi tekrarlamak yerine ts ilerler.
+        rule, cands = FightRule(), []
+        for i in range(3):
+            a = _window(1, [_feat(i, centroid=np.array([500.0, 300.0]), limb=limb)])
+            b = _window(2, [_feat(i, centroid=np.array([500.0 + dist, 300.0]), limb=limb)])
+            cands = rule.check_all({1: a, 2: b}, th)
+        return cands
 
-    calm_a = _window(1, [_feat(0, centroid=np.array([500.0, 300.0]), limb=0.1)])
-    calm_b = _window(2, [_feat(0, centroid=np.array([600.0, 300.0]), limb=0.1)])
-    rule_calm = FightRule()
-    cands_calm = []
-    for _ in range(3):
-        cands_calm = rule_calm.check_all({1: calm_a, 2: calm_b}, th)
-    assert cands_calm == []
+    assert any(c.anomaly_type == "FIGHT" for c in run(100.0, 3.0))
+    assert run(2500.0, 3.0) == []
+    assert run(100.0, 0.1) == []
 
 
 def test_rule_engine_needs_pose() -> None:

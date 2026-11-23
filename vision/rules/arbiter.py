@@ -32,12 +32,12 @@ import numpy as np
 from models.tcn import CHANNELS, MIN_POSE_RATIO, WINDOW, frame_vector
 from vision.rules.engine import Candidate, RuleEngine
 from vision.rules.fight import close_pairs
-from vision.stages.features import TrackWindow
+from vision.stages.features import EPS, TrackWindow
 
 MODEL_TYPES = ("FALL", "RUN")     # model bunlari kosulsuz uretebilir
 PAIR_TYPES = ("FIGHT",)           # bunlar icin ayrica YAKIN cift sarti aranir
 RULE_ONLY = ("ZONE_VIOLATION", "LOITERING")
-EVERY = 5      # kac karede bir model kosar (pencere 25 kare kayiyor)
+MODEL_EVERY_SEC = 0.2   # iki model kosusu arasi en az sure; 25 FPS'te 5 kare
 
 
 def window_tensor(window: TrackWindow) -> np.ndarray | None:
@@ -63,11 +63,14 @@ class HybridArbiter:
     """`classifier=None` verilirse davranis birebir `RuleEngine`dir."""
 
     def __init__(self, engine: RuleEngine, classifier=None, *,
-                 min_conf: float = 0.60, every: int = EVERY) -> None:
+                 min_conf: float = 0.60, every_sec: float = MODEL_EVERY_SEC) -> None:
         self.engine = engine
         self.classifier = classifier
         self.min_conf = min_conf
-        self.every = every
+        self.every_sec = every_sec
+        # Kare indeksi degil son kosunun ts'i: canlida atlanan kareler idx evresini
+        # kaydirip modeli hic kosturmayabiliyordu.
+        self._last_model_ts: float | None = None
         self.model_runs = 0          # vision/run.py raporu icin
         self.model_windows = 0
         self.model_ms: list[float] = []
@@ -89,9 +92,10 @@ class HybridArbiter:
         candidates = self.engine(windows)
         if self.classifier is None or not windows:
             return candidates
-        idx = next(iter(windows.values())).last.idx
-        if idx % self.every:
+        ts = next(iter(windows.values())).last.ts
+        if self._last_model_ts is not None and ts - self._last_model_ts < self.every_sec - EPS:
             return candidates
+        self._last_model_ts = ts
         verdicts = self._classify(windows)
         return self._merge(candidates, verdicts, windows)
 

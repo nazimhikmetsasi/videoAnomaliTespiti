@@ -129,7 +129,7 @@ def test_tracker_keeps_id_across_frames() -> None:
     ids, heights = [], []
     for step in range(20):
         x = 100 + step * 8
-        tracks = tracker.update(_fake_result(x, 200, x + 60, 380), image)
+        tracks = tracker.update(_fake_result(x, 200, x + 60, 380), image, step * 0.04)
         if tracks:
             ids.append(tracks[0].track_id)
             heights.append(tracks[0].height)

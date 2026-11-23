@@ -10,8 +10,9 @@ kacindigi yama yigininin ta kendisidir.
 from __future__ import annotations
 
 import datetime
+import time
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Callable, Sequence
 
 import cv2
 import numpy as np
@@ -36,8 +37,8 @@ class Thresholds:
     run_gait_speed: float = 1.20
     loiter_sec: int = 30
     fight_proximity: float = 1.20
-    # 30 -> 50: adim medyaninin yuruyus sicramalarindan ayrismasi 2 saniyelik
-    # pencere istiyor (bkz. run_gait_speed). Bedeli iz basina 50 FrameFeatures.
+    # DB sutunu olarak kaliyor; vision tarafi artik okumuyor, pencereler saniye
+    # cinsinden (docs/ASAMA13_3_PLAN.md SS9).
     window_frames: int = 50
 
 
@@ -80,9 +81,11 @@ class Candidate:
 
 class RuleEngine:
     def __init__(self, thresholds: Thresholds = Thresholds(),
-                 zones: Sequence[Zone] = ()) -> None:
+                 zones: Sequence[Zone] = (),
+                 clock: Callable[[], float] = time.time) -> None:
         self.thresholds = thresholds
         self.zones = list(zones)
+        self.clock = clock      # restricted_hours icin duvar saati
 
         # Kural siniflari burada, __init__ govdesinde import edilir --
         # modul basinda import edilirse engine.py <-> fall.py/run.py/... arasi
@@ -97,8 +100,8 @@ class RuleEngine:
 
         self._fall = FallRule()
         self._run = RunRule()
-        self._zone = ZoneRule(self.zones)
-        self._loiter = LoiterRule(self.zones)
+        self._zone = ZoneRule(self.zones, self.clock)
+        self._loiter = LoiterRule(self.zones, self.clock)
         self._fight = FightRule()
 
     def __call__(self, windows: dict[int, TrackWindow]) -> list[Candidate]:

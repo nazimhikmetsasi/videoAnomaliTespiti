@@ -1,8 +1,8 @@
 """LOITERING kurali: bolgede uzun kalis veya sabit dolanma (PLAN.md #4).
 
-Pencere (window_frames=30, ~1.2 sn @25 FPS) loiter_sec (varsayilan 30 sn)
-tutamaz; bu yuzden kural kendi girisini (enter_ts) ve cipasini (anchor)
-kendi durumunda saklar. Iz kaybolunca (STALE_FRAMES) durum duser. Ayni iz
+Iz penceresi (RETAIN_SEC, 2 sn) loiter_sec'i (varsayilan 30 sn) tutamaz;
+bu yuzden kural kendi girisini (enter_ts) ve cipasini (anchor) kendi
+durumunda saklar. Iz kaybolunca (STALE_SEC) durum duser. Ayni iz
 tetikledikten sonra RETRIGGER_SEC boyunca susar; yoksa 30 sn'lik bekleyis
 her karede yeni aday uretir.
 
@@ -17,8 +17,8 @@ iz 32.5 sn kesintisiz goruldu, ama ayak noktasi bolge sinirinda tek kare
 siz kalis 11.7 sn cikti. Kapinin onunde hareketsiz duran kisi, klibin
 kendi ihlal cercevesi kirmiziyken 1.88 sn "bolge disi" sayildi.
 
-Tolerans STALE_FRAMES'in KENDISIDIR, bu klipten secilmedi: kural izin
-tamamen kaybolmasini zaten 90 kare tolere ediyor. Kisiyi 3.6 sn hic
+Tolerans STALE_SEC'in KENDISIDIR, bu klipten secilmedi: kural izin
+tamamen kaybolmasini zaten 3.6 sn tolere ediyor. Kisiyi 3.6 sn hic
 gormemeyi "hala orada" sayip ayak noktasinin tek kare sinir disina
 kaymasini "ayrildi" saymak tutarsizdi; ikisi de ayni anlama gelir:
 varligi su an dogrulayamiyorum.
@@ -26,15 +26,15 @@ varligi su an dogrulayamiyorum.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Callable, Sequence
 
 import numpy as np
 
 from vision.rules.engine import Candidate, Thresholds, Zone
-from vision.stages.features import FrameFeatures, TrackWindow
+from vision.stages.features import EPS, STALE_SEC, FrameFeatures, TrackWindow
 
-STALE_FRAMES = 90
 RETRIGGER_SEC = 10.0
 
 
@@ -42,20 +42,22 @@ RETRIGGER_SEC = 10.0
 class _State:
     enter_ts: float
     anchor: np.ndarray
-    last_seen_idx: int
+    last_seen_ts: float
     last_trigger_ts: float | None = None
-    # Bolge disina / cipadan uzaga ilk cikilan kare; None = su an yerinde.
-    away_since_idx: int | None = None
+    # Bolge disina / cipadan uzaga ilk cikilan an; None = su an yerinde.
+    away_since_ts: float | None = None
 
 
 class LoiterRule:
-    def __init__(self, zones: Sequence[Zone] = ()) -> None:
+    def __init__(self, zones: Sequence[Zone] = (),
+                 clock: Callable[[], float] = time.time) -> None:
         self.zones = list(zones)
+        self.clock = clock      # saat araligi duvar saatine bakar (bkz. zone.py)
         self._state: dict[int, _State] = {}
 
     def check(self, window: TrackWindow, th: Thresholds) -> Candidate | None:
         last = window.last
-        self._prune(last.idx)
+        self._prune(last.ts)
 
         st = self._state.get(window.track_id)
         if self.zones:
@@ -70,22 +72,22 @@ class LoiterRule:
             # bekleme sayilmaz. Cipa modunda ilk gorulme cipanin kendisidir.
             if self.zones and zone is None:
                 return None
-            self._state[window.track_id] = _State(last.ts, last.centroid, last.idx)
+            self._state[window.track_id] = _State(last.ts, last.centroid, last.ts)
             return None
 
-        st.last_seen_idx = last.idx
+        st.last_seen_ts = last.ts
         if not still:
-            if st.away_since_idx is None:
-                st.away_since_idx = last.idx
-            if last.idx - st.away_since_idx > STALE_FRAMES:
+            if st.away_since_ts is None:
+                st.away_since_ts = last.ts
+            if last.ts - st.away_since_ts > STALE_SEC + EPS:
                 # Gercekten ayrildi: bolge modunda sayac sifirlanir, cipa
                 # modunda yeni konum yeni cipa olur.
                 if self.zones:
                     del self._state[window.track_id]
                 else:
-                    self._state[window.track_id] = _State(last.ts, last.centroid, last.idx)
+                    self._state[window.track_id] = _State(last.ts, last.centroid, last.ts)
             return None      # yerinde degilken aday uretilmez
-        st.away_since_idx = None
+        st.away_since_ts = None
 
         dwell = last.ts - st.enter_ts
         if dwell < th.loiter_sec:
@@ -109,7 +111,7 @@ class LoiterRule:
         for zone in self.zones:
             if zone.zone_type not in ("forbidden", "restricted_hours"):
                 continue
-            if zone.zone_type == "restricted_hours" and not zone.active_at(feat.ts):
+            if zone.zone_type == "restricted_hours" and not zone.active_at(self.clock()):
                 continue
             if zone.contains(feat.foot):
                 return zone
@@ -119,7 +121,7 @@ class LoiterRule:
     def _drift(feat: FrameFeatures, anchor: np.ndarray) -> float:
         return float(np.linalg.norm(feat.centroid - anchor))
 
-    def _prune(self, idx: int) -> None:
-        stale = [tid for tid, st in self._state.items() if idx - st.last_seen_idx > STALE_FRAMES]
+    def _prune(self, ts: float) -> None:
+        stale = [tid for tid, st in self._state.items() if ts - st.last_seen_ts > STALE_SEC + EPS]
         for tid in stale:
             del self._state[tid]

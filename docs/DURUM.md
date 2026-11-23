@@ -11,9 +11,11 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
-**Aşama 13.3 B0 ölçüldü; sıradaki iş 13.3b.** (2026-11-23)
+**Aşama 13.3b kodu tamam; sıradaki iş B1 ölçümü.** (2026-11-23)
 
-13.3'ün planı `docs/ASAMA13_3_PLAN.md`. 13.3a'da ölçüm aracı yazıldı;
+13.3'ün planı `docs/ASAMA13_3_PLAN.md`. 13.3b'de kural, öznitelik ve
+izleyici sabitleri saniyeye çevrildi (ayrıntı aşağıda "Aşama 13.3b").
+13.3a'da ölçüm aracı yazıldı;
 hat koduna dokunulmadı. B0 sorunun büyüklüğünü ölçtü: holdout'ta
 hibritin F1'i özgün hızda 0,67, 10 FPS'te ~0,2, 5 FPS'te 0. Kural ve
 hibrit 5 FPS'te 59 klibin hiçbirinde aday üretmiyor. Ayrıntı aşağıda
@@ -84,7 +86,7 @@ değerlendirmeyle ölçülecek.
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.2 tamam; 13.3a + **B0 ölçümü tamam**, sıradaki 13.3b (`docs/ASAMA13_3_PLAN.md`) |
+| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.2 tamam; 13.3a + B0 tamam, **13.3b kodu tamam**, sıradaki B1 (`docs/ASAMA13_3_PLAN.md`) |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -395,17 +397,69 @@ tanımlı bakışlar 5 FPS'te 5 kat uzuyor:
 Canlı yığın ~10 FPS'te çalıştığı için bugünkü canlı doğruluk çevrimdışı
 tablolardan belirgin biçimde düşük olmalı (çıkarım; canlıda ölçülmedi).
 
+## Aşama 13.3b — kural, öznitelik ve izleyici sabitleri saniyeye (2026-11-23)
+
+Sözleşme `docs/ASAMA13_3_PLAN.md` §1 ve §4. Hiçbir eşik değişmedi. Her
+sabit bugünkü 25 FPS karşılığından türetildi (dönüşüm tablosu plan §1'de).
+
+- `features.py`:
+  - `TrackWindow` zamanla budanıyor (`RETAIN_SEC = 2.0`; bellek tavanı
+    250 kare)
+  - iki yeni erişim: `since(sn)` ve `covering(sn)`
+  - hız (`VELOCITY_SEC = 0.2`) ve uzuv hızı (`LIMB_SEC = 0.12`) saniyeyle
+    geri bakıyor
+  - iz yaşı `STALE_SEC = 3.6` ile; bu sabit tek kaynak, düzleyici ve
+    loiter buradan alıyor
+- Kurallar:
+  - FALL `HOLD_SEC 0.08`, `VY_SEC 0.56`
+  - RUN `SPEED_SEC 0.36` + %60 isabet; `GAIT_SEC 1.96`
+  - ZONE `HOLD_SEC 0.08`, `SCORE_SEC 0.16`
+  - FIGHT: dizinin başladığı `ts` tutuluyor (`HOLD_SEC 0.08`)
+  - LOITER `ts` tabanlı
+- **D1 kapandı:** `RuleEngine(clock=time.time)`. `restricted_hours`
+  bölgeleri artık kare zamanına değil duvar saatine bakıyor; dosya
+  kaynağında 1970'e çözülmüyor.
+- `arbiter.py`: model `idx % 5` yerine zamana göre (`MODEL_EVERY_SEC 0.2`)
+  koşuyor. Eski koşulda canlıda kare atlanınca `idx` evresi 5'in katını hiç
+  tutturmayabiliyordu.
+- `tracker.py`:
+  - `update(result, image, ts)`; `ts` zorunlu
+  - Ultralytics 8.4.127 kayıp iz tamponunu kare sayısıyla tutuyor
+    (`max_frames_lost`). Tampon artık ölçülen kare aralığından
+    `TRACK_BUFFER_SEC = 2.4`'e göre her karede yeniden hesaplanıyor: 25 FPS'te
+    60, 10'da 24, 5'te 12 kare.
+- `tracker.update`'i çağıran altı değerlendirme betiği ve `camera.py`
+  güncellendi. `extract_sequences.split_runs` boşluğu saniyeyle ölçüyor.
+- Testler:
+  - **306 geçti, 7 atlandı**; 32'si yeni (`tests/test_asama13_3_zaman.py`)
+  - boşluksuz 25 FPS'te eski davranışla eşdeğerlik
+  - aynı fiziksel hareketin 25, 10 ve 5 FPS'te tetiklemesi (RUN, FALL,
+    ZONE, FIGHT)
+  - iz yaşı, model sıklığı, izleyici tamponu, D1
+- Var olan testlerden yalnız `test_fight_rule` değişti. Test aynı kareyi
+  (`ts = 0`) üç kez veriyordu; eski kare sayacıyla çalışıyordu. Artık
+  `ts` 0,04 sn ilerliyor; beklenen sonuç aynı.
+- Duman koşusu (`fall_01` + `police_run`, sınıf başına 1 holdout klibi,
+  kural, özgün ve 5 FPS):
+  - `police_run` özgün hızda (15 FPS) artık **7 RUN adayı** üretiyor;
+    B0'da hiç üretmiyordu. Hız eskiden 5 kare = 0,33 sn geriye
+    bakıyordu, şimdi 0,2 sn.
+  - `fall_01` 5 FPS'te yine bulunmuyor. İz düşüşten hemen sonra
+    kayboluyor: 5 FPS'te son iki karede eğim 41,3° ve 45,3°, eşik 45°.
+  - B1 kümenin tamamında ölçecek.
+
 ---
 
 ## Bir sonraki adım
 
-**Aşama 13.3b — kural, öznitelik ve izleyici sabitleri saniyeye**
-(`docs/ASAMA13_3_PLAN.md` §4, D1 `Zone.active_at` dahil). Ardından B1
-(yalnız kural):
+**B1 ölçümü** (`docs/ASAMA13_3_PLAN.md` §5). 13.3b commit'lenip `main`'e
+alındıktan sonra ana dizinde (yalnız kural, ~30 dk):
 
     venv/Scripts/python.exe -m eval.tcn_eval --modes rule --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b1.json
 
-B1 sonrası `--compare logs/fps_b0.json logs/fps_b1.json`. Plandan sapma:
+B1 sonrası `--compare logs/fps_b0.json logs/fps_b1.json`. 25 FPS'lik
+kliplerin özgün hız satırı B0'a eşit veya çok yakın olmalı; fark aday
+düzeyinde açıklanır. Ardından 13.3c (TCN zaman ızgarası). Plandan sapma:
 yol haritasındaki hız artırımı (0,5x–2x) uygulanmıyor; gerekçe plan
 §6.2'de.
 

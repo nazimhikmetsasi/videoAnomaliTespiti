@@ -41,13 +41,21 @@ DEFAULT_REID = "models/yolo26s-reid.onnx"
 # karelerde 4'e cikilir ve sekil yine sabit kalir.
 REID_BATCH_STEP = 2
 
+# Kayip izin tutuldugu sure. ultralytics bunu KARE sayisi sayar (max_frames_lost)
+# ve FPS'e gore olceklemez; update() her cagrida olculen kare araligiyla yeniden
+# hesaplar.
+TRACK_BUFFER_SEC = 2.4   # 25 FPS'te 60 kare
+DT_INIT = 1 / 25         # kare araligi ortalamasinin baslangici
+DT_ALPHA = 0.1           # ortalamanin yeni olcume verdigi agirlik
+DT_MAX = 1.0             # bundan uzun aralik kopma sayilir, ortalamaya girmez
+
 # Paketle gelen varsayilanlarin uzerine yazilanlar.
 OVERRIDES = {
     "with_reid": True,
     "model": "auto",         # end2end olmayan dedektorde bedava oznitelik yolu
     "track_high_thresh": 0.30,
     "new_track_thresh": 0.35,
-    "track_buffer": 60,      # 25 FPS'te ~2.4 sn: kisa kapanmalarda ID korunur
+    "track_buffer": 60,      # yalniz baslangic degeri; update() sureye gore ezer (TRACK_BUFFER_SEC)
     # GMC (kamera hareketi telafisi) varsayilan olarak KAPALI. Alti pilot
     # klipte acik/kapali ID sonuclari birebir ayni cikti, buna karsilik
     # sparseOptFlow kare basina ~18 ms yiyip FPS'i yariya dusurdu. Sabit
@@ -114,20 +122,35 @@ class Tracker:
             self._tracker.encoder = _FixedBatchReID(self._tracker.encoder)
         self.frames = 0
         self.seen_ids: set[int] = set()
+        self._dt_ema = DT_INIT
+        self._last_ts: float | None = None
+
+    @property
+    def max_frames_lost(self) -> int:
+        return self._tracker.max_frames_lost
 
     def reset(self) -> None:
         self._tracker.reset()
         self.frames = 0
         self.seen_ids.clear()
+        self._dt_ema = DT_INIT
+        self._last_ts = None
 
-    def update(self, result, image: np.ndarray) -> list[Track]:
+    def update(self, result, image: np.ndarray, ts: float) -> list[Track]:
         """Bir karenin tespitlerini takibe verir, kalici ID'li izleri dondurur.
 
         Args:
             result: ultralytics Results (tek kare).
             image: tracker'a verilen kare — GMC bunu optik akis icin kullanir.
+            ts: kare zamani, sn. ZORUNLU: tampon suresini kare sayisina cevirir.
         """
         self.frames += 1
+        if self._last_ts is not None:
+            dt = ts - self._last_ts
+            if 0 < dt < DT_MAX:
+                self._dt_ema = (1 - DT_ALPHA) * self._dt_ema + DT_ALPHA * dt
+        self._last_ts = ts
+        self._tracker.max_frames_lost = max(1, round(TRACK_BUFFER_SEC / self._dt_ema))
         boxes = result.boxes.cpu().numpy()
         feats = getattr(result, "feats", None)
         rows = self._tracker.update(boxes, image, feats=feats)

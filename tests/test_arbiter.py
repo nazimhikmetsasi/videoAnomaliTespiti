@@ -95,14 +95,14 @@ def test_model_yoksa_davranis_kural_motorunun_aynisi() -> None:
 
 def test_guven_esigin_altinda_kalirsa_karar_kuralda_kalir() -> None:
     arbiter = HybridArbiter(FakeRules([_cand("FALL", [1])]),
-                            FakeTCN([0.30, 0.40, 0.20, 0.10]), min_conf=0.60, every=1)
+                            FakeTCN([0.30, 0.40, 0.20, 0.10]), min_conf=0.60, every_sec=0.0)
     out = arbiter(_windows())
     assert len(out) == 1 and out[0].decided_by == "rule"
 
 
 def test_model_tek_basina_aday_uretir() -> None:
     arbiter = HybridArbiter(FakeRules([]), FakeTCN([0.05, 0.90, 0.03, 0.02]),
-                            min_conf=0.60, every=1)
+                            min_conf=0.60, every_sec=0.0)
     out = arbiter(_windows())
     assert len(out) == 1
     assert out[0].anomaly_type == "FALL" and out[0].decided_by == "model"
@@ -112,7 +112,7 @@ def test_model_tek_basina_aday_uretir() -> None:
 
 def test_kural_ve_model_ayni_tipte_uzlasirsa_hibrit_olur() -> None:
     arbiter = HybridArbiter(FakeRules([_cand("FALL", [1], score=0.4)]),
-                            FakeTCN([0.05, 0.90, 0.03, 0.02]), min_conf=0.60, every=1)
+                            FakeTCN([0.05, 0.90, 0.03, 0.02]), min_conf=0.60, every_sec=0.0)
     out = arbiter(_windows())
     # Tek aday kalir: model ayni izi ikinci kez uretmez
     assert len(out) == 1
@@ -121,7 +121,7 @@ def test_kural_ve_model_ayni_tipte_uzlasirsa_hibrit_olur() -> None:
 
 def test_zone_ve_loitering_modele_dokunmaz() -> None:
     arbiter = HybridArbiter(FakeRules([_cand("LOITERING", [1]), _cand("ZONE_VIOLATION", [1])]),
-                            FakeTCN([0.05, 0.90, 0.03, 0.02]), min_conf=0.60, every=1)
+                            FakeTCN([0.05, 0.90, 0.03, 0.02]), min_conf=0.60, every_sec=0.0)
     out = arbiter(_windows())
     kararlar = {c.anomaly_type: c.decided_by for c in out}
     assert kararlar["LOITERING"] == "rule" and kararlar["ZONE_VIOLATION"] == "rule"
@@ -132,7 +132,7 @@ def test_zone_ve_loitering_modele_dokunmaz() -> None:
 def test_yakin_cift_yoksa_model_fight_uretmez() -> None:
     """Kavga ikili bir olaydir: tek iz varken model FIGHT dese de aday yok."""
     arbiter = HybridArbiter(FakeRules([]), FakeTCN([0.02, 0.03, 0.05, 0.90]),
-                            min_conf=0.60, every=1)
+                            min_conf=0.60, every_sec=0.0)
     assert arbiter(_windows()) == []
     # Iki iz var ama uzaklar (400 px / 180 = 2.22 > 1.20)
     assert arbiter(_pair_windows(400.0)) == []
@@ -142,7 +142,7 @@ def test_yakin_cift_varsa_model_fight_uretir() -> None:
     """Asama 11 olcumu: kuralin uzuv hizi sarti FIGHT'i ayirmiyor, yakinlik
     ayiriyor. Model bu yuzden yakin ciftte tek basina aday uretebilir."""
     arbiter = HybridArbiter(FakeRules([]), FakeTCN([0.02, 0.03, 0.05, 0.90]),
-                            min_conf=0.60, every=1)
+                            min_conf=0.60, every_sec=0.0)
     out = arbiter(_pair_windows(150.0))          # 150/180 = 0.83 < 1.20
     assert [c.anomaly_type for c in out] == ["FIGHT", "FIGHT"]
     assert {c.decided_by for c in out} == {"model"}
@@ -150,7 +150,7 @@ def test_yakin_cift_varsa_model_fight_uretir() -> None:
 
 def test_fight_kural_yakaladiginda_hibrite_yukselir() -> None:
     arbiter = HybridArbiter(FakeRules([_cand("FIGHT", [1], score=0.5)]),
-                            FakeTCN([0.02, 0.03, 0.05, 0.90]), min_conf=0.60, every=1)
+                            FakeTCN([0.02, 0.03, 0.05, 0.90]), min_conf=0.60, every_sec=0.0)
     out = arbiter(_windows())
     assert len(out) == 1 and out[0].decided_by == "hybrid"
     assert out[0].score == pytest.approx(0.9, abs=1e-6)
