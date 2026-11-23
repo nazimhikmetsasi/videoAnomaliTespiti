@@ -68,6 +68,17 @@ def run_clip(path: Path, detector: PoseDetector, zones_path: str,
     return candidates
 
 
+def load_annotation(path: Path) -> tuple[list[dict], float | None]:
+    """Referans olaylar + eval_end_sec. SS10.4: bolge kameraya bagli bir
+    kavramdir (zone_01 28. sn'de sahne degistiriyor); eval_end_sec'ten sonra
+    baslayan olaylar dusurulur, adaylari suzmek cagiranin isidir."""
+    ann = json.loads(path.read_text(encoding="utf-8"))
+    events, eval_end = ann["events"], ann.get("eval_end_sec")
+    if eval_end is not None:
+        events = [e for e in events if e["start_sec"] < eval_end]
+    return events, eval_end
+
+
 def to_second_set(candidates: list[Candidate]) -> set[tuple[str, int]]:
     """Adaylari (tip, saniye) kumesine indirir.
 
@@ -164,14 +175,9 @@ def main(argv: list[str] | None = None) -> int:
             unlabeled.append(clip.stem)
             continue
 
-        ann = json.loads(ann_path.read_text(encoding="utf-8"))
-        events, cand_set = ann["events"], to_second_set(candidates)
-        eval_end = ann.get("eval_end_sec")
+        events, eval_end = load_annotation(ann_path)
+        cand_set = to_second_set(candidates)
         if eval_end is not None:
-            # SS10.4: bolge kameraya bagli bir kavramdir (zone_01 28. sn'de
-            # sahne degistiriyor). eval_end_sec'ten sonrasi hem referans hem
-            # adaylardan cikarilir; alan yoksa davranis degismez.
-            events = [e for e in events if e["start_sec"] < eval_end]
             cand_set = {c for c in cand_set if c[1] < eval_end}
         score(cand_set, events, args.tolerance_sec, tp, fp, fn)
 

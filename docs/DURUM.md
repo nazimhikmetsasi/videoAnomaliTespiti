@@ -11,8 +11,12 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
-**Aşama 13.2 tamamlandı; sıradaki iş 13.3 (zaman tabanlı pencereleme).**
-(2026-11-23)
+**Aşama 13.3a kodu tamam; sıradaki iş B0 ölçümü.** (2026-11-23)
+
+13.3'ün planı `docs/ASAMA13_3_PLAN.md`. 13.3a'da yalnız ölçüm aracı
+yazıldı; hat koduna dokunulmadı. Ayrıntı aşağıda "Aşama 13.3a sonucu".
+
+**Aşama 13.2 tamamlandı.** (2026-11-23)
 
 Sekiz hızlı düzeltme canlı yığında doğrulandı (ayrıntı aşağıda "Aşama 13.2
 sonucu"): XSS (9 yer), veritabanı ve Kafka portları yalnız geri dönüşe,
@@ -77,7 +81,7 @@ değerlendirmeyle ölçülecek.
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | 13.0, 13.1, **13.2 tamam** — sıradaki 13.3 (`docs/YOL_HARITASI.md`) |
+| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.2 tamam; **13.3a kodu tamam**, sıradaki B0 ölçümü (`docs/ASAMA13_3_PLAN.md`) |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -262,14 +266,57 @@ adresinden yine kapalı.
 
 ---
 
+## Aşama 13.3a sonucu — kare hızı tarama aracı (2026-11-23)
+
+Sözleşme `docs/ASAMA13_3_PLAN.md` §2. Hat koduna dokunulmadı; B0 bugünkü
+davranışı ölçecek.
+
+- `models/tcn.py`: `FrameDropper` (düzenli / düzensiz kare düşürme, tohumlu).
+  13.3c'de eğitim artırımı da bunu kullanacak.
+- `eval/tcn_eval.py`:
+  - `--fps`, `--drop`, `--seeds`, `--out`, `--compare` bayrakları
+  - Spark süzgecinden geçmiş ikinci puan (`session_filter`,
+    `stream.filters.session_passes` ile)
+  - pilot kümede `eval_end_sec` artık uygulanıyor (önce atlanıyordu)
+  - etiketsiz pilot klipler (`police_run`) ham aday sayısıyla raporlanıyor
+- `eval/pilot_eval.py`: ortak `load_annotation`.
+- Testler: **274 geçti, 7 atlandı** (13 yeni); paket sonrası `git status`
+  temiz.
+
+**Duman koşusu** (gerçek GPU; `fall_01` + `police_run`, sınıf başına 1
+holdout klibi; kural ve hibrit; özgün ve 5 FPS):
+
+- Araç beklendiği gibi çalışıyor. Etkin FPS 5,0 / 5,1 / 5,2.
+  Tutulan kareler: `fall_01` 236 → 40, `police_run` 300 → 100.
+- **İlk gözlem (6 klip, ölçüm değil):** 5 FPS'te iki modda da **hiç aday
+  yok**. Özgün hızda `fall_01` FALL'ı, holdout RUN ve FIGHT'ı buluyordu.
+- `fall_01`'de neden kare kare görüldü. İz 5 FPS'te de var, takip
+  çalışıyor:
+  - eğim 5,61 sn'de 45,3°
+  - iz 5,81 sn'de kayboluyor (özgün hızda da düşüşün hemen ardından
+    kayboluyor)
+  - dikey hız 5 kare geriye bakılarak hesaplanıyor; 5 FPS'te bu 1 sn
+    demek ve düşüş −0,06'ya yayılıyor. Özgün hızda son görülen karede
+    1,68 (eşik 1,20).
+
+  `VELOCITY_SEC` dönüşümü (13.3b) tam bunu hedefliyor.
+- Hibrit, 5 FPS'te holdout'ta modelden aday almadı. Holdout klipleri
+  1,5–13,6 sn; 50 karelik pencere 5 FPS'te 10 sn sürüyor ve dolmuyor.
+
+---
+
 ## Bir sonraki adım
 
-**Aşama 13.3 — zaman tabanlı pencereleme.** Kapsam ve kabul ölçütü
-`docs/YOL_HARITASI.md`'de. **İlk iş ölçüm, değişiklik değil:** çevrimdışı
-değerlendirme kümesi 25 / 10 / 5 FPS'e alt örneklenir (düzenli ve
-düzensiz kare kaybıyla), kural ve hibrit F1'in FPS'e karşı eğrisi
-çıkarılır. Sorunun büyüklüğü bu eğriyle belgelenmeden kod değişmez. Sonra
-13.3'ün uygulama planı. `Zone.active_at` (ASAMA13_PLAN D1) da bu aşamada.
+**Aşama 13.3 — B0 ölçümü** (`docs/ASAMA13_3_PLAN.md` §3). 13.3a
+commit'lenip `main`'e alındıktan sonra ana dizinde, arka planda (~1 sa):
+
+    venv/Scripts/python.exe -m eval.tcn_eval --modes rule,hybrid --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b0.json
+
+Önce `nvidia-smi`: GPU'yu kullanan oyun veya tarayıcı kapatılır (çevrimdışı
+ölçümde sonucu değil yalnız süreyi etkiler). B0 tabloları buraya
+yazıldıktan sonra 13.3b (kural sabitleri saniyeye, D1 dahil). Plandan
+sapma: yol haritasındaki hız artırımı (0,5x–2x) uygulanmıyor; gerekçe plan
+§6.2'de.
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
 `docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5'in olay sayıları

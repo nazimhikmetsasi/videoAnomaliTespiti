@@ -97,6 +97,8 @@ koştuktan sonra `git status` temiz.
 
 ## 13.3 — Zaman tabanlı pencereleme (YENİ)
 
+Uygulama planı: `docs/ASAMA13_3_PLAN.md`.
+
 **Önce ölçüm (değişiklikten önce):** çevrimdışı değerlendirme kümesi 25 /
 10 / 5 FPS'e alt örneklenir (düzenli ve düzensiz kare kaybıyla); kural
 ve hibrit F1'in FPS'e karşı eğrisi çıkarılır. Bu, sorunun büyüklüğünün

@@ -31,6 +31,41 @@ MIN_POSE_RATIO = 0.6     # penceredeki pozlu kare orani bunun altindaysa pencere
 WEIGHTS_PATH = Path(__file__).resolve().parent / "tcn.pt"
 META_PATH = Path(__file__).resolve().parent / "tcn_meta.json"
 VAL_EVERY = 5            # her 5. KLIP dogrulamaya — bolme klip bazinda (sizinti yok)
+EPS = 1e-6               # zaman karsilastirmalarinda kayan nokta payi
+
+
+class FrameDropper:
+    """Kare hizini dusurur: canli kameranin (~10 FPS) islem hizini taklit eder.
+
+    Cagrilar `ts` sirasiyla yapilir; True = kare islenir. `jitter` modunda adim
+    U(0.5, 1.5) ile carpilir (degisken isleme suresi), ortalama hiz hedefte kalir.
+    """
+
+    def __init__(self, target_fps: float, mode: str = "regular", seed: int = 0) -> None:
+        if mode not in ("regular", "jitter"):
+            raise ValueError(f"bilinmeyen mod: {mode}")
+        self.step = 1.0 / target_fps if target_fps > 0 else 0.0
+        self.mode = mode
+        self.rng = np.random.default_rng(seed)
+        self.next_t: float | None = None
+
+    def _step(self) -> float:
+        if self.mode == "jitter":
+            return self.step * float(self.rng.uniform(0.5, 1.5))
+        return self.step
+
+    def __call__(self, ts: float) -> bool:
+        if self.step <= 0:
+            return True
+        if self.next_t is None:
+            self.next_t = ts + self._step()
+            return True
+        if ts < self.next_t - EPS:
+            return False
+        self.next_t += self._step()
+        if self.next_t < ts:          # kaynakta bosluk: kareler patlama olmasin
+            self.next_t = ts + self._step()
+        return True
 
 
 def frame_vector(bbox: np.ndarray, kp: np.ndarray | None,
