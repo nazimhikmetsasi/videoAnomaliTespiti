@@ -107,9 +107,11 @@ def create_evidence(
 
 @router.get("", response_model=list[EvidenceOut])
 def list_evidence(
-    unmatched: bool = False, db: Session = Depends(get_db), _: dict = Depends(current_user),
+    unmatched: bool = False, limit: int = 50, offset: int = 0,
+    db: Session = Depends(get_db), _: dict = Depends(current_user),
 ) -> list[Evidence]:
+    limit = min(max(limit, 1), 500)     # events.py ile ayni tavan
     stmt = select(Evidence).order_by(Evidence.started_at.desc())
     if unmatched:
         stmt = stmt.where(Evidence.event_id.is_(None))
-    return list(db.scalars(stmt))
+    return list(db.scalars(stmt.limit(limit).offset(offset)))

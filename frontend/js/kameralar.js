@@ -24,7 +24,7 @@ if (_addBtn) _addBtn.addEventListener("click", () => _openCameraForm(null));
 function _showError(msg) {
     _tbody.innerHTML = "";
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="6" class="py-6 px-4 text-center text-error font-body-sm text-body-sm">' + msg + "</td>";
+    tr.innerHTML = '<td colspan="6" class="py-6 px-4 text-center text-error font-body-sm text-body-sm">' + _escXml(msg) + "</td>";
     _tbody.appendChild(tr);
 }
 

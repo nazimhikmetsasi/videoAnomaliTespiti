@@ -80,7 +80,9 @@ class StreamServer:
         # AYRI sayilir: /ws/meta'ya bagli bir istemci JPEG kodlamasini
         # BASLATMAMALI (SS3, SS12 olcum 3). Tek sayacla panel yalnizca meta
         # dinlerken de her kare kodlanirdi.
-        self._counts = {"live": 0, "meta": 0}
+        # (tur, kamera) basina: bir kamerayi izleyen istemci digerlerine JPEG
+        # kodlatmasin (C2).
+        self._counts: dict[tuple[str, str], int] = {}
 
     def start(self) -> None:
         """Arka plan daemon thread -- ana goru dongusunu bloklamaz."""
@@ -125,11 +127,10 @@ class StreamServer:
 
     @property
     def live_clients(self) -> int:
-        """/ws/live'a bagli istemci sayisi -- JPEG kodlamasinin kapisi budur.
-        Bu asamada sunucu tek kamerayla calistirilir (ASAMA6_PLAN.md SS13);
-        toplam sayim o kameranin istemci sayisidir."""
+        """/ws/live'a bagli TOPLAM istemci sayisi (rapor satiri icin); kodlama
+        kapisi kamera basina clients() ile sorulur."""
         with self._lock:
-            return self._counts["live"]
+            return sum(n for (k, _), n in self._counts.items() if k == "live")
 
     @property
     def meta_clients(self) -> int:
@@ -137,7 +138,12 @@ class StreamServer:
         json.dumps'i de bedavaya gelmez (her karede N iz x 17 nokta), o yuzden
         dinleyen yokken o is de hic yapilmaz."""
         with self._lock:
-            return self._counts["meta"]
+            return sum(n for (k, _), n in self._counts.items() if k == "meta")
+
+    def clients(self, kind: str, camera_id: str) -> int:
+        """Tek kameranin `kind` ("live"/"meta") istemci sayisi."""
+        with self._lock:
+            return self._counts.get((kind, camera_id), 0)
 
     # --- asyncio tarafi ----------------------------------------------------
 
@@ -172,13 +178,13 @@ class StreamServer:
             return
 
         with self._lock:
-            self._counts[kind] += 1
+            self._counts[(kind, camera_id)] = self._counts.get((kind, camera_id), 0) + 1
         try:
             boxes = self._frames if kind == "live" else self._meta
             await self._stream(connection, boxes, camera_id)
         finally:
             with self._lock:
-                self._counts[kind] -= 1
+                self._counts[(kind, camera_id)] -= 1
 
     async def _stream(self, connection, boxes: dict[str, _Box], camera_id: str) -> None:
         event = asyncio.Event()

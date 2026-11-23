@@ -74,7 +74,7 @@ async function _loadFilters() {
 function _showError(msg) {
     _tbody.innerHTML = "";
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="9" class="p-6 text-center text-error font-body-sm text-body-sm">' + msg + "</td>";
+    tr.innerHTML = '<td colspan="9" class="p-6 text-center text-error font-body-sm text-body-sm">' + _escXml(msg) + "</td>";
     _tbody.appendChild(tr);
 }
 
@@ -102,7 +102,7 @@ function _fillEventRow(row, ev) {
     }
 
     tds[2].textContent = fmtTime(ev.started_at);
-    tds[3].innerHTML = _cameraName(ev.camera_id) + "<br><span class=\"text-on-surface-variant text-[10px]\">" + (_cameraLocation(ev.camera_id) || "—") + "</span>";
+    tds[3].innerHTML = _escXml(_cameraName(ev.camera_id)) + "<br><span class=\"text-on-surface-variant text-[10px]\">" + _escXml(_cameraLocation(ev.camera_id) || "—") + "</span>";
 
     // Anomali tipi ikonu sablona ait, degismiyor -- yalnizca etiket metni.
     const typeBadge = tds[4].querySelector("span");

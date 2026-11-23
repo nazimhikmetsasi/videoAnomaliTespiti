@@ -303,7 +303,7 @@ async function _load() {
         _cameras = await api("/api/cameras");
     } catch (e) {
         GRID.innerHTML = '<p class="col-span-full p-4 text-error font-body-sm text-body-sm">' +
-            "Kameralar yüklenemedi: " + e.message + "</p>";
+            "Kameralar yüklenemedi: " + _escXml(e.message) + "</p>";
         return;
     }
     // Yayinda olan kamera ONCE gelir: izgara ilk N kamerayi gosteriyor

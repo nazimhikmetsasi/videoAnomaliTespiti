@@ -139,9 +139,9 @@ def usable(text: str, finish_reason: str | None = None) -> bool:
     return True
 
 
-def _post(url: str, body: dict) -> httpx.Response:
+def _post(url: str, body: dict, headers: dict) -> httpx.Response:
     with httpx.Client(transport=_transport, timeout=LLM_TIMEOUT_SEC) as client:
-        return client.post(url, json=body)
+        return client.post(url, json=body, headers=headers)
 
 
 def generate_report(ctx: dict) -> tuple[str, str]:
@@ -166,10 +166,11 @@ def generate_report(ctx: dict) -> tuple[str, str]:
         "generationConfig": generation_config,
     }
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+           f"{GEMINI_MODEL}:generateContent")
 
     try:
-        resp = _post(url, body)
+        # Anahtar baslikta: URL vekil sunucu ve erisim kayitlarina duser.
+        resp = _post(url, body, {"x-goog-api-key": GEMINI_API_KEY})
     except httpx.HTTPError as exc:
         print(f"  gemini istegi basarisiz, sablona dusuluyor: {exc}")
         return template, "template"

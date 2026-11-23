@@ -246,3 +246,23 @@ def test_template_report_decimal_sayilari_bicimler():
     })
     assert "0.72" in metin and "11.1" in metin
     assert "bilinmiyor" not in metin.replace("bilinmiyor saatinde", "")
+
+
+def test_generate_report_key_in_header_not_in_url_or_output(capsys) -> None:
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(500, text="boom")
+
+    old = _patch(GEMINI_API_KEY="secret-key-123", _transport=httpx.MockTransport(handler),
+                 _cooldown_until=0.0)
+    try:
+        generate_report(_ctx())
+    finally:
+        _restore(old)
+    assert len(seen) == 1
+    assert "key=" not in str(seen[0].url)
+    assert seen[0].headers["x-goog-api-key"] == "secret-key-123"
+    out = capsys.readouterr()
+    assert "secret-key-123" not in out.out + out.err

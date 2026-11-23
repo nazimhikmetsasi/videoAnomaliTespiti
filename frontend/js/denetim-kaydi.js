@@ -11,7 +11,7 @@ function initials(text) {
 
 function messageRow(colspan, text) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="${colspan}" class="py-8 px-4 text-center text-on-surface-variant">${text}</td>`;
+    tr.innerHTML = `<td colspan="${colspan}" class="py-8 px-4 text-center text-on-surface-variant">${_escXml(text)}</td>`;
     return tr;
 }
 

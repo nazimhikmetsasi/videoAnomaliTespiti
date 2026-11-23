@@ -11,8 +11,12 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
-**Aşama 13.1 tamamlandı; sıradaki iş 13.2 (hızlı düzeltmeler).**
-(2026-11-23)
+**Aşama 13.2 — kod tamam, canlı doğrulama bekliyor.** (2026-11-23)
+Sözleşme `docs/ASAMA13_2_PLAN.md`; kabul adımları §5 (API imajını yeniden
+derle, portlar, `explain`, seed, Gemini, test sonrası `git status`).
+Testler: 261 geçti, 7 atlandı.
+
+**Aşama 13.1 tamamlandı.** (2026-11-23)
 
 Spark akışının iki sessiz olay kaybı giderildi ve canlı deneylerle
 doğrulandı (ayrıntı aşağıda "Aşama 13.1 sonucu"):

@@ -21,12 +21,22 @@ PILOT_DIR = ROOT / "data" / "pilot"
 ZONES_JSON = ROOT / "eval" / "zones.json"
 
 
+def source_value(clip: Path) -> str:
+    """Kok'e gore, '/' ayracli kaynak yolu; proje tasinsa da gecerli kalir."""
+    return clip.resolve().relative_to(ROOT).as_posix()
+
+
 def _ensure_camera(db, name: str, source: Path) -> Camera:
     cam = db.scalar(select(Camera).where(Camera.name == name))
+    src = source_value(source)
     if cam is not None:
-        print(f"kamera zaten var, atlaniyor: {name} (id={cam.id})")
+        if cam.source_type == "file" and cam.source != src:
+            cam.source = src
+            print(f"kamera kaynagi goreli yola guncellendi: {name} -> {src}")
+        else:
+            print(f"kamera zaten var, atlaniyor: {name} (id={cam.id})")
         return cam
-    cam = Camera(name=name, source=str(source), source_type="file")
+    cam = Camera(name=name, source=src, source_type="file")
     db.add(cam)
     db.flush()
     print(f"kamera olusturuldu: {name} (id={cam.id})")

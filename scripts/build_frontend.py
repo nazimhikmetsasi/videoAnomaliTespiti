@@ -71,6 +71,8 @@ def _versioned(rel_path: str) -> str:
     defined" ile tek kutuda takildi. Ozet ICERIKTEN uretilir -- degismeyen
     dosyanin URL'si de degismez, onbellek bosa harcanmaz."""
     data = (FRONTEND / rel_path).read_bytes()
+    # CRLF/LF farki ozeti degistirmesin (ayni icerik, ayni etiket)
+    data = data.replace(b"\r\n", b"\n")
     return f"{rel_path}?v={hashlib.sha256(data).hexdigest()[:8]}"
 
 

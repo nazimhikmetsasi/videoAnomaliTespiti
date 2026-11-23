@@ -11,7 +11,7 @@ function _showFatalError(msg) {
     main.innerHTML =
         '<div class="m-6 p-6 bg-error/10 border border-error/30 rounded-lg text-error font-body-md ' +
         'text-body-md flex items-center gap-3">' +
-        '<span class="material-symbols-outlined">error</span><span>' + msg + "</span></div>";
+        '<span class="material-symbols-outlined">error</span><span>' + _escXml(msg) + "</span></div>";
 }
 
 function _params() {

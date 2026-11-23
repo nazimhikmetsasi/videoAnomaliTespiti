@@ -366,7 +366,7 @@ class CameraPipeline:
         # Iki akis AYRI sayilir -- yalniz meta dinleyen bir istemci kare
         # kodlamasini baslatmamali.
         tw0 = time.perf_counter()
-        if self.stream_server.meta_clients > 0:
+        if self.stream_server.clients("meta", self.camera_id) > 0:
             stage_ms = {"pre": self.pre_ms[-1], "infer": self.infer_ms[-1],
                         "track": self.track_ms[-1]}
             if self.args.rules:
@@ -377,7 +377,7 @@ class CameraPipeline:
                 self.camera_id, frame.idx, frame.ts, FRAME_W, FRAME_H, fps_now,
                 tracks, self.rule_engine.zones if self.rule_engine else [],
                 candidates, stage_ms))
-        if self.stream_server.live_clients > 0:
+        if self.stream_server.clients("live", self.camera_id) > 0:
             # SS4.2 denetleyicisine YALNIZ kodlama+yayin suresi girer; tw0'dan
             # olcmek meta kurulumunu da iceri katar ve kaliteyi yanlis yere
             # dusururdu.
