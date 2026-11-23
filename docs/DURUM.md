@@ -11,10 +11,13 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
-**Aşama 13.3a kodu tamam; sıradaki iş B0 ölçümü.** (2026-11-23)
+**Aşama 13.3 B0 ölçüldü; sıradaki iş 13.3b.** (2026-11-23)
 
-13.3'ün planı `docs/ASAMA13_3_PLAN.md`. 13.3a'da yalnız ölçüm aracı
-yazıldı; hat koduna dokunulmadı. Ayrıntı aşağıda "Aşama 13.3a sonucu".
+13.3'ün planı `docs/ASAMA13_3_PLAN.md`. 13.3a'da ölçüm aracı yazıldı;
+hat koduna dokunulmadı. B0 sorunun büyüklüğünü ölçtü: holdout'ta
+hibritin F1'i özgün hızda 0,67, 10 FPS'te ~0,2, 5 FPS'te 0. Kural ve
+hibrit 5 FPS'te 59 klibin hiçbirinde aday üretmiyor. Ayrıntı aşağıda
+"Aşama 13.3 — B0".
 
 **Aşama 13.2 tamamlandı.** (2026-11-23)
 
@@ -81,7 +84,7 @@ değerlendirmeyle ölçülecek.
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.2 tamam; **13.3a kodu tamam**, sıradaki B0 ölçümü (`docs/ASAMA13_3_PLAN.md`) |
+| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.2 tamam; 13.3a + **B0 ölçümü tamam**, sıradaki 13.3b (`docs/ASAMA13_3_PLAN.md`) |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -303,19 +306,107 @@ holdout klibi; kural ve hibrit; özgün ve 5 FPS):
 - Hibrit, 5 FPS'te holdout'ta modelden aday almadı. Holdout klipleri
   1,5–13,6 sn; 50 karelik pencere 5 FPS'te 10 sn sürüyor ve dolmuyor.
 
+## Aşama 13.3 — B0: kare hızına karşı doğruluk, değişiklikten önce (2026-11-23)
+
+Komut (ana dizinde, `46a48b8`, ~1 sa):
+
+    venv/Scripts/python.exe -m eval.tcn_eval --modes rule,hybrid --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b0.json
+
+Ham sonuçlar `logs/fps_b0.json` ve `logs/fps_b0.log` dosyalarında (git dışı).
+Küme: 6 pilot klip (5'i etiketli, 4 olay) ve 59 holdout klip (44 olaylı +
+15 NORMAL). Düzensiz kare kaybı üç tohumla koşuldu; aşağıda ortalama
+[min–maks] verildi.
+
+**Araç doğrulaması.** Özgün hız satırları önceki ölçümleri birebir verdi:
+- holdout kural: F1 0,41 (TP 13 / FP 6 / FN 31, Aşama 9.5 ile aynı)
+- holdout hibrit: F1 0,67 (Aşama 11 ile aynı)
+
+Seyreltme olmadığında araç hattı değiştirmiyor.
+
+**F1, ham adaylar:**
+
+| mod | küme | özgün (24–27) | 10 düzenli | 10 düzensiz | 5 düzenli | 5 düzensiz |
+|---|---|---|---|---|---|---|
+| kural | holdout | **0,41** | 0,20 | 0,16 [0,12–0,24] | **0,00** | 0,00 |
+| hibrit | holdout | **0,67** | 0,24 | 0,17 [0,12–0,24] | **0,00** | 0,00 |
+| kural | pilot | 0,50 | 0,33 | 0,36 [0,33–0,40] | 0,40 | 0,40 |
+| hibrit | pilot | 0,32 | 0,27 | 0,27 [0,25–0,31] | 0,18 | 0,26 [0,20–0,33] |
+
+**F1, Spark süzgecinden sonra** (`min_hits = 2`, tipe göre `min_sec`):
+
+| mod | küme | özgün | 10 düzenli | 10 düzensiz | 5 düzenli | 5 düzensiz |
+|---|---|---|---|---|---|---|
+| kural | holdout | 0,32 | 0,13 | 0,10 [0,09–0,13] | 0,00 | 0,00 |
+| hibrit | holdout | 0,57 | 0,17 | 0,10 [0,09–0,13] | 0,00 | 0,00 |
+
+**Ham sayılar:**
+
+- Holdout'ta aday üreten klip sayısı (59 klip içinde):
+
+  | mod | özgün | 10 FPS | 5 FPS |
+  |---|---|---|---|
+  | kural | 19 | 6 | **0** |
+  | hibrit | 34 | 7 | **0** |
+
+- Holdout'ta hibritin bulduğu olaylar (TP):
+
+  | | özgün | 10 FPS | 5 FPS |
+  |---|---|---|---|
+  | FALL | 9 | 3 | 0 |
+  | RUN | 7 | 3 | 0 |
+  | FIGHT | 12 | 0 | 0 |
+
+  FIGHT 10 FPS'te tamamen kayboluyor.
+- **Pilot F1 yanıltıcı.** Küme 4 olaydan oluşuyor: FALL 1, RUN 2, ZONE 1.
+  10 ve 5 FPS'te yalnız ZONE bulunuyor; FALL ve RUN kaçıyor. Kuralın
+  duyarlılığı 0,75 → 0,25. F1 5 FPS'te 0,40'a "çıkıyor", çünkü
+  RUN adayları (385 → 0) ve onlarla birlikte sahte RUN'lar da yok oluyor.
+- Hibrit, pilotta 5 FPS'te **6 sahte FALL** üretiyor. Uzun kliplerde 50
+  karelik pencere 10 sn'de doluyor ve model 10 sn'lik hareketi 2 sn'lik
+  gibi okuyor.
+
+**Açık soruların karşılığı:**
+
+- `zone_01`'in sahte RUN'ı 10 FPS'te kayboluyor, ama gerçek RUN da
+  kayboluyor. Bu bir düzeltme değil, kör nokta.
+- `police_run` hiçbir hızda aday üretmiyor, özgün 15 FPS'te de. Sorun
+  düşük kare hızı değil; derinlik yönündeki hız (17) olarak kalıyor.
+
+**Yan bulgu: Spark süzgeci özgün hızda bile holdout duyarlılığını
+düşürüyor.**
+- hibrit duyarlılık 0,64 → 0,45; FIGHT TP 12 → 6
+- Holdout klipleri kısa (FIGHT ortanca 2,8 sn). Oturum `min_hits` /
+  `min_sec`'i doldurmadan klip bitiyor.
+- Canlıda olay sürdükçe aday akmaya devam eder; bu kısmen kısa kliplerin
+  yarattığı yapay bir durum. Kayıt olarak burada.
+
+**Mekanizma** (koddan ve `fall_01` kare dökümünden). Kare sayısıyla
+tanımlı bakışlar 5 FPS'te 5 kat uzuyor:
+- hız 1 sn'ye yayılıyor (düşüş tepesi 1,68 → −0,06)
+- adım ritmi 10 sn'lik pencere istiyor (holdout RUN klipleri ortanca
+  4,5 sn)
+- uzuv hızı 0,6 sn'ye yayılıyor
+- TCN 10 sn'lik pencere istiyor
+
+**Sonuç.** Sorun ölçüldü ve büyük:
+- 10 FPS'te holdout F1: hibrit 0,67 → ~0,2
+- 5 FPS'te her iki mod da 0
+
+Canlı yığın ~10 FPS'te çalıştığı için bugünkü canlı doğruluk çevrimdışı
+tablolardan belirgin biçimde düşük olmalı (çıkarım; canlıda ölçülmedi).
+
 ---
 
 ## Bir sonraki adım
 
-**Aşama 13.3 — B0 ölçümü** (`docs/ASAMA13_3_PLAN.md` §3). 13.3a
-commit'lenip `main`'e alındıktan sonra ana dizinde, arka planda (~1 sa):
+**Aşama 13.3b — kural, öznitelik ve izleyici sabitleri saniyeye**
+(`docs/ASAMA13_3_PLAN.md` §4, D1 `Zone.active_at` dahil). Ardından B1
+(yalnız kural):
 
-    venv/Scripts/python.exe -m eval.tcn_eval --modes rule,hybrid --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b0.json
+    venv/Scripts/python.exe -m eval.tcn_eval --modes rule --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b1.json
 
-Önce `nvidia-smi`: GPU'yu kullanan oyun veya tarayıcı kapatılır (çevrimdışı
-ölçümde sonucu değil yalnız süreyi etkiler). B0 tabloları buraya
-yazıldıktan sonra 13.3b (kural sabitleri saniyeye, D1 dahil). Plandan
-sapma: yol haritasındaki hız artırımı (0,5x–2x) uygulanmıyor; gerekçe plan
+B1 sonrası `--compare logs/fps_b0.json logs/fps_b1.json`. Plandan sapma:
+yol haritasındaki hız artırımı (0,5x–2x) uygulanmıyor; gerekçe plan
 §6.2'de.
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
