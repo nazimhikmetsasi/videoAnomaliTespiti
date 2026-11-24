@@ -5,7 +5,7 @@ Kaynak belgeler: `TEZ FİNAL RAPORU` (2026-06-14), `tez planlama.docx`
 `TEST_CHECKLIST.txt` (v1), `tez projesi eklenebilecek geliştirilebilcek
 şeyler.docx` (öneri listesi).
 
-Denetlenen kod: bu depo (v2), commit `8b62803`.
+Denetlenen kod: bu depo (v2), commit `92f4d01`.
 
 Üç ayrı uyumsuzluk türü var ve **karışmamaları önemli**:
 

@@ -328,7 +328,7 @@ holdout klibi; kural ve hibrit; özgün ve 5 FPS):
 
 ## Aşama 13.3 — B0: kare hızına karşı doğruluk, değişiklikten önce (2026-11-23)
 
-Komut (ana dizinde, `46a48b8`, ~1 sa):
+Komut (ana dizinde, `0bfab27`, ~1 sa):
 
     venv/Scripts/python.exe -m eval.tcn_eval --modes rule,hybrid --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b0.json
 
@@ -468,7 +468,7 @@ sabit bugünkü 25 FPS karşılığından türetildi (dönüşüm tablosu plan �
 
 ## Aşama 13.3 — B1: kurallar saniyeye çevrildikten sonra (2026-11-23)
 
-Komut (ana dizinde, `89bad51`):
+Komut (ana dizinde, `210dc0f`):
 
     venv/Scripts/python.exe -m eval.tcn_eval --modes rule --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b1.json
 
@@ -502,7 +502,7 @@ vermedi.
 klip var.
 
 - **25 FPS'lik kliplerde dönüşüm doğrulandı.** `zone_01` ve
-  `casia_angleview_p01_faint_a1` eski (`e4fd3c9`) ve yeni kodla aynı
+  `casia_angleview_p01_faint_a1` eski (`55a0537`) ve yeni kodla aynı
   algılayıcıyla kare kare koşuldu.
   - İzler birebir aynı.
   - Farklı çıkan 21 adayın **21'i de** izde son ~2 sn içinde boşluk olan
@@ -566,7 +566,7 @@ Sözleşme `docs/ASAMA13_3_PLAN.md` §6.
      RUN 2, eski 1).
    - Sınıf dengesizliği zaten ağırlıklı kayıpla karşılanıyor.
 
-Kod commit'li ve `main`'de: `461338e`. Eski model
+Kod commit'li ve `main`'de: `44529ee`. Eski model
 `runs/tcn_kare_tabanli/` altında; özet sağlaması aynı.
 
 **Yeniden çıkarım yarıda kesildi** (2026-11-24): oturum kapandı. Durum:
@@ -651,7 +651,7 @@ Eski model `runs/tcn_kare_tabanli/` altında.
 
 ## Aşama 13.3 — B2: TCN zaman ızgarasından sonra (2026-11-24)
 
-Komut (ana dizinde, `8203e58` ve yeni model; ~37 dk):
+Komut (ana dizinde, `9b598bf` ve yeni model; ~37 dk):
 
     venv/Scripts/python.exe -m eval.tcn_eval --modes rule,hybrid --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b2.json
 
