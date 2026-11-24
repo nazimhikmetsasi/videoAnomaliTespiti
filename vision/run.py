@@ -179,6 +179,10 @@ def print_report(pipe: CameraPipeline, args, prefix: str = "") -> None:
               "   (1.00 = hic ID degisimi yok)")
     print(f"  isinma sonrasi yeni ID: {pipe.late_new_ids}  (ilk {WARMUP_FRAMES} kare haric)")
     print(f"  pozsuz iz            : {pipe.pose_missing} / {pipe.track_total}")
+    # Kayip iz tamponu sureden kareye cevriliyor (13.3): islenen FPS ile tutarli mi.
+    print(f"  izleyici tamponu     : {pipe.tracker.max_frames_lost} kare")
+    if hasattr(pipe.rule_engine, "model_runs"):
+        print(f"  TCN kosusu           : {pipe.rule_engine.model_runs}")
 
     if args.rules:
         print("\n  aday olay ozeti (--rules):")

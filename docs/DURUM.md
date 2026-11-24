@@ -5,13 +5,24 @@ dosya → `docs/YOL_HARITASI.md` (kalan işin sırası ve kabul ölçütleri) �
 başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulguları
 `docs/DURUM_ARSIV.md`'de, mimari `docs/PLAN.md`'de.
 
-**Son güncelleme:** 2026-11-23
+**Son güncelleme:** 2026-11-24
 
 ---
 
 ## Şu an neredeyiz
 
-**Aşama 13.3c kodu tamam (461338e); iz çıkarımı yarıda kesildi (218/1080), devam edilecek; sonra eğitim ve B2.** (2026-11-24)
+**Aşama 13.3 tamamlandı.** (2026-11-24) Sıradaki 13.4.
+
+Hibrit holdout ham F1:
+- 10 FPS: 0,17–0,24 → 0,59–0,62
+- 5 FPS: 0 → 0,47–0,54
+- özgün hız: 0,67 → 0,67
+
+Özgün hızda süzgeçli F1 0,57 → 0,48. Düşüşün tamamı FIGHT'tan: holdout
+FIGHT klipleri (1,2–2,9 sn) yeni 1,96 sn'lik pencereye sığmıyor.
+Kullanıcı bunu kabul etti.
+
+Ayrıntı: "Aşama 13.3 — B2" ve "Aşama 13.3 sonucu".
 
 Plan: `docs/ASAMA13_3_PLAN.md`.
 
@@ -21,10 +32,12 @@ Plan: `docs/ASAMA13_3_PLAN.md`.
 - **13.3b:** kural, öznitelik ve izleyici sabitleri saniyeye çevrildi.
 - **B1:** kural modunda holdout F1 10 FPS'te 0,20 → 0,34 (özgün hızda
   0,37), 5 FPS'te 0 → 0,16.
-- Hibritin düşük FPS'teki çöküşü 13.3c'nin işi: TCN hâlâ 50 gözlenmiş
-  kare istiyor.
+- **13.3c:** TCN girdisi 25 Hz zaman ızgarasına alındı (1,96 sn). Model
+  kare düşürme artırımıyla yeniden eğitildi.
+- **B2:** sonuçlar yukarıda.
 
-Ayrıntı aşağıda: "Aşama 13.3 — B0", "Aşama 13.3b", "Aşama 13.3 — B1".
+Ayrıntı aşağıda: "Aşama 13.3 — B0", "Aşama 13.3b", "Aşama 13.3 — B1",
+"Aşama 13.3c", "Aşama 13.3 — B2", "Aşama 13.3 sonucu".
 
 **Aşama 13.2 tamamlandı.** (2026-11-23)
 
@@ -91,7 +104,7 @@ değerlendirmeyle ölçülecek.
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.2 tamam; 13.3a + B0, 13.3b + B1 tamam; **13.3c kodu tamam**, sıradaki eğitim + B2 (`docs/ASAMA13_3_PLAN.md`) |
+| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.3 tamam; sıradaki 13.4 |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -565,30 +578,200 @@ Kod commit'li ve `main`'de: `461338e`. Eski model
   düzeltme `fix: asama 13.3 - iz cikariminda atomik yazim` commit'iyle
   girdi. Testler: 318 geçti, 8 atlandı.
 
+### İz çıkarımı sonucu (2026-11-24)
+
+Kaldığı yerden sürdü (01:51–03:08, ~7 klip/dk). Kayıt:
+`logs/extract_tracks.log`.
+
+| Sınıf | Klip | Örnek | İz | İzsiz klip | Eski izsiz (9.2) |
+|---|---|---|---|---|---|
+| NORMAL | 600 | 102 508 | 1147 | 104 | 185 |
+| FALL | 66 | 5 696 | 111 | 7 | 28 |
+| RUN | 144 | 8 582 | 124 | 40 | 65 |
+| FIGHT | 270 | 55 205 | 750 | 13 | 40 |
+
+- İzsiz klip eskisinden az. Eski çıkarım 50 gözlenmiş karelik pencere
+  istiyordu; ham iz her uzunlukta tutuluyor.
+- İzsiz kliplerin 36'sı hiç açılmıyor (`n_frames = 0`: NORMAL 22,
+  FIGHT 13, RUN 1). Bunlar 9.2'de bulunan, kaynakta bozuk dosyalar
+  (`moov atom not found`).
+- Kalanlarda kare okunuyor ama kimse algılanmıyor: RUN 39 (CASIA ve
+  UCARG), NORMAL 82 (çoğu CASIA), FALL 7 (hepsi CASIA `faint`).
+  CASIA'da kişi uzak ve küçük. 9.2'de de vardı.
+
+### Eğitim sonucu (2026-11-24)
+
+Ana dizinde `models.tcn --train`. Kayıt: `logs/tcn_train.log`. Epoch
+başına ~3 sn. 30. epoch en iyi; 40'ta erken durdu.
+
+- Eğitim 25 002 pencere, doğrulama 5 997 pencere. Her klip özgün hızda
+  ve 15 / 10 / 5 FPS'e düşürülmüş halde.
+- `tcn_meta.json`: `grid_hz = 25.0`, `window_sec = 1.96`.
+- Pencere başına çıkarım 1,14 ms (eski 1,20).
+
+**Hız başına doğrulama makro F1'i:**
+
+| Hız | Makro F1 | Pencere |
+|---|---|---|
+| özgün | 0,719 | 1553 |
+| 15 FPS | 0,702 | 1521 |
+| 10 FPS | 0,714 | 1498 |
+| 5 FPS | 0,707 | 1425 |
+
+Model hıza duyarsız: 5 FPS ile özgün hız arasındaki fark 0,012. 13.3c'nin
+amacı buydu.
+
+**Sınıf başına** (dört hız birlikte; eski model 9.3, yalnız özgün hız):
+
+| Sınıf | Kesinlik | Duyarlılık | F1 | Pencere | Eski F1 |
+|---|---|---|---|---|---|
+| NORMAL | 0,877 | 0,858 | 0,868 | 4149 | 0,760 |
+| FALL | 0,421 | 0,356 | **0,385** | 284 | 0,568 |
+| RUN | 0,838 | 0,927 | 0,880 | 317 | 0,817 |
+| FIGHT | 0,683 | 0,738 | 0,709 | 1247 | 0,649 |
+| **makro** | | | **0,711** | | 0,698 |
+
+Karışıklık matrisi (satır = gerçek, sütun = tahmin):
+
+| | NORMAL | FALL | RUN | FIGHT |
+|---|---|---|---|---|
+| **NORMAL** | 3561 | 123 | 45 | 420 |
+| **FALL** | 176 | 101 | 0 | 7 |
+| **RUN** | 15 | 8 | 294 | 0 |
+| **FIGHT** | 307 | 8 | 12 | 920 |
+
+**Bulgu — FALL zayıfladı.** F1 0,568 → 0,385. FALL pencerelerinin
+%62'si NORMAL tahmin ediliyor. Karşılaştırma kesin değil: doğrulama
+kümeleri farklı (eski 71 pencere, yeni hız başına ~70). FALL doğrulaması
+~13 klip, bu yüzden oynaklığı yüksek. Belirleyici ölçüm B2'nin holdout
+FALL satırları. Orada da düşüş görülürse aşama kapanmaz (plan §8.3);
+klip klip incelenir ve karar kullanıcıya sorulur.
+
+Eski model `runs/tcn_kare_tabanli/` altında.
+
+## Aşama 13.3 — B2: TCN zaman ızgarasından sonra (2026-11-24)
+
+Komut (ana dizinde, `8203e58` ve yeni model; ~37 dk):
+
+    venv/Scripts/python.exe -m eval.tcn_eval --modes rule,hybrid --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b2.json
+
+Ham sonuçlar `logs/fps_b2.json` ve `logs/fps_b2.log` dosyalarında.
+Holdout listesi B0 ile birebir aynı: 59 klip, `meta.holdout` eşit.
+
+**Kural satırları B1 ile birebir aynı** (bütün hız ve tohumlar). Beklenen
+sonuç: 13.3c kural yoluna dokunmadı. Özgün hızdaki 0,41 → 0,37 farkı
+13.3b'den geliyor ve B1 bölümünde aday düzeyinde açıklandı.
+
+**Hibrit, holdout, F1 — B0 → B2:**
+
+| | özgün | 10 düzenli | 10 düzensiz | 5 düzenli | 5 düzensiz |
+|---|---|---|---|---|---|
+| ham F1 | 0,67 → 0,67 | 0,24 → **0,62** | 0,17 → **0,59** [0,58–0,60] | 0,00 → **0,54** | 0,00 → **0,47** [0,42–0,51] |
+| süzgeçli F1 | 0,57 → **0,48** | 0,17 → 0,44 | 0,10 → 0,35 [0,31–0,39] | 0,00 → 0,28 | 0,00 → 0,24 [0,22–0,26] |
+
+Tip başına ham F1 (düzensiz satırlarda üç tohumun ortalaması):
+
+| | özgün | 10 düzensiz | 5 düzensiz |
+|---|---|---|---|
+| FALL | 0,78 → 0,83 | 0,25 → 0,58 | 0,00 → 0,55 |
+| RUN | 0,48 → 0,52 | 0,25 → 0,53 | 0,00 → 0,14 |
+| FIGHT | 0,75 → **0,67** | 0,00 → 0,66 | 0,00 → 0,65 |
+
+- 13.3'ün amacı tuttu: hibrit 10 FPS'te özgün hızına neredeyse döndü,
+  5 FPS'te sıfırdan 0,47–0,54'e çıktı.
+- **FALL holdout'ta gerilemedi.** Özgün hızda TP 9 → 10. Eğitim
+  doğrulamasındaki FALL düşüşü (0,568 → 0,385) holdout'ta görülmüyor.
+- RUN 5 FPS'te kuralla aynı (0,14). Model RUN'a bu hızda bir şey
+  katmıyor.
+- Pilot hibrit: özgün 0,32 → 0,57 ham, 0,35 → 0,60 süzgeçli.
+
+**Gerileme — özgün hızda FIGHT.** Ham ve süzgeçli TP/FP/FN, B0 → B2:
+
+| Tip | ham | süzgeçli |
+|---|---|---|
+| FALL | 9/0/5 → 10/0/4 | 8/0/6 → 8/0/6 |
+| RUN | 7/7/8 → 7/5/8 | 6/3/9 → 6/3/9 |
+| FIGHT | 12/5/3 → 10/5/5 | **6/3/9 → 2/3/13** |
+
+Süzgeçli toplamdaki 0,57 → 0,48 düşüşünün tamamı FIGHT'tan.
+
+**Kök neden: holdout FIGHT klipleri pencereden kısa.** Klip klip:
+
+- Holdout FIGHT klipleri BIT-Interaction'dan, 30 FPS, 1,2–2,9 sn.
+- Eski pencere 50 gözlenmiş kareydi: 30 FPS'te 1,67 sn. Yeni pencere
+  1,96 sn. Model ancak iz 1,96 sn yaşlanınca koşuyor.
+  - Bu yüzden klip başına model koşusu kısalıyor. **Her FIGHT klibinde**
+    aday sayısı düştü. Örnek: `box_0016` 2,57 sn'de 20 → 11,
+    `box_0001` 2,63 sn'de 6 → 2.
+  - 1,96 sn'den kısa klipler artık hiç aday vermiyor: `box_0046`
+    (1,90 sn, 3 → 0) ve `kick_0016` (1,73 sn, 2 → 0). Ham FN 3 → 5'in
+    ikisi bunlar.
+- Süzgeç FIGHT'ta iz çifti başına en az 2 aday ve en az 0,5 sn süre
+  istiyor. Model 0,2 sn'de bir koşuyor. 2,4 sn'lik bir klipte bu süre
+  için kalan pay eskiden ~0,7 sn'ydi, şimdi ~0,4 sn; 0,5 sn'lik süreye
+  yetmiyor. Süzgeçli TP 6 → 2.
+- Mekanizma B1'deki kural farkıyla aynı: 30 FPS'te eski kare tabanlı
+  pencereler zamanca %17 kısaydı.
+
+Canlı kamerada etkisi: kavga en az ~2 sn sürmeden model koşmuyor;
+öncekine göre ~0,3 sn daha geç. Değerlendirmede bu, kısa klip yapaylığı
+olarak görünüyor.
+
+Plan §8.3'e göre aşama bu gerilemeyle kapanmaz; karar kullanıcıya
+soruldu. **Karar (2026-11-24): kabul.** Pencere 1,96 sn kalıyor.
+Gerekçe:
+
+- Gerileme klip uzunluğu yapaylığı; mekanizma klip klip açıklandı.
+- Canlıdaki bedeli ~0,3 sn daha geç model kararı.
+- Pencereyi holdout sonucuna bakarak kısaltmak holdout'u ayar kümesine
+  çevirirdi.
+
+Saha verisiyle (14) yeniden bakılabilir.
+
+## Aşama 13.3 sonucu — kapanış (2026-11-24)
+
+**Canlı duman testi.** Ana dizinde koşuldu, 80 sn. Kayıt:
+`logs/smoke_13_3c.log`.
+
+    venv/Scripts/python.exe -m vision.run --source data/pilot/fall_01.mp4 --rules --realtime --loop --max-frames 2400
+
+- Çökme yok. 2400 kare 80,3 sn'de işlendi: 29,9 FPS, kaynak 30 FPS,
+  düşen kare 6.
+- TCN 79 kez koştu. Model çıkarımı medyan 1,5 ms, p95 2,9 ms.
+- 20 FALL adayı, 10 döngüde 10 izde. İlk tetik 5,8 sn'de.
+- İzleyici tamponu 72 kare: 2,4 sn × 30 FPS. İşlenen FPS ile tutarlı.
+
+Rapor, TCN koşu sayısını ve izleyici tamponunu basmıyordu. Sayaç
+(`HybridArbiter.model_runs`) rapor için konmuştu ama bağlanmamıştı.
+`vision/run.py` raporuna iki satır eklendi. Duman testi ana dizinin
+kodunu koştu; iki satır bir sarmalayıcıyla aynen basıldı.
+
+**Testler:** worktree'de 318 geçti, 8 atlandı. Ana dizinde 319 geçti,
+7 atlandı; holdout listesi testi gerçek veriyle koştu. Atlananlar
+veritabanı testleri (Docker kapalıydı). Paket koştuktan sonra
+`git status` temiz.
+
+**Kabul (plan §8):**
+
+1. Testler yeşil.
+2. B0, B1, B2 tabloları bu dosyada.
+3. Özgün hızda FIGHT gerilemesi var. Klip klip açıklandı ve kullanıcı
+   kabul etti.
+4. 10 ve 5 FPS önce / sonra raporlandı.
+5. Holdout listesi aynı.
+6. Duman testi geçti.
+7. `docs/TEZ.md` §4.5 taslağı yazıldı.
+
+**Plandan sapma:** yol haritasındaki hız artırımı (0,5x–2x)
+uygulanmadı. Gerekçe plan §6.2'de.
+
 ---
 
 ## Bir sonraki adım
 
-**13.3c'nin kalanı** (`docs/ASAMA13_3_PLAN.md` §7):
-
-0. **İz çıkarımına devam**, ana dizinde. Betik kaldığı yerden sürer: var
-   olan dosyaları atlıyor. Süre ~1,5–2 sa, arka planda:
-
-       venv/Scripts/python.exe -m eval.extract_sequences > logs/extract_tracks.log 2>&1
-
-   Bitince sınıf başına dosya sayısı eğitim klibi sayısına eşit olmalı:
-   600 / 66 / 144 / 270.
-1. Eğitim, ana dizinde: `venv/Scripts/python.exe -m models.tcn --train`.
-   Hız başına doğrulama F1'i buraya yazılır.
-2. B2:
-
-       venv/Scripts/python.exe -m eval.tcn_eval --modes rule,hybrid --limit 15 --fps 0,10,5 --drop regular,jitter --seeds 0,1,2 --out logs/fps_b2.json
-
-   Ardından `--compare` B0 → B2 ve B1 → B2.
-3. Canlı duman testi: `fall_01`, `--realtime --loop`, TCN açık.
-
-Plandan sapma: yol haritasındaki hız artırımı (0,5x–2x) uygulanmıyor;
-gerekçe plan §6.2'de.
+**Aşama 13.4 — düşme sonrası hareketsizlik** (`docs/YOL_HARITASI.md`).
+Önce uygulama planı yazılır (`docs/ASAMA13_4_PLAN.md`). Süreler saniye
+cinsinden; N, kayıtlara bakmadan önce gerekçesiyle seçilir.
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
 `docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5'in olay sayıları
@@ -729,6 +912,7 @@ Panel `http://localhost:8000`, kullanıcı `admin`, şifre `.env`'deki
 | 2026-11-23 | WebSocket istemci sayacı `(tür, kamera)` başına | Tek süreç çoklu kamerada bir kamerayı izleyen istemci bütün kameralara her karede JPEG kodlatıyordu |
 | 2026-11-23 | Kamera kaynağı proje köküne göreli | Mutlak yol, proje taşınınca bütün dosya kameralarını açılmaz yaptı (13.1) |
 | 2026-11-23 | Önbellek etiketi CRLF → LF normalleştirilmiş içerikten | Aynı içerik farklı satır sonuyla farklı etiket veriyor, test paketi her koşuda izlenen HTML'leri değiştiriyordu |
+| 2026-11-24 | TCN penceresi 1,96 sn kalıyor; özgün hızdaki FIGHT gerilemesi (süzgeçli TP 6 → 2) kabul | Holdout FIGHT klipleri 1,2–2,9 sn, pencereden kısa: yapaylık. Canlıda bedeli ~0,3 sn. Holdout'a bakarak pencere seçmek sızıntı olurdu (13.3, B2) |
 
 ## Açık sorular
 

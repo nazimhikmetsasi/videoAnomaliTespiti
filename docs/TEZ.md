@@ -344,6 +344,78 @@ Bu çalışmada eşik 0,60'ta bırakılmıştır; raporlanan bütün tablolar bu
 
 ---
 
+## 4.5 Kare hızına bağımlılık (Aşama 13.3)
+
+> Taslak (2026-11-24). Sayılar `docs/DURUM.md` B0, B1 ve B2
+> bölümlerinden, ham çıktılar `logs/fps_b0|b1|b2.json`.
+
+**Sorun.** Bu sistemde iki koşul ayrışıyordu:
+
+- Çevrimdışı değerlendirme her kareyi işler (24–30 FPS).
+- Canlı yığın kamera başına ~10 FPS'te çalışır.
+
+Kural pencereleri, hareket öznitelikleri, izleyicinin kayıp iz tamponu ve
+TCN girdisi kare sayısıyla tanımlıydı. Bu yüzden aynı pencere düşük kare
+hızında zamanca uzuyordu. Örneğin 50 karelik TCN penceresi 25 FPS'te
+2 sn, 5 FPS'te 10 sn'dir. Dolayısıyla §4.1'deki doğruluk canlı koşulu
+temsil etmiyordu.
+
+**Ölçüm.** Holdout (59 klip) ve pilot (6 klip) kümeleri 10 ve 5 FPS'e
+seyreltildi. Kareler algılamadan önce, iki biçimde atıldı: düzenli adımla
+ve düzensiz olarak (üç tohum). Doğruluk üç noktada ölçüldü:
+
+- **B0:** değişiklikten önce
+- **B1:** kural, öznitelik ve izleyici sabitleri saniyeye çevrildikten
+  sonra
+- **B2:** TCN girdisi 25 Hz'lik zaman ızgarasına (50 nokta, 1,96 sn)
+  yeniden örneklendikten ve model kare düşürme artırımıyla (15 / 10 /
+  5 FPS) yeniden eğitildikten sonra
+
+Holdout, ham adaylar üzerinden F1. 10 ve 5 FPS sütunları düzensiz kaybın
+üç tohum ortalamasıdır:
+
+| Mod | Ölçüm | Özgün | 10 FPS | 5 FPS |
+|---|---|---|---|---|
+| kural | B0 | 0,41 | 0,16 | 0,00 |
+| kural | B1 (= B2) | 0,37 | 0,32 | 0,13 |
+| hibrit | B0 | 0,67 | 0,17 | 0,00 |
+| hibrit | B2 | **0,67** | **0,59** | **0,47** |
+
+Düzenli seyreltmede hibrit B2 10 FPS'te 0,62, 5 FPS'te 0,54 verir.
+Spark süzgecinden sonra hibrit F1'i B0'da 0,57 / 0,10 / 0,00, B2'de
+0,48 / 0,35 / 0,24'tür.
+
+Hız başına ayrı tutulan eğitim doğrulamasında yeni modelin makro F1'i
+özgün hızda 0,719, 15 FPS'te 0,702, 10 FPS'te 0,714, 5 FPS'te 0,707'dir.
+Model girdisi kare hızından fiilen bağımsızdır.
+
+**Bedeli.** Özgün hızda iki küçük gerileme ölçüldü. İkisi de aynı
+mekanizmadan doğuyor: 30 FPS'lik kliplerde eski kare tabanlı pencereler
+zamanca %17 kısaydı.
+
+- Kural modunun F1'i 0,41'den 0,37'ye iniyor. Eşiğin hemen üstündeki iki
+  aday kayboluyor.
+- Süzgeçli hibrit F1'i 0,57'den 0,48'e iniyor; düşüşün tamamı FIGHT'tan
+  geliyor. Holdout FIGHT klipleri BIT-Interaction'dan, 30 FPS ve
+  1,2–2,9 sn uzunluğunda. Eski pencere (50 kare = 1,67 sn) bu kliplere
+  sığıyordu; yeni pencere (1,96 sn) en kısalarına hiç sığmıyor, ötekilerde
+  daha az model kararı bırakıyor.
+
+Bu bir değerlendirme yapaylığı olarak kabul edildi. Canlı kamerada bedeli,
+modelin kavga başladıktan ~0,3 sn daha geç karar vermesidir. Pencere
+uzunluğu holdout sonucuna bakılarak yeniden seçilmedi; seçilseydi holdout
+ayar kümesine dönüşürdü.
+
+**Sınır.** Seyreltme çevrimdışıdır. Tam yığında 10 FPS'te canlı doğruluk
+ölçümü yapılmamıştır. Eğitimde izleyici bütün kareleri görür,
+değerlendirmede ise yalnız tutulan kareleri; bu fark B2'ye dahildir.
+
+> Not: §4.1 ve §4.3'teki tablolar kare tabanlı eski modele aittir. Yeni
+> modelin holdout hibrit sayıları B2'nin özgün hız satırıdır: TP 27,
+> FP 10, FN 17; F1 0,67 (FALL 0,83, RUN 0,52, FIGHT 0,67).
+
+---
+
 ## 5. Eğitim veri kümesi
 
 1080 klip, 193 MB. `scripts/fetch_datasets.py` ile yeniden üretilebilir.
@@ -379,6 +451,7 @@ Bunlar gizlenmez; tezin dürüstlüğü buradadır.
 | **En büyük dosya < 150 satır** | Tutmadı: `vision/camera.py` 421 satır. Aşama dosyaları hedefte, kamera hattının kendisi değil |
 | **RTSP** | Kod yolu var, donanım yok, hiç denenmedi |
 | **Hareketli / PTZ kamera** | Bölge kuralları (ZONE_VIOLATION, LOITERING) görüntü koordinatında tanımlıdır ve yalnızca sabit kamerada anlamlıdır. Ölçüldü: elde taşınan kamerayla çekilmiş pilot klipte kişi yürürken LOITERING tetiklendi (değerlendirme penceresi dışında, tabloya girmez) |
+| **Doğruluğun kare hızına bağımlılığı** | Düzeltildi (§4.5, Aşama 13.3): hibrit holdout F1 10 FPS'te 0,17 → 0,59, 5 FPS'te 0 → 0,47. Bedeli özgün hızda kısa FIGHT kliplerinde süzgeçli F1 0,57 → 0,48. Tam yığında canlı doğruluk ölçülmedi |
 | **8 saat kesintisiz koşu** | Yapıldı (§3.5): 8.0 saat, 4 kamera, FPS sapması +0.6%. Diskin sınırsız büyümesi saklama politikasıyla kapatıldı (§3.6) |
 
 ---
