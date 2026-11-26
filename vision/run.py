@@ -190,14 +190,16 @@ def print_report(pipe: CameraPipeline, args, prefix: str = "") -> None:
                   for k in ("down", "recovered", "unknown")}
         pend = pipe.postfall.pending()
         print(f"  dusme sonrasi        : down {counts['down']} / recovered "
-              f"{counts['recovered']} / unknown {counts['unknown']}, bekleyen {len(pend)}")
+              f"{counts['recovered']} / unknown {counts['unknown']}, bekleyen {len(pend)}, "
+              f"inis gorulmedi {pipe.postfall.unlanded}")
         for o in pipe.all_outcomes:
             m = o.metrics
             print(f"    iz {o.track_id:>3}  {o.outcome:<9} karar {m['decided_after_sec']:.1f} sn  "
                   f"son gorulme {m['last_seen_ago_sec']:.1f} sn once  devralinan {o.adopted}  "
                   f"max boy orani {m['max_height_ratio']:.2f}")
-        for tid, secs in pend:
-            print(f"    iz {tid:>3}  bekliyor  izlenen {secs:.1f} sn (klip bitti, karar yok)")
+        for tid, secs, landed in pend:
+            note = f"izlenen {secs:.1f} sn (klip bitti, karar yok)" if landed else "inis bekleniyor"
+            print(f"    iz {tid:>3}  bekliyor  {note}")
 
     if args.rules:
         print("\n  aday olay ozeti (--rules):")

@@ -17,6 +17,12 @@ Hata iki yone esit degil, guvenli taraf alarm: son gorulen durus yatay ise
 kisi uzun suredir gorunmese de "down"; oturan veya yarim kalkan "unknown"
 (olay bugunku gibi kritik kalir); "recovered" icin kesintisiz ayakta durmak
 gerekir.
+
+Silahlanma (ARMED): model adaylari kisi daha ayaktayken (sendeleme, bayilma
+oncesi) ateslenir; izleme o anda baslasa "ayakta" gorup yanlis "recovered"
+verir ve ayni dusme birden cok sonuc uretir. Bu yuzden aday izleyiciyi yalniz
+silahlar; sure ve karar ilk "lying" karesinden (LANDED) baslar, dusme
+bolumu basina tek sonuc cikar.
 """
 
 from __future__ import annotations
@@ -31,13 +37,14 @@ from vision.stages.features import EPS, STALE_SEC, TrackWindow
 DECIDE_SEC = 25.0   # Schwickert 2018: >24.5 sn dinlenme kalkamamayi ongorur (AUC 0.796)
 UPRIGHT_SEC = 2.0   # kaynaksiz: sistemin davranis gozlem penceresi (TCN 1.96, RETAIN_SEC 2.0)
 STAND_RATIO = 0.88  # Winter 2009 oranlari: sandalyede oturan ~0.76, ayakta 1.0; ikisinin ortasi
+ARM_SEC = 3.0       # Spark oturum boslugu (spark_window_sec 3 sn): bir FALL olayinin adaylari bu aralikta gelir, aralikta inen ayni dusmedir
 ADOPT_DIST = 1.0    # LoiterRule "yerinde" olcusu: merkez kendi yuksekliginden fazla kaymamis
 
 
 @dataclass
 class FallOutcome:
     track_id: int              # dusen iz (ilk FALL adayinin izi)
-    fall_ts: float             # sahne zamani; sureler bununla
+    fall_ts: float             # inis (ilk lying kare) sahne zamani; sureler bununla
     fall_time: float | None    # duvar saati; olay eslesmesi bununla
     outcome: str               # "down" / "recovered" / "unknown"
     decided_ts: float
@@ -52,6 +59,9 @@ class _Monitor:
     fall_time: float | None
     ref_height: float
     origin: int = 0            # dusen ilk iz; sonuc bununla anahtarlanir
+    first_cand_ts: float = 0.0
+    last_cand_ts: float = 0.0
+    landed: bool = False
     last_ts: float = 0.0
     last_centroid: np.ndarray | None = None
     last_posture: str = "lying"
@@ -78,6 +88,8 @@ class PostFallMonitor:
         self.decide_sec = decide_sec
         self._monitors: list[_Monitor] = []
         self._seen: dict[int, float] = {}    # iz -> son gorulme; devralmada "ilk kez" icin
+        self._last_fall: dict[int, float] = {}   # iz -> son FALL adayi; kapanmis dusmeye yeniden acmayi engeller
+        self.unlanded = 0                        # inis gormeden suresi dolan izleyici sayisi
         self._ts = 0.0
 
     def update(self, windows: dict[int, TrackWindow], candidates: list[Candidate],
@@ -91,20 +103,31 @@ class PostFallMonitor:
             del self._seen[tid]
         return done
 
-    def pending(self) -> list[tuple[int, float]]:
-        return [(m.origin, self._ts - m.fall_ts) for m in self._monitors]
+    def pending(self) -> list[tuple[int, float, bool]]:
+        return [(m.origin, self._ts - m.first_cand_ts, m.landed) for m in self._monitors]
 
     def _start(self, windows, candidates, th) -> None:
         for cand in candidates:
             if cand.anomaly_type != "FALL":
                 continue
             for tid in cand.track_ids:
-                if tid not in windows or any(m.track_id == tid for m in self._monitors):
+                if tid not in windows:
                     continue
+                open_m = next((m for m in self._monitors if m.track_id == tid), None)
+                prev = self._last_fall.get(tid)
+                self._last_fall[tid] = cand.ts
+                if open_m is not None:
+                    open_m.last_cand_ts = cand.ts
+                    continue
+                if prev is not None and cand.ts - prev <= ARM_SEC + EPS:
+                    continue   # ayni dusmenin kapanmis izleyicisi
                 frames = windows[tid].frames
                 upright = [f.height for f in frames if f.body_tilt < th.fall_tilt_deg]
                 ref = max(upright) if upright else max(f.height for f in frames)
-                self._monitors.append(_Monitor(tid, cand.ts, cand.event_time, float(ref), origin=tid))
+                self._monitors.append(_Monitor(tid, cand.ts, cand.event_time, float(ref), origin=tid,
+                                               first_cand_ts=cand.ts, last_cand_ts=cand.ts))
+        for tid in [t for t, v in self._last_fall.items() if self._ts - v > ARM_SEC + STALE_SEC]:
+            del self._last_fall[tid]
 
     def _adopt(self, windows) -> None:
         followed = {m.track_id for m in self._monitors}
@@ -126,6 +149,17 @@ class PostFallMonitor:
                 followed.add(tid)
 
     def _step(self, m: _Monitor, windows, ts: float, th: Thresholds) -> FallOutcome | None:
+        if not m.landed:
+            w = windows.get(m.track_id)
+            if w is not None:
+                m.last_centroid = w.last.centroid   # silahliyken de devralma merkezi
+                if _posture(w.last, th, m.ref_height) == "lying":
+                    m.landed, m.fall_ts = True, ts
+            if not m.landed:
+                if ts - m.last_cand_ts > ARM_SEC + EPS:
+                    self._monitors.remove(m)
+                    self.unlanded += 1
+                return None
         if ts > m.fall_ts:
             m.frames += 1
         window = windows.get(m.track_id)
@@ -162,6 +196,7 @@ class PostFallMonitor:
             "max_height_ratio": m.max_ratio,
             "limb_speed_med": float(np.median(m.lying_limb)) if m.lying_limb else 0.0,
             "ref_height": m.ref_height,
+            "landing_after_sec": m.fall_ts - m.first_cand_ts,
         }
         if outcome == "recovered":
             metrics["recovered_after_sec"] = m.stand_since - m.fall_ts

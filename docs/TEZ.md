@@ -414,6 +414,74 @@ değerlendirmede ise yalnız tutulan kareleri; bu fark B2'ye dahildir.
 > modelin holdout hibrit sayıları B2'nin özgün hız satırıdır: TP 27,
 > FP 10, FN 17; F1 0,67 (FALL 0,83, RUN 0,52, FIGHT 0,67).
 
+## 4.6 Düşme sonrası izleme: "kalkamadı" (Aşama 13.4)
+
+> Taslak (2026-11-26). Tasarım `docs/ASAMA13_4_PLAN.md`, ölçümler
+> `docs/DURUM.md` "Aşama 13.4". Saha doğrulaması Aşama 14'te eklenecek.
+
+**Sorun.** FALL kuralı ve TCN anlık bir darbeyi yakalar; düşmeden sonra ne
+olduğuna bakılmaz. Oysa yaşlı bakımında asıl tehlike düşmenin kendisi
+değil, kişinin kalkamamasıdır. Sistem düşen kişiyi bir süre izler ve olaya
+bir sonuç ekler: kalkamadı (`down`), kalktı (`recovered`) ya da belirsiz
+(`unknown`). Kalkamadıysa ikinci bir bildirim gider, kalktıysa olayın
+önemi bir kademe iner. İlk alarm bundan etkilenmez; aynı gecikmeyle
+(~7,5 sn) gider.
+
+**Karar süresi: 25 sn.** Gerçek düşmelerde bele takılı sensörle ölçülen
+dinlenme süresi, ayağa kalkabilenlerde ortanca 10,5 sn, kalkamayanlarda
+34,5 sn'dir; 24,5 sn'den uzun dinlenme kalkamamayı öngörür (AUC 0,796)
+[Schwickert 2018]. Görüntü tabanlı sistemlerde kullanılan kısa süreler
+(ör. >3 sn yatay + >2 sn düşük hareket [ElderFallGuard 2025]) düşmenin
+olup olmadığını onaylamak içindir; kalkabilme sorusunu yanıtlamaz ve
+kalkabilenlerin çoğunu "kalkamadı" sayardı.
+
+**Karar duruşa bakar, harekete bakmaz.** Gerçek düşme videolarında düşme
+sonrası evre çoğu kez hareketsizlik değildir [BMC Geriatr 2013]; kalkmayı
+deneyip başaramayanlar kalkabilenlerden daha çok gövde hareketi yapar
+[Schwickert 2018]. Hareketsizlik şartı tam da yerde çabalayan kişiyi
+kaçırırdı. Hareket yalnız raporlanır.
+
+**Duruş.** Yatay: gövde eğimi FALL eşiğinin (45°) üstünde. Ayakta: eğim
+altında ve kutu yüksekliği düşmeden önceki ayakta yüksekliğin en az
+0,88'i. Eşik vücut oranlarından seçildi: sandalyede oturan kişinin baş
+tepesi yerden yaklaşık 0,76 boy, ayakta 1,0 [Winter 2009]. "Kalktı" için
+kişinin kesintisiz 2 sn ayakta görülmesi gerekir.
+
+**Hata iki yöne eşit değildir.** Yerde oturup kalkamayan biri "kalktı"
+sayılırsa acil durum kaçar. Oturan biri "kalktı" sayılmazsa olay yalnızca
+bugünkü gibi kritik kalır. Bu yüzden sandalyeye oturan kişi "kalktı" değil
+"belirsiz" alır. Son görüldüğünde yerde olan ve kalktığı görülmeyen kişi,
+bir daha hiç görülmese de "kalkamadı" alır.
+
+**İz sürekliliği varsayılamaz.** Elde var olan iz dosyalarında düşen
+kişinin izi URFD'de 30 klibin 16'sında, CASIA'da düşme anı bulunan 8
+klibin 4'ünde düşmeden hemen sonra kayboluyor. Bir kısmında yerde yatan
+kişi birkaç saniye sonra aynı yerde yeni bir iz kimliğiyle yeniden
+algılanıyor. İzleyici bu yüzden kaybolan izin yerine, düşme yerinde ilk
+kez görülen yeni izi devralır.
+
+**Model adayı inişten önce gelir.** Duman testinde TCN, bayılma
+kliplerinde FALL adayını kişi henüz ayaktayken üretti; kişi bir klipte
+4,8 sn sonra yere indi. İzleme ilk adayda başlasaydı kişi ayakta görülüp
+yanlışlıkla "kalktı" sayılacaktı. Bu yüzden aday izlemeyi yalnız
+silahlar; süre ilk yatay karede başlar. Spark oturum boşluğu (3 sn) içinde
+iniş görülmezse sonuç verilmez.
+
+**Uçtan uca.** Canlı yığında (`fall_01`, 10 sn'lik kısa karar süresiyle)
+olay 7,3 sn'de yazıldı, sonuç 10 sn sonra olaya işlendi ve Telegram'a iki
+mesaj gitti. Sonucun olaydan önce geldiği yarış durumu sentetik
+mesajlarla denendi: sonuç bekletildi, olay yazılınca uygulandı.
+
+**Sınırlar.**
+- Sabitler sensör çalışmasından ve vücut oranlarından alındı; kameraya
+  özgü doğrulama sahada yapılacak (Aşama 14).
+- Eğik ve tepeden görünümde yatan kişinin kutusu geniş görünmeyebilir;
+  CASIA'nın eğik görünüm kliplerinin birinde kişi yatay sınıflanmadı ve
+  sonuç verilmedi. Zemin kalibrasyonu Aşama 17'de.
+- Yerde dik oturan ve kalkamayan kişi "belirsiz" alır.
+- İz kaybolunca düşme yerinde beliren bir yardımcı devralınıp ayakta
+  görülürse sonuç "kalktı" olur.
+
 ---
 
 ## 5. Eğitim veri kümesi
@@ -484,6 +552,20 @@ kümenin derlemesidir. Bu projede kullanılan alt kaynaklar ve lisansları:
 
 ### Yöntem ve kütüphaneler
 
+- **[Schwickert 2018]** Schwickert, L., Klenk, J., Zijlstra, W., ve ark.
+  (2018). Reading from the Black Box: What Sensors Tell Us about Resting
+  and Recovery after Real-World Falls. *Gerontology*, 64(1), 90–95.
+  doi:10.1159/000478092. (Yalnız özet okundu; tam metin okunmalı.)
+- **[BMC Geriatr 2013]** Fall incidents unraveled: a series of 26
+  video-based real-life fall events in three frail older persons. *BMC
+  Geriatrics*, 13, 103. doi:10.1186/1471-2318-13-103. (Yazarlar ve tam
+  metin doğrulanmalı.)
+- **[ElderFallGuard 2025]** Riahi, T., Bappy, M. A. H., Islam, M. M.
+  ElderFallGuard: Real-Time IoT and Computer Vision-Based Fall Detection
+  System for Elderly Safety. arXiv:2505.11845.
+- **[Winter 2009]** Winter, D. A. (2009). *Biomechanics and Motor Control
+  of Human Movement* (4. baskı). Wiley. (Vücut parçası oranları; sayfa
+  numarası doğrulanmalı.)
 - **YOLO26-pose / Ultralytics** — tek geçişli kutu + iskelet çıkarımı.
 - **BoT-SORT** — Aharon, N., Orfaig, R., Bobrovsky, B. (2022). *BoT-SORT:
   Robust Associations Multi-Pedestrian Tracking.*

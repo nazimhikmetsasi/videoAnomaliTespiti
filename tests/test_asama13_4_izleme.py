@@ -235,11 +235,65 @@ def test_12_fps_independence():
 
 def test_metrics_are_plain_floats_and_pending():
     outs, mon = run(25, scene_down, total_sec=10.0)
-    assert outs == [] and mon.pending() == [(1, pytest.approx(10.0 - 1 / 25 - T0))]
+    assert outs == [] and mon.pending() == [(1, pytest.approx(10.0 - 1 / 25 - T0), True)]
     outs, _ = run(25, scene_down)
     for v in outs[0].metrics.values():
         assert type(v) is float and v == v
     json.dumps(outs[0].metrics)
+
+
+# --------------------------------------------------- silahlanma (ARM_SEC)
+def _cands(fps: int, a: float, b: float) -> list[int]:
+    """T0+a .. T0+b arasi 0.2 sn aralikli aday kareleri."""
+    k0 = int(round(T0 * fps))
+    return list(range(k0 + int(round(a * fps)), k0 + int(round(b * fps)) + 1,
+                      max(1, int(round(0.2 * fps)))))
+
+
+def _lies_from(sec: float):
+    return lambda dt: {1: LYING if dt >= sec - 1e-9 else UP}
+
+
+@pytest.mark.parametrize("fps", FPS_LIST)
+def test_a_standing_candidate_no_outcome(fps):
+    outs, mon = run(fps, lambda dt: {1: UP}, fall_frames=_cands(fps, 0, 1))
+    assert outs == [] and mon.unlanded == 1 and mon.pending() == []
+
+
+@pytest.mark.parametrize("fps", FPS_LIST)
+def test_b_late_landing_one_down(fps):
+    outs, mon = run(fps, _lies_from(2.0), fall_frames=_cands(fps, 0, 1.5))
+    assert [o.outcome for o in outs] == ["down"] and mon.unlanded == 0
+    o = outs[0]
+    assert o.fall_time == 1000.0
+    assert abs(o.metrics["landing_after_sec"] - 2.0) <= _frame_tol(fps)
+    assert abs(o.fall_ts - (T0 + 2.0)) <= _frame_tol(fps)
+    assert 25.0 - 1e-6 <= o.metrics["decided_after_sec"] <= 25.0 + _frame_tol(fps)
+
+
+@pytest.mark.parametrize("fps", FPS_LIST)
+def test_c_landing_after_gap_closes_silently(fps):
+    k0 = int(round(T0 * fps))
+    frames = [k0, k0 + int(round(0.4 * fps))]
+    outs, mon = run(fps, _lies_from(4.0), fall_frames=frames)
+    assert outs == [] and mon.unlanded == 1
+
+
+@pytest.mark.parametrize("fps", FPS_LIST)
+def test_d_one_outcome_per_episode(fps):
+    def scene(dt):    # yatar, 1 sn'de kalkar, 9 sn'de yeniden yatar
+        return {1: UP if 1 - 1e-9 <= dt < 9 - 1e-9 else LYING}
+    k10 = int(round((T0 + 10) * fps))
+    outs, mon = run(fps, scene, fall_frames=_cands(fps, 0, 3) + [k10])
+    assert [o.outcome for o in outs] == ["recovered", "down"]
+    assert outs[1].fall_ts >= T0 + 10 - 1e-6 and mon.unlanded == 0
+
+
+def test_e_fps_independence_of_late_landing():
+    res = {fps: run(fps, _lies_from(2.0), fall_frames=_cands(fps, 0, 1.5))[0][0] for fps in FPS_LIST}
+    land = [o.metrics["landing_after_sec"] for o in res.values()]
+    assert max(land) - min(land) <= 1.0 / min(FPS_LIST) + 1e-6
+    assert len({o.outcome for o in res.values()}) == 1
 
 
 # ------------------------------------------------------------------ yayinci

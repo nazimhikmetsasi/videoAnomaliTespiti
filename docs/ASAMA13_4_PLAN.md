@@ -136,6 +136,28 @@ Durum `LoiterRule` gibi kuralın kendi içinde tutulur: `TrackWindow` yalnız
 - Aynı izden gelen sonraki FALL adayları yeni izleme açmaz; tek düşme,
   tek sonuç.
 
+**Duman testinden sonra eklendi — silahlanma ve iniş (`ARM_SEC = 3.0`).**
+İlk sürüm izlemeyi ilk FALL adayında başlatıyordu. CASIA bayılma
+kliplerinde TCN, FALL adayını kişi henüz ayaktayken (sallanırken, eğim
+18–30°, boy oranı ~0,9–1,0) üretti. İzleme o an başlayınca kişi 2 sn ayakta
+göründü ve sonuç "kalktı" çıktı. Bu sonuç olayın önemini yanlışlıkla
+düşürürdü. Aynı düşme için art arda birden çok sonuç da çıktı (p24: kalktı,
+kalktı, belirsiz). p02'de kişi ilk adaydan 4,8 sn sonra yere indi.
+
+- Aday izlemeyi yalnız **silahlar**. Süre ve karar, izlenen izin ilk
+  `lying` görüldüğü karede (**iniş**) başlar; `fall_ts` iniş anıdır.
+  `fall_time` ise ilk adayın duvar saati olarak kalır, olay eşleşmesi
+  bununla yapılır.
+- Silahlı izleme, aynı izden yeni aday geldikçe uzar. Son adaydan sonra
+  `ARM_SEC` içinde iniş görülmezse sessizce kapanır: sonuç yok, sayaç
+  `unlanded`. `ARM_SEC`, Spark'ın oturum boşluğunun (`spark_window_sec` 3
+  sn) aynısıdır: bir FALL olayının adayları bu aralıkla gelir.
+- İzleme kapandıktan sonra aynı izden `ARM_SEC` içinde gelen aday yeni
+  izleme açmaz. Böylece bir Spark FALL oturumuna bir sonuç düşer.
+- Kural adayında eğim zaten ≥ 45°: iniş aday karesinin kendisidir,
+  davranış ilk sürümle aynıdır.
+- Yeni ölçüt `landing_after_sec`: ilk adaydan inişe geçen süre.
+
 ### 2.3 Takip ve devralma
 
 Her karede, her açık izleme için:
