@@ -49,3 +49,25 @@ class ZoneRule:
                 zone_name=zone.name,
             )
         return None
+
+
+def upgrade_run_in_zone(candidates: list[Candidate], windows: dict[int, TrackWindow],
+                        zones: Sequence[Zone], now: float) -> list[Candidate]:
+    """RUN adayinin izinin son ayagi yasak / saati etkin bolgedeyse aday RUN_ZONE olur
+    (yerinde degistirilir, zone_name yazilir). Digerleri aynen."""
+    for cand in candidates:
+        if cand.anomaly_type != "RUN":
+            continue
+        window = windows.get(cand.track_ids[0])
+        if window is None:
+            continue
+        for zone in zones:
+            if zone.zone_type not in ("forbidden", "restricted_hours"):
+                continue
+            if zone.zone_type == "restricted_hours" and not zone.active_at(now):
+                continue
+            if zone.contains(window.last.foot):
+                cand.anomaly_type = "RUN_ZONE"
+                cand.zone_name = zone.name
+                break
+    return candidates

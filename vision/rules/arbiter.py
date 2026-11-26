@@ -36,7 +36,7 @@ from vision.stages.features import EPS, TrackWindow
 
 MODEL_TYPES = ("FALL", "RUN")     # model bunlari kosulsuz uretebilir
 PAIR_TYPES = ("FIGHT",)           # bunlar icin ayrica YAKIN cift sarti aranir
-RULE_ONLY = ("ZONE_VIOLATION", "LOITERING")
+RULE_ONLY = ("ZONE_VIOLATION", "LOITERING", "WRONG_DIRECTION")
 MODEL_EVERY_SEC = 0.2   # iki model kosusu arasi en az sure; 25 FPS'te 5 kare
 
 
@@ -84,6 +84,9 @@ class HybridArbiter:
     @property
     def zones(self):
         return self.engine.zones
+
+    def set_zones(self, zones) -> None:
+        self.engine.set_zones(zones)
 
     def __call__(self, windows: dict[int, TrackWindow]) -> list[Candidate]:
         candidates = self.engine(windows)

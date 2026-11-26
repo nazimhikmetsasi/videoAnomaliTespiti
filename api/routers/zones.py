@@ -15,6 +15,7 @@ from api.audit import write_audit
 from api.auth import current_user, require_role
 from api.db.models import Zone
 from api.db.postgres import get_db
+from api.routers.cameras import resolve_camera_id
 from api.schemas import ZoneIn, ZoneOut
 
 router = APIRouter()
@@ -29,11 +30,16 @@ def _get_or_404(db: Session, zone_id: int) -> Zone:
 
 @router.get("", response_model=list[ZoneOut])
 def list_zones(
-    camera_id: int | None = None, db: Session = Depends(get_db), _: dict = Depends(current_user),
+    camera_id: str | None = None, db: Session = Depends(get_db), _: dict = Depends(current_user),
 ) -> list[Zone]:
     stmt = select(Zone).order_by(Zone.id)
     if camera_id is not None:
-        stmt = stmt.where(Zone.camera_id == camera_id)
+        # vision kamerayi adiyla sorar. Bilinmeyen kamera 404: bos liste
+        # "bolge yok" demek olur ve vision dosyadan gelen bolgeleri silerdi.
+        resolved = resolve_camera_id(db, camera_id)
+        if resolved is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "kamera bulunamadi")
+        stmt = stmt.where(Zone.camera_id == resolved)
     return list(db.scalars(stmt))
 
 

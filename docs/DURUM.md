@@ -11,9 +11,15 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
-**Aşama 13.4 kodu bitti** (2026-11-26); doğrulama (duman testi, uçtan uca
-canlı koşu) bekliyor. Ayrıntı aşağıda "Aşama 13.4 — düşme sonrası izleme,
-kod".
+**Aşama 13.5 tamamlandı** (2026-11-26). Ters yön ve bölgede koşma
+kuralları; panelde yön bölgesi; panelde çizilen bölgeler artık görüye
+ulaşıyor (önceden hiç ulaşmıyordu). Ayrıntı: "Aşama 13.5".
+
+**Aşama 13.4 tamamlandı** (2026-11-26). Düşen kişi izleniyor; olaya
+"kalkamadı / kalktı / belirsiz" sonucu ekleniyor, Telegram'a ikinci mesaj
+gidiyor. Duman testi bir tasarım hatası çıkardı (model adayı inişten önce
+geliyordu), düzeltildi; uçtan uca canlı koşu ve sıra yarışı geçti.
+Ayrıntı: "Aşama 13.4 — kod" ve "Aşama 13.4 — doğrulama".
 
 **Aşama 13.3 tamamlandı.** (2026-11-24)
 
@@ -108,7 +114,7 @@ değerlendirmeyle ölçülecek.
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.3 tamam; 13.4 kod bitti, doğrulama bekliyor |
+| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.5 tamam; sıradaki 13.6 |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -828,18 +834,158 @@ yerde yeni iz kimliği doğuyor. İzleyici bu yüzden izi yerinde devralıyor.
   `events.fall_outcome` sütunu yerel kurulumda artık var (boş). Göç
   açılışta da koşacaktı; satırlara dokunulmadı.
 
-**Henüz yapılmadı (plan §7, ana dizinde, `main`'e alındıktan sonra):**
-çevrimdışı duman testi (CASIA p02 / p24, `fall_01`), uçtan uca canlı koşu
-(`kafka-init`, API ve tüketici yeniden derleme), sıra yarışı denemesi,
-`docs/TEZ.md` §4.6 taslağı.
+Kod `main`'de: `702adf2`.
+
+## Aşama 13.4 — doğrulama (2026-11-26)
+
+### Duman testi bir tasarım hatası buldu: model adayı inişten önce geliyor
+
+Ana dizinde, `vision.run` her karede izleyici durumunu basan bir
+sarmalayıcıyla (geçici betik). Kayıt: `logs/smoke_13_4.log`.
+`--postfall-sec 5`, yalnız mekanizmayı görmek için.
+
+- **CASIA p02:** ilk FALL adayı (TCN) kişi ayaktayken geldi (eğim 30°,
+  boy oranı 0,89). Kişi sallanarak 4,8 sn ayakta kaldı, sonra yere indi
+  (eğim 45°, oran 0,48). 5 sn'lik süre neredeyse tamamen inişten önce
+  geçti.
+- **CASIA p24:** TCN adayları kişi ayaktayken (eğim 21–26°, oran
+  0,98–1,03) geldi. İzleme 2 sn ayakta görüp **"kalktı"** dedi, kapandı;
+  sonraki aday yeni izleme açtı. Aynı iz için sonuçlar: kalktı, kalktı,
+  belirsiz, bekleyen. Canlıda ilk "kalktı" olayın önemini yanlışlıkla
+  düşürürdü.
+
+**Düzeltme (plan §2.2'ye eklendi):** aday izlemeyi yalnız silahlar; süre
+ilk yatay karede (iniş) başlar. Son adaydan sonra `ARM_SEC = 3` sn (Spark
+oturum boşluğu) içinde iniş yoksa sonuç verilmez. Kapanan izlemenin izinden
+3 sn içinde gelen aday yeni izleme açmaz; bir FALL oturumuna bir sonuç.
+Testler eklendi (5 senaryo, üç FPS).
+
+**Düzeltmeden sonra** (`logs/smoke_13_4b.log`):
+- **p02:** silahlı bekledi, iniş ilk adaydan 4,8 sn sonra; iz 0,36 sn
+  sonra kayboldu, 3,8 sn sonra yerde yeni iz (7) doğdu ve devralındı;
+  sonuç `down`, yatay oranı 0,93, `limb_speed_med` 1,34.
+- **p24:** kişi hiç yatay görülmedi (eğik görünüm, kutu dar). Sonuç yok,
+  biri iniş beklerken klip bitti. Yanlış "kalktı" yok.
+- **`fall_01 --loop`, 25 sn:** iz düşme karesinden 0,07 sn sonra kayboldu;
+  döngü başında aynı yerde beliren kişi devralındı (döngü yapaylığı: kişi
+  "ışınlanıyor"), sonuç 25,02 sn'de `down`.
+
+### Uçtan uca canlı koşu
+
+`docker compose run --rm kafka-init` (`fall-outcomes` açıldı),
+`up -d --build api consumer`. Görü düzeltilmiş kodla (worktree) ana
+dizinin model ve verisiyle koştu: `fall_01 --realtime --loop --kafka
+--postfall-sec 10`. Kayıt `logs/e2e_13_4.log`.
+
+| olay | iz | önem | sonuç | not |
+|---|---|---|---|---|
+| 2402 | 2 | critical | `down` | başlangıç 18:44:31,7, yazılma 18:44:39 (7,3 sn); sonuç 10 sn sonra; Telegram 2 mesaj (alarm + kalkamadı), ikisi de `sent` |
+| 2403 | 3 | critical | — | döngünün ikinci düşmesi; iz 3, iz 2'nin izlemesine devralınmıştı, ayrı sonuç yok |
+| 2405 | 77 | **high** | `recovered` | sıra yarışı denemesi (aşağıda) |
+
+Mongo `telemetry` belgelerinde `fall_outcome` alanı var (2402, 2405).
+
+**Sıra yarışı:** sentetik `recovered` sonucu, olaydan **önce** basıldı;
+ardından aynı iz için 3 FALL adayı ve 15 sn nabız. Tüketici sonucu
+bekletti, olay yazılınca uyguladı: önem `critical` → `high`, iki bildirim.
+
+**Not:** 2400 ve 2401 numaralı olaylar (başlangıç 17:26) bu koşudan değil,
+Spark'ın önceki koşulardan kalan aday birikimi; yazılırken Telegram'a
+gittiler.
+
+**Testler:** 418 geçti, 1 atlandı, 1 başarısız (eski ve ilgisiz
+`test_asama8_6`, yukarıda).
+
+**Tez:** `docs/TEZ.md` §4.6 taslağı ve kaynaklar.
+
+**Plandan sapmalar:** silahlanma (yukarıda); "kalktı" yalnız görülen ayakta
+karede (kod bölümünde). Döngüde aynı kişinin ikinci düşmesi, ilk düşmenin
+izlemesine devralındığı için ayrı sonuç almadı; gerçek kamerada aynı kişinin
+25 sn içinde ikinci kez düşmesi durumunda da böyle olur.
+
+---
+
+## Aşama 13.5 — yön ihlali ve bölgede koşma (2026-11-26)
+
+Sözleşme `docs/ASAMA13_5_PLAN.md`. Kullanıcı 13.4'ten sonra "sormadan
+sonraki aşamaya geç, commit'i bana bırak" dedi; plan onaysız uygulandı.
+
+**Okurken bulunan eksik (plan §0):** panelde çizilen bölgeler görüye hiç
+ulaşmıyordu; görü yalnız `--zones` dosyasını okuyordu. Pilot bölgeler aynı
+dosyadan tohumlandığı için tutarlı görünüyordu. Artık `SettingsClient`
+bölgeleri de 5 sn'de bir `GET /api/zones?camera_id=<ad|id>` ile çekiyor;
+değişince `set_zones`. İkinci hata: yalnız yön bölgesi olan kamerada
+`LoiterRule` bölge moduna geçip hiç tetiklenmiyordu; düzeltildi.
+
+**Yazılan:**
+- `vision/rules/direction.py`: `WRONG_DIRECTION` (1 sn net yer
+  değiştirme, ≥ 0,25 boy/sn ters bileşen, ±60°; piksel uzayında)
+- `zone.upgrade_run_in_zone`: yasak bölgedeki RUN → `RUN_ZONE`; kamerada,
+  hakemden sonra (değerlendirme betikleri görmez)
+- `RuleEngine.set_zones`, hakemde geçiş; `load_zones` vektörü okuyor
+- API: `list_zones` ad ya da id; `direction_vector` doğrulaması; Spark
+  `min_sec` eşlemesine iki tip (davranış aynı, açık yazıldı)
+- Panel: "Yön (ters yön)" tipi, poligondan sonra iki tıklamayla ok,
+  vektörsüz kayıt yok, var olan bölgelerde ok gösterimi
+
+**Gözden geçirmede düzeltilen:** `list_zones` bilinmeyen kamerada boş
+liste döndürüyordu. Görü bunu "bölge yok" diye okuyup dosyadaki bölgeleri
+silerdi (veritabanında kaydı olmayan webcam gibi). Artık 404; görü hata
+sayıp son bilinen bölgeleri koruyor.
+
+**Duman testi — yön** (`logs/smoke_13_5_yon.log`; tam kareyi kaplayan
+yön bölgesi, ok bir kez sağa bir kez sola; geçici bölge dosyaları):
+
+| klip | ok → | ok ← |
+|---|---|---|
+| `normal_01` | iz 1: 104 aday, 1,0–5,3 sn, ters hız ortancası 0,38 boy/sn | aday yok |
+| `mixed_01` | iz 1: 45 aday, 3,0–19,5 sn, 0,28 | iz 1: 40 aday, 10,0–18,4 sn, 0,30 |
+| `zone_01` | iz 1: 101 aday (14,5–39,2 sn, 0,34); iz 5, 6: 34 + 12 aday (59–61 sn, 0,81–0,88) | iz 1: 160 aday, 10,6–42,0 sn, 0,60 |
+
+- `normal_01`'de kişi tek yöne (sola) yürüyor: yalnız sağa bakan bölgede
+  olay. Mekanizma yönü ayırıyor.
+- `mixed_01` ve `zone_01`'de kişiler farklı anlarda iki yöne de gidiyor;
+  aynı anda iki koşuda birden aday olması yapı gereği imkânsız (cos ≤ −0,5
+  hem v hem −v için tutmaz).
+- `zone_01`'in 28. saniyeden sonrası hareketli kamera: oradaki adaylar
+  görüntü kaymasından (17'nin konusu).
+- Doğruluk iddiası değil; saha kaydı 14'te.
+
+**Duman testi — RUN_ZONE** (`logs/smoke_13_5_runzone.log`, `zone_01`,
+`eval/zones.json`): 13.5 öncesi RUN 42; sonrası RUN 27 + RUN_ZONE 15
+(toplam aynı). ZONE_VIOLATION 704 ve LOITERING 1 değişmedi.
+
+**Uçtan uca** (`logs/e2e_13_5.log`). API imajı ana dizinden derlendiği
+için worktree'deki API yerelde 8001'de koşuldu; jeton süreç içinde
+üretildi, dosyada tutulup sonra silindi.
+- `GET /api/zones?camera_id=yok_kamera` → 404; `?camera_id=zone_01` →
+  `['bina girisi']`; sıfır vektörle `POST` → 422; geçerli yön bölgesi →
+  201
+- Görü (`--settings-url` 8001, `--kafka`, gerçek zamanlı, 40 sn):
+  `bolgeler guncellendi: 2 bolge`
+- Veritabanı: `WRONG_DIRECTION` ×2 (medium, bölge `t135-yon`), `RUN_ZONE`
+  (high, `bina girisi`), `ZONE_VIOLATION`, `RUN`. Telegram'a gittiler.
+- Test bölgesi silindi (204); `zone_01`'de yalnız `bina girisi` kaldı.
+
+**Testler:** 455 geçti, 1 atlandı, 1 başarısız (eski `test_asama8_6`).
+13.5'in testleri 37 (görü 27, API ve panel 10).
+
+**Yapılmadı:** panel tarayıcıda görülmedi (ok çizimi, iki tıklama akışı
+yalnız statik testlerle ve `node --check` ile denendi). Ana dizindeki API
+imajı eski kod; `main`'e alındıktan sonra `docker compose up -d --build
+api` gerekir, yoksa görü bölgeleri adla isteyince 422 alır ve dosyadaki
+bölgelerle sürer.
+
+**Tez:** `docs/TEZ.md` §4.7 taslağı.
 
 ---
 
 ## Bir sonraki adım
 
-**Aşama 13.4 doğrulaması** (plan §7): kod commit'lenip `main`'e
-alındıktan sonra ana dizinde çevrimdışı duman testi ve uçtan uca canlı
-koşu; sonra `docs/TEZ.md` §4.6 taslağı ve kapanış.
+**Aşama 13.6 — operatör deneyimi** (alarm sesi, tek tık onay, kamera
+nabzı; `docs/YOL_HARITASI.md`). Önce `main`'e alınan 13.5 için
+`docker compose up -d --build api` ve panelde yön bölgesi çiziminin
+tarayıcıda denenmesi.
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
 `docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5'in olay sayıları

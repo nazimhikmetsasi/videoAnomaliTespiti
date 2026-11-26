@@ -3,11 +3,10 @@
 // formu (ekle/duzenle/sil). Baglanti/yeniden-baglanma js/live.js'te ortak
 // (kamera-detay.js ile ayni), burada kopyalanmiyor.
 //
-// zone_type="direction" arayuzde YOK: vision/rules/zone.py ve loiter.py
-// yalnizca "forbidden" ve "restricted_hours" degerlerini tanir (grep
-// dogrulandi) -- "direction" tipinde bolge olusturmak hicbir kurali beslemez,
-// sablondaki "Ters Yon Tespiti" secenegi gercek karsiligi olmayan bir sablon
-// ogesidir (ASAMA8_PLAN.md SS4). JS ile sadece iki gercek deger sunulur.
+// zone_type="direction": vision/rules/direction.py'yi besler (ters yon);
+// izin verilen yon, poligondan sonra iki tiklamayla cizilen oktan gelir
+// (direction_vector, 0-1 normalize). Sablonun sahte secenekleri yerine
+// yalniz gercek deger sunulur (ASAMA8_PLAN.md SS4).
 
 requireAuth();
 
@@ -18,6 +17,9 @@ let zones = [];
 let selectedZone = null;
 let draftPoints = []; // [[x0-1, y0-1], ...] -- hem yeni cizim hem duzenlenen bolgenin calisma kopyasi
 let drawMode = false;
+let draftVector = null; // [dx, dy] normalize; yalniz direction tipinde anlamli
+let arrowMode = false;  // true iken sonraki iki tiklama ok baslangic/bitisi
+let arrowStart = null;
 let liveSock = null;
 
 // ------------------------------------------------------------- DOM baglama
@@ -57,7 +59,8 @@ const [cancelBtn, saveBtn] = actionBar.querySelectorAll("button");
 // ikisi sunulur.
 typeSelect.innerHTML =
     '<option value="forbidden">Yasak Bölge</option>' +
-    '<option value="restricted_hours">Saatli Kısıt</option>';
+    '<option value="restricted_hours">Saatli Kısıt</option>' +
+    '<option value="direction">Yön (ters yön)</option>';
 
 // restricted_hours icin saat araligi -- sablonda karsiligi yok, ayni sinif
 // jetonlariyla JS'te eklenip tipe gore gizlenir/gosterilir.
@@ -79,8 +82,49 @@ formList.insertBefore(timeGroup, activeGroup);
 const fromInput = timeGroup.querySelector("#zoneActiveFrom");
 const toInput = timeGroup.querySelector("#zoneActiveTo");
 
+// Yon alani -- yalniz direction tipinde gorunur; ok yeniden cizilebilir.
+const dirGroup = document.createElement("div");
+dirGroup.className = "flex flex-col gap-1.5";
+dirGroup.style.display = "none";
+const dirHint = document.createElement("p");
+dirHint.className = "font-body-sm text-body-sm text-on-surface-variant";
+const redrawArrowBtn = document.createElement("button");
+redrawArrowBtn.type = "button";
+redrawArrowBtn.className =
+    "py-2 rounded font-body-sm text-body-sm border border-outline-variant " +
+    "text-on-surface hover:bg-surface-container transition-colors";
+redrawArrowBtn.textContent = "Oku yeniden çiz";
+dirGroup.append(dirHint, redrawArrowBtn);
+formList.insertBefore(dirGroup, activeGroup);
+
+function _syncTypeUi() {
+    const t = typeSelect.value;
+    timeGroup.style.display = t === "restricted_hours" ? "" : "none";
+    dirGroup.style.display = t === "direction" ? "" : "none";
+    dirHint.textContent = arrowMode
+        ? (arrowStart ? "Okun bitiş noktasını tıklayın" : "Okun başlangıç noktasını tıklayın")
+        : (draftVector ? "Yön okla belirlendi" : "İzin verilen yönü iki tıklamayla çizin");
+}
+
 typeSelect.addEventListener("change", () => {
-    timeGroup.style.display = typeSelect.value === "restricted_hours" ? "" : "none";
+    // Poligon hazirsa ve ok yoksa dogrudan ok cizimine gec.
+    if (typeSelect.value === "direction" && draftPoints.length >= 3 && !drawMode && !draftVector) {
+        arrowMode = true;
+        arrowStart = null;
+    }
+    _syncTypeUi();
+    _drawSvg();
+});
+
+redrawArrowBtn.addEventListener("click", () => {
+    if (draftPoints.length < 3) { alert("Önce poligonu çizin."); return; }
+    drawMode = false;
+    _setDrawButtonState();
+    arrowMode = true;
+    arrowStart = null;
+    draftVector = null;
+    _syncTypeUi();
+    _drawSvg();
 });
 
 // Sil dugmesi -- yalnizca bir bolge seciliyken gorunur (sablonda yok, ayni
@@ -196,6 +240,28 @@ function _polygonPoints(poly, info) {
     return poly.map(([x, y]) => _toPx(x, y, info).join(",")).join(" ");
 }
 
+// Ok bir kez tanimlanir; context-stroke ile cizginin rengini alir.
+const ARROW_DEFS =
+    '<defs><marker id="dirArrowHead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">' +
+    '<path d="M0,0 L8,4 L0,8 Z" fill="context-stroke"></path></marker></defs>';
+const ARROW_LEN_PX = 48;
+
+function _centroid(poly) {
+    const n = poly.length;
+    return [poly.reduce((a, p) => a + p[0], 0) / n, poly.reduce((a, p) => a + p[1], 0) / n];
+}
+
+// Ok merkezden vektor yonunde; yon piksel uzayinda (0-1 vektor W,H ile olceklenir).
+function _arrowMarkup(poly, vec, info, cls) {
+    const [cx, cy] = _toPx(..._centroid(poly), info);
+    let dx = vec[0] * info.W, dy = vec[1] * info.H;
+    const len = Math.hypot(dx, dy);
+    if (!len) return "";
+    dx = (dx / len) * ARROW_LEN_PX; dy = (dy / len) * ARROW_LEN_PX;
+    return '<line class="' + cls + '" x1="' + (cx - dx / 2) + '" y1="' + (cy - dy / 2) + '" x2="' + (cx + dx / 2) +
+        '" y2="' + (cy + dy / 2) + '" stroke-width="3" marker-end="url(#dirArrowHead)"></line>';
+}
+
 function _zoneMarkup(zone, info, selected) {
     const pts = _polygonPoints(zone.polygon, info);
     const [lx, ly] = _toPx(zone.polygon[0][0], zone.polygon[0][1], info);
@@ -209,6 +275,9 @@ function _zoneMarkup(zone, info, selected) {
     html += '<rect class="fill-error-container opacity-90" height="24" rx="4" width="90" x="' + (lx - 45) + '" y="' + (ly - 12) + '"></rect>';
     html += '<text class="font-data-mono text-label-caps fill-on-error-container font-bold" text-anchor="middle" x="' +
         lx + '" y="' + (ly + 4) + '">' + _escXml(zone.name) + "</text>";
+    if (zone.zone_type === "direction" && zone.direction_vector) {
+        html += _arrowMarkup(zone.polygon, zone.direction_vector, info, "stroke-error");
+    }
     html += "</g>";
     return html;
 }
@@ -233,12 +302,19 @@ function _drawSvg() {
     if (!selectedCamera) { svgEl.innerHTML = ""; return; }
     const info = _scaleInfo();
     if (!info.rect.width || !info.rect.height) return;
-    let html = "";
+    let html = ARROW_DEFS;
     for (const z of zones) {
         if (selectedZone && z.id === selectedZone.id) continue; // taslak onun yerine cizilir
         html += _zoneMarkup(z, info, false);
     }
     if (draftPoints.length > 0) html += _draftMarkup(draftPoints, info, drawMode || draftPoints.length < 3);
+    if (typeSelect.value === "direction" && draftPoints.length >= 3 && draftVector) {
+        html += _arrowMarkup(draftPoints, draftVector, info, "stroke-secondary");
+    }
+    if (arrowStart) {
+        const [px, py] = _toPx(arrowStart[0], arrowStart[1], info);
+        html += '<circle class="fill-secondary stroke-white" cx="' + px + '" cy="' + py + '" r="4" stroke-width="2"></circle>';
+    }
     svgEl.innerHTML = html;
 }
 
@@ -298,6 +374,19 @@ crosshairEl.addEventListener("click", (e) => {
     // 422 ile reddediyor, v1'de piksel koordinat gonderilince bolge
     // kadraj disina sessizce dusmustu (docs/DURUM.md).
     if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
+    if (arrowMode) {
+        if (!arrowStart) {
+            arrowStart = [nx, ny];
+        } else {
+            draftVector = [nx - arrowStart[0], ny - arrowStart[1]];
+            arrowStart = null;
+            arrowMode = false;
+            if (Math.hypot(draftVector[0], draftVector[1]) < 0.01) draftVector = null; // iki tik ayni yer
+        }
+        _syncTypeUi();
+        _drawSvg();
+        return;
+    }
     if (drawMode) {
         draftPoints.push([nx, ny]);
         _renderCoords();
@@ -310,14 +399,18 @@ crosshairEl.addEventListener("click", (e) => {
 
 pointBtn.addEventListener("click", () => {
     drawMode = !drawMode;
+    if (drawMode) { arrowMode = false; arrowStart = null; }
     _setDrawButtonState();
+    _syncTypeUi();
     _renderCoords();
 });
 
 finishBtn.addEventListener("click", () => {
     if (draftPoints.length < 3) { alert("Poligon en az 3 nokta içermeli."); return; }
     drawMode = false;
+    if (typeSelect.value === "direction" && !draftVector) { arrowMode = true; arrowStart = null; }
     _setDrawButtonState();
+    _syncTypeUi();
     _renderCoords();
     _drawSvg();
 });
@@ -325,8 +418,12 @@ finishBtn.addEventListener("click", () => {
 clearBtn.addEventListener("click", () => {
     // Yalnizca TASLAGI temizler -- var olan bolgeleri silmez (Sil dugmesi ayri).
     draftPoints = [];
+    draftVector = null;
+    arrowMode = false;
+    arrowStart = null;
     drawMode = false;
     _setDrawButtonState();
+    _syncTypeUi();
     _renderCoords();
     _drawSvg();
 });
@@ -335,11 +432,14 @@ clearBtn.addEventListener("click", () => {
 function _resetForm() {
     selectedZone = null;
     draftPoints = [];
+    draftVector = null;
+    arrowMode = false;
+    arrowStart = null;
     drawMode = false;
     _setDrawButtonState();
     nameInput.value = "";
     typeSelect.value = "forbidden";
-    timeGroup.style.display = "none";
+    _syncTypeUi();
     fromInput.value = "";
     toInput.value = "";
     activeCheckbox.checked = true;
@@ -351,12 +451,14 @@ function _resetForm() {
 function _selectZone(zone) {
     selectedZone = zone;
     draftPoints = zone.polygon.map((p) => [p[0], p[1]]);
+    draftVector = zone.direction_vector ? [zone.direction_vector[0], zone.direction_vector[1]] : null;
+    arrowMode = false;
+    arrowStart = null;
     drawMode = false;
     _setDrawButtonState();
     nameInput.value = zone.name;
     typeSelect.value = zone.zone_type;
-    const isHours = zone.zone_type === "restricted_hours";
-    timeGroup.style.display = isHours ? "" : "none";
+    _syncTypeUi();
     fromInput.value = zone.active_from ? zone.active_from.slice(0, 5) : "";
     toInput.value = zone.active_to ? zone.active_to.slice(0, 5) : "";
     activeCheckbox.checked = zone.is_active;
@@ -373,12 +475,16 @@ saveBtn.addEventListener("click", async () => {
     if (!name) { alert("Bölge adı girin."); return; }
     if (draftPoints.length < 3) { alert("Poligon en az 3 nokta içermeli."); return; }
     const zoneType = typeSelect.value;
+    if (zoneType === "direction" && !draftVector) {
+        alert("Yön bölgesi için izin verilen yönü iki tıklamayla çizin.");
+        return;
+    }
     const body = {
         camera_id: selectedCameraId,
         name,
         zone_type: zoneType,
         polygon: draftPoints,
-        direction_vector: null,
+        direction_vector: zoneType === "direction" ? draftVector : null,
         // <input type=time> "HH:MM" doner, sunucu "HH:MM:SS" bekliyor.
         active_from: zoneType === "restricted_hours" && fromInput.value ? fromInput.value + ":00" : null,
         active_to: zoneType === "restricted_hours" && toInput.value ? toInput.value + ":00" : null,

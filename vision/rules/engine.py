@@ -94,6 +94,7 @@ class RuleEngine:
         # tam yuklu oldugu icin dongu kirilir.
         from vision.rules.fall import FallRule
         from vision.rules.run import RunRule
+        from vision.rules.direction import DirectionRule
         from vision.rules.zone import ZoneRule
         from vision.rules.loiter import LoiterRule
         from vision.rules.fight import FightRule
@@ -102,16 +103,33 @@ class RuleEngine:
         self._run = RunRule()
         self._zone = ZoneRule(self.zones, self.clock)
         self._loiter = LoiterRule(self.zones, self.clock)
+        self._direction = DirectionRule(self.zones, self.clock)
         self._fight = FightRule()
 
     def __call__(self, windows: dict[int, TrackWindow]) -> list[Candidate]:
         posed = {tid: w for tid, w in windows.items() if w.last.has_pose}
 
         candidates: list[Candidate] = []
-        for rule in (self._fall, self._run, self._zone, self._loiter):
+        for rule in (self._fall, self._run, self._zone, self._loiter,
+                     self._direction):
             for window in posed.values():
                 cand = rule.check(window, self.thresholds)
                 if cand is not None:
                     candidates.append(cand)
         candidates.extend(self._fight.check_all(posed, self.thresholds))
         return candidates
+
+    def set_zones(self, zones: Sequence[Zone]) -> None:
+        """Canli bolge degisimi (SettingsClient). Once yeni nesneler kurulur,
+        sonra atanir: ana dongu yari guncellenmis kural gormez. Oyalanma
+        sayaclari bolge tanimi degisince anlamini yitirdigi icin sifirlanir."""
+        from vision.rules.direction import DirectionRule
+        from vision.rules.loiter import LoiterRule
+        from vision.rules.zone import ZoneRule
+
+        zones = list(zones)
+        zone_rule = ZoneRule(zones, self.clock)
+        loiter = LoiterRule(zones, self.clock)
+        direction = DirectionRule(zones, self.clock)
+        self.zones = zones
+        self._zone, self._loiter, self._direction = zone_rule, loiter, direction

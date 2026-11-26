@@ -51,7 +51,8 @@ class _State:
 class LoiterRule:
     def __init__(self, zones: Sequence[Zone] = (),
                  clock: Callable[[], float] = time.time) -> None:
-        self.zones = list(zones)
+        # Yon bolgesi oyalanmaya konu degil; yalniz yon bolgesi varsa capa modu.
+        self.zones = [z for z in zones if z.zone_type in ("forbidden", "restricted_hours")]
         self.clock = clock      # saat araligi duvar saatine bakar (bkz. zone.py)
         self._state: dict[int, _State] = {}
 

@@ -28,6 +28,7 @@ from vision.evidence import EvidenceWriter, default_mongo_url
 from vision.health_client import HealthClient
 from vision.publish import CandidatePublisher, tick_due
 from vision.rules.engine import Candidate, RuleEngine, Zone
+from vision.rules.zone import upgrade_run_in_zone
 from vision.rules.postfall import DECIDE_SEC, FallOutcome, PostFallMonitor
 from vision.settings_client import SettingsClient
 from vision.source import Frame, VideoSource
@@ -324,6 +325,9 @@ class CameraPipeline:
             # sahne saati kullanilirsa yavas akan kamera geri kalir. Kare basina
             # BIR kez okunur; nabiz da ayni degeri kullanir.
             now = self.clock()
+            # Hakemden sonra: model RUN'i da kapsansin (plan SS3.3).
+            candidates = upgrade_run_in_zone(candidates, windows,
+                                             self.rule_engine.zones, now)
             for cand in candidates:
                 cand.event_time = now
             self.candidates_total += len(candidates)
@@ -444,6 +448,8 @@ def load_zones(path: str, clip_stem: str) -> list[Zone]:
                 if entry.get("active_from") else None,
             active_to=datetime.time.fromisoformat(entry["active_to"])
                 if entry.get("active_to") else None,
+            direction_vector=tuple(float(v) for v in entry["direction_vector"])
+                if entry.get("direction_vector") else None,
         ))
     return zones
 

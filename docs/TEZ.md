@@ -482,6 +482,50 @@ mesajlarla denendi: sonuç bekletildi, olay yazılınca uygulandı.
 - İz kaybolunca düşme yerinde beliren bir yardımcı devralınıp ayakta
   görülürse sonuç "kalktı" olur.
 
+## 4.7 Yön ihlali ve bölgede koşma (Aşama 13.5)
+
+> Taslak (2026-11-26). Tasarım `docs/ASAMA13_5_PLAN.md`, ölçümler
+> `docs/DURUM.md` "Aşama 13.5". Saha doğrulaması Aşama 14'te.
+
+**Yön ihlali.** Panelde bir bölge ve o bölgede izin verilen yön (ok)
+çizilir. Ayağı bölgede olan kişinin son 1 sn'deki net yer değiştirmesi,
+okun tersi yönünde en az 0,25 boy/sn ise ve hareket okun tersinden en
+fazla 60° sapıyorsa olay üretilir. Seçimlerin gerekçesi:
+
+- 1 sn: yaklaşık bir adım döngüsü; net yer değiştirme adım içindeki
+  salınımı götürür.
+- 0,25 boy/sn: yavaş yürüyüşün (~0,4 boy/sn) altında. Yürüyen herkes
+  geçer, yerinde duran ve ayak noktası titreyen kişi geçmez. Hız boy
+  cinsinden olduğu için kameradan uzaklık etkisizdir.
+- Karşılaştırma piksel uzayında yapılır: koordinatlar 0–1 normalize
+  tutulduğu için 16:9 karede açılar bozulur (normalize uzayda 45° görünen
+  bir hareket pikselde 60,6°'dir).
+
+**Bölgede koşma.** Koşu adayı veren kişinin ayağı yasak bölgedeyse aday
+"bölgede koşma" olur (önem orta yerine yüksek). Çeviri hakemden sonra
+yapılır; böylece modelin koşu kararı da kapsanır. Değerlendirme betikleri
+çeviriyi görmez, koşu ölçümleri önceki aşamalarla karşılaştırılabilir
+kalır.
+
+**Okurken bulunan eksik.** Panelde çizilen bölgeler görü hattına hiç
+ulaşmıyordu; görü yalnız başlangıçta verilen dosyayı okuyordu. Pilot
+bölgeler aynı dosyadan veritabanına tohumlandığı için fark edilmemişti.
+Görü artık bölgeleri eşiklerle birlikte 5 sn'de bir API'den çeker.
+
+**Duman testi** (pilot klipler, tam kareyi kaplayan yön bölgesi, ok bir
+kez sağa bir kez sola). Tek yönde yürüyen kişi (`normal_01`) yalnız bir
+yönde olay üretti: ters hız ortancası 0,38 boy/sn. Yön değiştiren
+kişiler iki koşuda da farklı anlarda olay üretti. Uçtan uca koşuda panel
+API'sinden eklenen yön bölgesi görüye ulaştı ve `WRONG_DIRECTION` olayı
+yazıldı.
+
+**Sınırlar.**
+- Hareketli kamerada görüntü kayar ve yön ihlali üretir (`zone_01`'in 28.
+  saniyeden sonrası). Koruma Aşama 17'de.
+- Sabitler yürüme biyomekaniğinden; saha doğrulaması Aşama 14'te.
+- Koşarak yasak bölgeye giren kişi hem bölge ihlali hem bölgede koşma
+  olayı üretir; olay birleştirme yapılmadı.
+
 ---
 
 ## 5. Eğitim veri kümesi

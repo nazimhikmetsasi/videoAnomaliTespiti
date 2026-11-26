@@ -2,7 +2,7 @@
 
 bolgeler.js/ayarlar.js sayfa betiklerinin build_frontend.py ciktisina
 eklendigini, requireAuth() cagrildigini, bolgeler.js'in direction tipini
-sunmadigini ve letterbox donusumu yaptigini, ayarlar.js'in kismi PUT ve
+sundugunu ve letterbox donusumu yaptigini, ayarlar.js'in kismi PUT ve
 spark_min_sec kopyalama kuralina uydugunu dogrular. Gercek veri/tarayici
 dogrulamasi bu testin kapsami disinda (ASAMA8_PLAN.md SS3.8.5 onay kriteri).
 
@@ -78,23 +78,18 @@ def test_bolgeler_writes_zone_endpoints() -> None:
     assert "/api/zones/" in src  # PUT/DELETE tek bolgeye {id} ile gider
 
 
-def test_bolgeler_does_not_offer_direction_zone_type() -> None:
-    """vision/rules/zone.py ve loiter.py yalnizca forbidden/restricted_hours
-    tanir -- direction tipinde bolge hicbir kurali beslemez (ASAMA8_PLAN.md
-    SS4), sablondaki 4 sahte secenek yerine JS'te yalnizca bu ikisi sunulur."""
+def test_bolgeler_offers_direction_zone_type() -> None:
+    """13.5: direction tipi vision/rules/direction.py'yi besliyor; sablonun
+    sahte secenekleri (ters_yon vb.) yine tasinmamali."""
     src = _script_source("bolgeler")
-    # Yorumlarda gerekce olarak "direction" gecebilir (yukaridaki docstring
-    # gibi) -- kontrol yalnizca KOD satirlarinda, ozellikle secenek
-    # listesinde bu deger sunulmadigini dogrulamali.
-    code_lines = [
+    code = "\n".join(
         line for line in src.splitlines()
         if line.strip() and not line.strip().startswith("//")
-    ]
-    code = "\n".join(code_lines)
+    )
     assert '"forbidden"' in code
     assert '"restricted_hours"' in code
-    assert '"direction"' not in code
-    assert "ters_yon" not in code  # sablonun sahte secenegi kod olarak tasinmamali
+    assert '<option value="direction">' in code
+    assert "ters_yon" not in code
 
 
 def test_bolgeler_applies_letterbox_transform_and_clips_out_of_range() -> None:

@@ -5,6 +5,7 @@ SQLAlchemy ORM nesnesinden dogrudan kurulur (ASAMA5_PLAN.md SS9).
 from __future__ import annotations
 
 import datetime
+import math
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -167,6 +168,11 @@ class ZoneIn(BaseModel):
             raise ValueError("zone_type=direction icin direction_vector zorunlu")
         if self.zone_type != "direction" and self.direction_vector is not None:
             raise ValueError("direction_vector yalnizca zone_type=direction icin gecerli")
+        v = self.direction_vector
+        if v is not None and (
+            len(v) != 2 or not all(math.isfinite(c) for c in v) or math.hypot(*v) <= 1e-6
+        ):
+            raise ValueError("direction_vector [dx, dy] olmali ve sifir olmamali")
         return self
 
 

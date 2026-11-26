@@ -81,7 +81,7 @@ CREATE TABLE detection_settings (
     -- tek koruma); RUN/ZONE/LOITERING bir durumdur. Tek sutun yerine JSONB:
     -- yeni bir kural tipi sema gocu gerektirmesin (ASAMA4_PLAN.md SS5.3/SS7).
     spark_min_sec    JSONB        NOT NULL DEFAULT
-        '{"FALL":0.0,"RUN":1.0,"ZONE_VIOLATION":1.0,"LOITERING":2.0,"FIGHT":0.5}',
+        '{"FALL":0.0,"RUN":1.0,"ZONE_VIOLATION":1.0,"LOITERING":2.0,"FIGHT":0.5,"RUN_ZONE":1.0,"WRONG_DIRECTION":1.0}',
     tcn_min_conf     NUMERIC(3,2) NOT NULL DEFAULT 0.60,
     -- Kur/Birak anahtari (TEZ_KAPSAM.txt Faz 1: "Evde = bildirim yok,
     -- Koruma = alarm"). FALSE iken tespit ve kanit uretimi AYNEN surer,

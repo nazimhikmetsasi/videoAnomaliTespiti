@@ -18,6 +18,8 @@ MIN_SEC_DEFAULT_MAP: dict[str, float] = {
     "ZONE_VIOLATION": 1.0,
     "LOITERING": 2.0,
     "FIGHT": 0.5,
+    "RUN_ZONE": 1.0,
+    "WRONG_DIRECTION": 1.0,
 }
 
 # Ic tipler (_TICK, _EOS) Spark'a su isaretini ilerletmek icin gider, olay olmaz.
