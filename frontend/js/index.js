@@ -232,13 +232,196 @@ function _flashBoxAlarm(alert) {
     }, 6000);
 }
 
-function _showAlarmToast(alert) {
+// ---------------------------------------------------------------- alarm sesi
+// Web Audio beeps (no sound files). AudioContext stays suspended until a user
+// gesture, so the first click/key creates or resumes it.
+const BEEP_PLAN = { critical: [880, 3], high: [660, 2] };
+const BEEP_MS = 150, BEEP_GAP_MS = 120, BEEP_MIN_INTERVAL_MS = 1000;
+let _audioCtx = null, _lastBeepAt = 0;
+
+function _isMuted() {
+    try { return localStorage.getItem("alarmMuted") === "1"; } catch (_e) { return false; }
+}
+
+function _unlockAudio() {
+    try {
+        if (!_audioCtx) {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            _audioCtx = new AC();
+        }
+        if (_audioCtx.state === "suspended") _audioCtx.resume();
+    } catch (_e) { /* audio is optional */ }
+}
+document.addEventListener("click", _unlockAudio);
+document.addEventListener("keydown", _unlockAudio);
+
+function _audioLocked() {
+    return !_audioCtx || _audioCtx.state !== "running";
+}
+
+// Returns true when a beep sequence was started.
+function _playAlarmSound(sev) {
+    const plan = BEEP_PLAN[sev];
+    if (!plan || _isMuted() || _audioLocked()) return false;
+    const nowMs = Date.now();
+    if (nowMs - _lastBeepAt < BEEP_MIN_INTERVAL_MS) return false; // one sound per second
+    _lastBeepAt = nowMs;
+    const [freq, count] = plan;
+    const t0 = _audioCtx.currentTime;
+    for (let i = 0; i < count; i++) {
+        const start = t0 + i * (BEEP_MS + BEEP_GAP_MS) / 1000;
+        const end = start + BEEP_MS / 1000;
+        const osc = _audioCtx.createOscillator();
+        const gain = _audioCtx.createGain();
+        osc.frequency.value = freq;
+        // short ramps avoid clicks at start/end
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.linearRampToValueAtTime(0.25, start + 0.02);
+        gain.gain.linearRampToValueAtTime(0.0001, end);
+        osc.connect(gain).connect(_audioCtx.destination);
+        osc.start(start);
+        osc.stop(end + 0.02);
+    }
+    return true;
+}
+
+// Mute button next to the grid-size buttons (same class tokens as them).
+const BTN_MUTE = document.createElement("button");
+BTN_MUTE.className = INACTIVE_TAB_CLASS;
+BTN_MUTE.title = "Alarm sesi";
+const _muteIcon = document.createElement("span");
+_muteIcon.className = "material-symbols-outlined text-[18px]";
+BTN_MUTE.appendChild(_muteIcon);
+BTN_SINGLE.parentElement.appendChild(BTN_MUTE);
+
+function _paintMute() {
+    _muteIcon.textContent = _isMuted() ? "volume_off" : "volume_up";
+}
+BTN_MUTE.addEventListener("click", () => {
+    try { localStorage.setItem("alarmMuted", _isMuted() ? "0" : "1"); } catch (_e) { /* private mode */ }
+    _paintMute();
+});
+_paintMute();
+
+// ------------------------------------------------------------ toast + onay
+// The toast shows only the latest alarm; its buttons act on that alarm's event.
+const TOAST_BTN_WRAP = document.createElement("div");
+TOAST_BTN_WRAP.className = "flex items-center gap-2";
+const TOAST_NOTE = document.createElement("div");
+TOAST_NOTE.className = "text-xs opacity-80";
+let _toastBtns = null, _toastCtx = null, _toastSeq = 0, _toastHideTimer = null;
+
+(function _setupToast() {
     if (!ALARM_TOAST) return;
+    const first = ALARM_TOAST.querySelector("button");
+    if (!first) return;
+    first.removeAttribute("onclick"); // template's inline "just hide" handler
+    first.textContent = "Görüldü";
+    const falseBtn = first.cloneNode(false);
+    falseBtn.textContent = "Yanlış Alarm";
+    const closeBtn = first.cloneNode(false);
+    closeBtn.textContent = "Kapat";
+    first.parentElement.insertBefore(TOAST_BTN_WRAP, first);
+    TOAST_BTN_WRAP.append(first, falseBtn, closeBtn);
+    ALARM_TOAST.querySelector("span.font-data-mono").parentElement.appendChild(TOAST_NOTE);
+    _toastBtns = { ack: first, fp: falseBtn, close: closeBtn };
+    first.addEventListener("click", () => _setEventStatus("acknowledged"));
+    falseBtn.addEventListener("click", () => _setEventStatus("false_positive"));
+    closeBtn.addEventListener("click", () => { ALARM_TOAST.style.display = "none"; });
+})();
+
+function _camIdOf(alert) {
+    const cam = _cameras.find((c) => c.name === alert.camera_name || String(c.id) === String(alert.camera_id));
+    return cam ? cam.id : alert.camera_id;
+}
+
+// Alarm does not wait for the DB write, so the event may not exist yet: retry.
+async function _findEventId(ctx, seq) {
+    const q = new URLSearchParams({
+        camera_id: ctx.cameraId, anomaly_type: ctx.type, limit: "5",
+        from: new Date((ctx.t - ctx.win) * 1000).toISOString(),
+        to: new Date((ctx.t + ctx.win) * 1000).toISOString(),
+    });
+    for (let i = 0; i < 3; i++) {
+        if (seq !== _toastSeq) return null;
+        const res = await api("/api/events?" + q.toString());
+        const items = (res && res.items) || [];
+        if (items.length) {
+            const dist = (e) => Math.abs(new Date(e.started_at).getTime() / 1000 - ctx.t);
+            return items.reduce((a, b) => (dist(b) < dist(a) ? b : a)).id;
+        }
+        if (i < 2) await new Promise((r) => setTimeout(r, 1500));
+    }
+    return null;
+}
+
+async function _setEventStatus(status) {
+    const ctx = _toastCtx, seq = _toastSeq;
+    if (!ctx || ctx.busy) return;
+    ctx.busy = true;
+    TOAST_NOTE.textContent = "...";
+    try {
+        const id = await _findEventId(ctx, seq);
+        if (seq !== _toastSeq) return;
+        if (id == null) { TOAST_NOTE.textContent = "Olay henüz kaydedilmedi; Olaylar ekranından onaylayın"; return; }
+        await api("/api/events/" + id, { method: "PATCH", body: { status } });
+        if (seq !== _toastSeq) return;
+        _toastBtns.ack.style.display = _toastBtns.fp.style.display = "none";
+        TOAST_NOTE.textContent = status === "acknowledged" ? "Görüldü ✓" : "Yanlış alarm olarak işaretlendi";
+        clearTimeout(_toastHideTimer);
+        _toastHideTimer = setTimeout(() => { if (seq === _toastSeq) ALARM_TOAST.style.display = "none"; }, 2000);
+    } catch (e) {
+        if (seq !== _toastSeq) return;
+        TOAST_NOTE.textContent = /403|yetki|forbidden/i.test(e.message)
+            ? "Bu işlem için operatör yetkisi gerekiyor" : "İşlem başarısız: " + e.message;
+    } finally {
+        ctx.busy = false;
+    }
+}
+
+// opts: title, meta, sub (extra line), sev (sound), ctx (event lookup)
+function _openToast(opts) {
+    if (!ALARM_TOAST) return;
+    _toastSeq++;
+    clearTimeout(_toastHideTimer);
+    _toastCtx = opts.ctx || null;
     const title = ALARM_TOAST.querySelector("span.font-title-sm");
     const meta = ALARM_TOAST.querySelector("span.font-data-mono");
-    if (title) title.textContent = (TIP_ADI[alert.anomaly_type] || alert.anomaly_type) + " Tespit Edildi";
-    if (meta) meta.textContent = (alert.camera_name || alert.camera_id) + " - " + _fmtEpoch(alert.start_time);
+    if (title) title.textContent = opts.title;
+    if (meta) meta.textContent = opts.meta;
+    TOAST_NOTE.textContent = opts.sub || "";
+    if (_toastBtns) _toastBtns.ack.style.display = _toastBtns.fp.style.display = "";
     ALARM_TOAST.style.display = "";
+    const played = _playAlarmSound(opts.sev);
+    if (BEEP_PLAN[opts.sev] && !played && _audioLocked() && !_isMuted()) {
+        TOAST_NOTE.textContent = (opts.sub ? opts.sub + " · " : "") + "Sesli alarm için sayfaya bir kez tıklayın";
+    }
+}
+
+function _showAlarmToast(alert) {
+    _openToast({
+        title: (TIP_ADI[alert.anomaly_type] || alert.anomaly_type) + " Tespit Edildi",
+        meta: (alert.camera_name || alert.camera_id) + " - " + _fmtEpoch(alert.start_time),
+        sev: TYPE_SEVERITY[alert.anomaly_type] || "medium",
+        ctx: { cameraId: _camIdOf(alert), type: alert.anomaly_type, t: alert.start_time, win: 2 },
+    });
+}
+
+// fall_outcome "down": critical toast bound to the FALL event (fall_time is the
+// first candidate; the event starts at the session's earliest one, hence +-3 s).
+function _showOutcomeToast(o) {
+    const m = o.metrics || {};
+    const sec = Math.round(Number(m.decided_after_sec) || 0);
+    const stale = Number(m.last_seen_ago_sec) > 3.6;
+    _openToast({
+        title: "Kalkamadı — " + (o.camera_name || o.camera_id),
+        meta: _fmtEpoch(o.fall_time),
+        sub: stale ? "Düşmeden " + sec + " sn sonra kamerada görünmüyor"
+            : "Düşmeden " + sec + " sn sonra hâlâ yerde",
+        sev: "critical",
+        ctx: { cameraId: _camIdOf(o), type: "FALL", t: o.fall_time, win: 3 },
+    });
 }
 
 function _fmtEpoch(sec) {
@@ -286,10 +469,28 @@ function _pushAlertCard(alert) {
     while (EVENT_STREAM.children.length > 30) EVENT_STREAM.lastChild.remove();
 }
 
+// Outcome card reuses the alarm card, then overrides title/badge/strip.
+function _pushOutcomeCard(o) {
+    if (!_fillEventCard) return;
+    const card = _fillEventCard(o);
+    _fillAlertCard(card, { anomaly_type: "FALL", start_time: o.fall_time, camera_name: o.camera_name, camera_id: o.camera_id, score: 0 });
+    const down = o.outcome === "down";
+    card.children[0].className = "absolute left-0 top-0 bottom-0 w-1 " + (down ? "bg-error" : "bg-outline-variant");
+    card.children[1].children[1].textContent = down ? "KALKAMADI" : "KALKTI";
+    card.children[2].children[0].textContent = down ? "Düşme: kalkamadı" : "Kalktı";
+    EVENT_STREAM.prepend(card);
+    while (EVENT_STREAM.children.length > 30) EVENT_STREAM.lastChild.remove();
+}
+
 function _startAlerts() {
     openReconnectingSocket(alertsWsUrl, {
         onMessage(data) {
             const alert = JSON.parse(data);
+            if (alert.kind === "fall_outcome") {
+                if (alert.outcome === "down") _showOutcomeToast(alert);
+                _pushOutcomeCard(alert);
+                return;
+            }
             _showAlarmToast(alert);
             _flashBoxAlarm(alert);
             _pushAlertCard(alert);

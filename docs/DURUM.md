@@ -11,6 +11,11 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
+**Aşama 13.6 tamamlandı** (2026-11-26). Kırmızı alarmda ses, alarm
+penceresinden tek tıkla onay, kalkamadı alarmı panelde, sistem sağlığında
+"aday var, olay yok" göstergesi; tarayıcıda uçtan uca doğrulandı.
+Ayrıntı: "Aşama 13.6".
+
 **Aşama 13.5 tamamlandı** (2026-11-26). Ters yön ve bölgede koşma
 kuralları; panelde yön bölgesi; panelde çizilen bölgeler artık görüye
 ulaşıyor (önceden hiç ulaşmıyordu). Ayrıntı: "Aşama 13.5".
@@ -114,7 +119,7 @@ değerlendirmeyle ölçülecek.
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.5 tamam; sıradaki 13.6 |
+| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.6 tamam; sıradaki 13.7 |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -980,12 +985,74 @@ bölgelerle sürer.
 
 ---
 
+## Aşama 13.6 — operatör deneyimi (2026-11-26)
+
+Sözleşme `docs/ASAMA13_6_PLAN.md`. 13.5'in API imajı bu aşamanın başında
+yeniden derlendi (`up -d --build api`).
+
+**Yazılan:**
+- Alarm sesi (`index.js`): Web Audio bip dizisi, dosya yok. critical ve
+  kalkamadı 3 × 880 Hz, high 2 × 660 Hz. İlk tıklamada kilit açılır;
+  sessize alma düğmesi (`localStorage` `alarmMuted`). Saniyede en çok bir
+  çalma.
+- Tek tıkla onay: toast'ta Görüldü / Yanlış Alarm / Kapat. Olay kimliği
+  tıklamada `GET /api/events` ile bulunur (kamera, tip, ±2 sn; 3 deneme),
+  sonra `PATCH`.
+- Kalkamadı alarm penceresinde: `/ws/alerts` yayıncısı `fall-outcomes`'u
+  da okuyor (`outcome_alert`); `down` kırmızı toast ve ses, `recovered`
+  yalnız akış kartı.
+- Kamera nabzı: `GET /api/health/cameras?window_min=10` →
+  `candidates_window`, `events_window`, `stalled`. `stalled` = ≥ 20 aday,
+  0 olay, belge taze, pencere ≥ 60 sn. Sistem sağlığı tablosu "N aday ·
+  M olay" ve "Aday var, olay yok"; 15 sn'de bir yenileniyor.
+- Canlı katmanda yön oku (`live.js`, meta `direction_vector`); ölü
+  `window_frames` alanı ayarlarda gizli (değer aynen gönderiliyor).
+
+**Tarayıcıda doğrulama.** Worktree API'si yerelde 8001'de, paneli de
+servis ederek koştu. Konteyner API'si alarm tüketici grubunu paylaştığı
+için deneme boyunca durduruldu, sonra başlatıldı. Oturum: jeton süreç
+içinde üretildi, ayrı bir yerel sunucudan yüklenen betikle sayfanın
+`localStorage`'ına kondu (parola girilmedi, jeton sohbete düşmedi);
+betik ve jeton dosyası sonra silindi.
+
+| senaryo | sonuç |
+|---|---|
+| `fall_01` düşmesi, panel açık, sayfaya bir kez tıklanmış | toast "Düşme Tespit Edildi fall_01 - 21:49:39", ses fonksiyonu `critical` ile çağrıldı, `AudioContext` `running` |
+| 10 sn sonra kalkamadı | toast "Kalkamadı — fall_01 / Düşmeden 10 sn sonra hâlâ yerde", akışta "Düşme: kalkamadı" |
+| kalkamadı toast'ında **Görüldü** | "Görüldü ✓"; olay 2435 (FALL, `down`) `status = acknowledged`, `acked_by = admin`, denetim kaydında `update_status` |
+| sonraki düşmede **Yanlış Alarm** | "Yanlış alarm olarak işaretlendi"; olay 2437 `false_positive` |
+| Spark durduruldu, `run_01` kalp atışıyla | 15 sn içinde satır "129 aday · 0 olay — Aday var, olay yok"; API `stalled: true` |
+| Spark başlatıldı | olay geldi: "476 aday · 1 olay — Canlı" |
+| yön oku (`drawOverlay`, gerçek tarayıcı tuvali) | vektörlü bölgede 168 ok pikseli, vektörsüzde 0; ok ağırlık merkezinde |
+| ayarlar | `window_frames` seçimi görünmüyor, değeri 50 |
+
+**Doğrulamada bulunan ve düzeltilen:** "aday var, olay yok" işareti her
+kamera açılışında birkaç saniye yanlış yanabiliyordu (`run_01` 20 adaya 5
+sn'de ulaşıyor, Spark'ın ilk olayı ~7,5 sn'de). Pencerede ≥ 60 sn'lik
+sağlık kaydı şartı eklendi, testli.
+
+**Ses gerçekten duyulmadı:** otomatik denemede yalnız çalma fonksiyonunun
+çağrıldığı ve `AudioContext`'in `running` olduğu görüldü.
+
+**Gözlem (düzeltilmedi):** canlı izleme ekranı kameraların WS portunu
+sayfa açılırken bir kez okuyor; görü sayfadan sonra başlarsa kutular
+sayfa yenilenene kadar "Bağlantı Yok" kalıyor. 13.6'dan önce de böyleydi.
+
+**Testler:** 473 geçti, 1 atlandı, 1 başarısız (eski `test_asama8_6`).
+13.6'nın testleri 18 (API 12, panel 6).
+
+**Kapsam dışı (kayıt):** panelde canlı "yerde: N sn" sayacı (14'e);
+alarm akış kartlarında onay düğmesi (yalnız toast'ta).
+
+---
+
 ## Bir sonraki adım
 
-**Aşama 13.6 — operatör deneyimi** (alarm sesi, tek tık onay, kamera
-nabzı; `docs/YOL_HARITASI.md`). Önce `main`'e alınan 13.5 için
-`docker compose up -d --build api` ve panelde yön bölgesi çiziminin
-tarayıcıda denenmesi.
+**Aşama 13.7 — kalan küçükler** (`docs/YOL_HARITASI.md`): giriş deneme
+sınırı, WS jetonunun veritabanından doğrulanması, olayların CSV dışa
+aktarımı. Eski `test_asama8_6` hatası da burada karara bağlanır. `main`'e
+alındıktan sonra `docker compose up -d --build api` gerekir (13.6 API
+değişiklikleri).
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
 `docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5'in olay sayıları

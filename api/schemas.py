@@ -106,6 +106,12 @@ class CameraHealthOut(BaseModel):
     ws_port: int | None = None
     # Birikimli gercek aday sayisi (nabiz haric); eski belgede yok -> None.
     candidates: int | None = None
+    # Nabiz (13.6): son window_min dakikada aday / olay sayisi; belge yoksa
+    # varsayilanlar kalir ve satir yine serilesir.
+    window_min: int = 10
+    candidates_window: int | None = None
+    events_window: int = 0
+    stalled: bool = False
 
 
 # ------------------------------------------------------------------ cameras

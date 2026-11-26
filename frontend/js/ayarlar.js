@@ -26,6 +26,10 @@ const [tiltInput, fallSecInput] = fallSection.querySelectorAll('input[type="numb
 const runSpeedInput = runSection.querySelector('input[type="number"]');
 const [fightSecInput] = fightSection.querySelectorAll('input[type="number"]');
 const windowSelect = fightSection.querySelector("select");
+// window_frames is dead (vision uses per-second windows); hide the control but
+// keep the select as the value holder so save still sends the current value.
+windowSelect.parentElement.style.display = "none";
+if (windowSelect.parentElement.previousElementSibling) windowSelect.parentElement.previousElementSibling.style.display = "none";
 
 const actionBar = document.querySelector(".fixed.bottom-0.right-0");
 const lastChangedP = actionBar.children[0];

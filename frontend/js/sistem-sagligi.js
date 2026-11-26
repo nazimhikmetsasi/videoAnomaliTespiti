@@ -91,10 +91,21 @@ function fillGpuCard(cameras) {
     if (captions[1]) captions[1].textContent = "Sıcaklık ölçülmüyor";
 }
 
+// Row template is captured once: rowTemplate() empties the tbody, so a second
+// call on refresh would find no template row.
+let _makeRow = null;
+
 function fillCameraTable(cameras) {
     const tbody = document.querySelector("table tbody");
     if (!tbody) return;
-    const makeRow = rowTemplate(tbody);
+    if (!_makeRow) {
+        _makeRow = rowTemplate(tbody);
+        const th = document.querySelectorAll("table thead th")[4];
+        if (th) th.textContent = "SON 10 DK";
+    } else {
+        tbody.innerHTML = "";
+    }
+    const makeRow = _makeRow;
 
     if (cameras.length === 0) {
         const tr = document.createElement("tr");
@@ -116,10 +127,11 @@ function fillCameraTable(cameras) {
         tds[1].textContent = cam.fps_actual != null ? num(cam.fps_actual).toFixed(1) : "—";
         tds[2].textContent = cam.dropped != null ? String(cam.dropped) : "—";
         tds[3].textContent = cam.infer_ms != null ? Math.round(num(cam.infer_ms)) + "ms" : "—";
-        tds[4].innerHTML = ""; // TREND: sablonun karsiligi yok (tek anlik olcum), uydurulmaz.
+        tds[4].textContent = cam.candidates_window != null
+            ? `${cam.candidates_window} aday · ${cam.events_window} olay` : "—";
 
         const hasDoc = cam.fps_actual != null || cam.dropped != null || cam.infer_ms != null || cam.age_sec != null;
-        let state, dotClass, textClass;
+        let state, dotClass, textClass, stallTitle = "";
         if (!hasDoc) {
             state = "Bağlantı Yok";
             dotClass = "bg-outline";
@@ -129,6 +141,11 @@ function fillCameraTable(cameras) {
             dotClass = "bg-tertiary animate-subtle-pulse";
             textClass = "text-tertiary";
             tr.classList.add("bg-tertiary/5");
+        } else if (cam.stalled) {
+            state = "Aday var, olay yok";
+            dotClass = "bg-error animate-subtle-pulse";
+            textClass = "text-error";
+            stallTitle = `son ${cam.window_min} dk: ${cam.candidates_window} aday, 0 olay — akış (Kafka / Spark) denetlenmeli`;
         } else {
             state = "Canlı";
             dotClass = "bg-primary";
@@ -137,6 +154,7 @@ function fillCameraTable(cameras) {
         tds[5].innerHTML = `<span class="inline-flex items-center gap-1 ${textClass}">
             <span class="w-1.5 h-1.5 rounded-full ${dotClass}"></span> ${state}
         </span>${cam.age_sec != null ? `<div class="text-[10px] text-on-surface-variant mt-0.5 text-right">${ageText(cam.age_sec)}</div>` : ""}`;
+        tds[5].title = stallTitle;
 
         tbody.appendChild(tr);
     }
@@ -145,16 +163,24 @@ function fillCameraTable(cameras) {
 async function load() {
     try {
         const [health, cameras] = await Promise.all([api("/health"), api("/api/health/cameras")]);
+        const ok = document.getElementById("health-error");
+        if (ok) ok.remove();
         fillHealthCards(health);
         fillGpuCard(cameras);
         fillCameraTable(cameras);
     } catch (err) {
         const main = document.querySelector("main");
+        const old = document.getElementById("health-error");
+        if (old) old.remove();
         const banner = document.createElement("p");
+        banner.id = "health-error";
         banner.className = "font-body-sm text-body-sm text-error bg-red-950/40 border border-red-800/40 rounded px-3 py-2";
         banner.textContent = "sistem sağlığı verisi alınamadı: " + err.message;
         main.prepend(banner);
     }
 }
 
-document.addEventListener("DOMContentLoaded", load);
+document.addEventListener("DOMContentLoaded", () => {
+    load();
+    setInterval(load, 15000);
+});

@@ -29,6 +29,7 @@ router = APIRouter()
 manager = ConnectionManager()
 
 TOPIC = "anomaly-events"
+OUTCOME_TOPIC = "fall-outcomes"   # ayni deger api/workers/consumer.py'de; o modulu import etmemek icin tekrar
 GROUP_ID = "anomaly-ws-alerts"
 
 
@@ -68,6 +69,24 @@ def _camera_name(raw_camera_id: object) -> str | None:
     return row[0] if row else None
 
 
+def outcome_alert(msg: object, camera_name: str | None) -> dict | None:
+    """fall-outcomes mesaji -> panel govdesi (13.6 SS3). `unknown` panele
+    gitmez (operatore soylenecek bir sey yok); bozuk mesaj None."""
+    if not isinstance(msg, dict) or msg.get("outcome") not in ("down", "recovered"):
+        return None
+    track_id, fall_time = msg.get("track_id"), msg.get("fall_time")
+    if (msg.get("camera_id") in (None, "") or isinstance(track_id, bool)
+            or not isinstance(track_id, int) or isinstance(fall_time, bool)
+            or not isinstance(fall_time, (int, float))):
+        return None
+    metrics = msg.get("metrics")
+    return {
+        "kind": "fall_outcome", "camera_id": msg["camera_id"], "camera_name": camera_name,
+        "track_id": track_id, "fall_time": float(fall_time), "outcome": msg["outcome"],
+        "metrics": metrics if isinstance(metrics, dict) else {},
+    }
+
+
 class AlertBroadcaster:
     """anomaly-events'i AYRI bir is parcaciginda tuketir (confluent-kafka
     senkrondur, FastAPI'nin asyncio dongusunu bloklamamali) ve
@@ -100,7 +119,7 @@ class AlertBroadcaster:
             "auto.offset.reset": "latest",
             "enable.auto.commit": True,
         })
-        consumer.subscribe([TOPIC])
+        consumer.subscribe([TOPIC, OUTCOME_TOPIC])
         try:
             while not self._stop.is_set():
                 msg = consumer.poll(1.0)
@@ -110,7 +129,14 @@ class AlertBroadcaster:
                     body = json.loads(msg.value().decode("utf-8"))
                 except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
                     continue
-                payload = {**body, "camera_name": _camera_name(body.get("camera_id"))}
+                if not isinstance(body, dict):
+                    continue
+                if msg.topic() == OUTCOME_TOPIC:
+                    payload = outcome_alert(body, _camera_name(body.get("camera_id")))
+                    if payload is None:
+                        continue
+                else:
+                    payload = {**body, "camera_name": _camera_name(body.get("camera_id"))}
                 if self._loop is not None:
                     asyncio.run_coroutine_threadsafe(self._manager.broadcast(payload), self._loop)
         finally:

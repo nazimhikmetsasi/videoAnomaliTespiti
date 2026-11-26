@@ -134,7 +134,10 @@ def build_meta(camera_id: str, frame_idx: int, ts: float, width: int, height: in
             for t in tracks
         ],
         "zones": [
-            {"name": z.name, "type": z.zone_type, "polygon": z.polygon.tolist()}
+            {"name": z.name, "type": z.zone_type, "polygon": z.polygon.tolist(),
+             # Panel yon okunu cizsin diye (13.5); yonsuz bolgede None.
+             "direction_vector": ([float(v) for v in z.direction_vector]
+                                  if z.direction_vector is not None else None)}
             for z in zones
         ],
         "pre_alarms": [

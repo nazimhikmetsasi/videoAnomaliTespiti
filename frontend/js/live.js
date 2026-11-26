@@ -178,6 +178,32 @@ const SKELETON = [
 // NORMALIZE (ASAMA8_PLAN.md SS1, madde "Olcek donusumu kritik"). "cover"
 // (kirpma) kullanilsaydi bu hesap konteynerin en-boy oranina gore kayardi --
 // tam da uyarilan "en olasi hata".
+// Direction arrow from polygon centroid; vector is normalized-space, so scale to
+// source pixels first, then fix the length in screen pixels (same idea as bolgeler.js).
+function _drawZoneArrow(ctx, poly, vec, meta, toNormPx) {
+    const n = poly.length;
+    const [cx, cy] = toNormPx(poly.reduce((s, p) => s + p[0], 0) / n, poly.reduce((s, p) => s + p[1], 0) / n);
+    let dx = vec[0] * meta.width, dy = vec[1] * meta.height;
+    const len = Math.hypot(dx, dy);
+    if (!len) return;
+    const L = 40;
+    dx = (dx / len) * L; dy = (dy / len) * L;
+    const x1 = cx - dx / 2, y1 = cy - dy / 2, x2 = cx + dx / 2, y2 = cy + dy / 2;
+    const a = Math.atan2(dy, dx), h = 9;
+    ctx.strokeStyle = ctx.fillStyle = "rgba(255,180,171,0.95)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - h * Math.cos(a - 0.45), y2 - h * Math.sin(a - 0.45));
+    ctx.lineTo(x2 - h * Math.cos(a + 0.45), y2 - h * Math.sin(a + 0.45));
+    ctx.closePath();
+    ctx.fill();
+}
+
 function drawOverlay(canvas, meta, zones, layers) {
     const cssW = canvas.clientWidth, cssH = canvas.clientHeight;
     if (!cssW || !cssH) return;
@@ -208,6 +234,7 @@ function drawOverlay(canvas, meta, zones, layers) {
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
+            if (z.direction_vector) _drawZoneArrow(ctx, poly, z.direction_vector, meta, toNormPx);
         }
     }
 
