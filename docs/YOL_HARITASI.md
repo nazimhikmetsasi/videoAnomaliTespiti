@@ -168,7 +168,9 @@ Sabit dizüstü kamerası ve telefonla, tek oturumda (kayıtlar `data/`
 altında kalır, depoya yalnız etiket JSON'ları girer):
 
 - oyalanma: aynı yerde / bölgede ≥ 30 sn (LOITERING duyarlılığı ilk kez)
-- düşme + 15–30 sn yerde kalma; düşüp hızla kalkma (13.4)
+- düşme + en az 35 sn yerde kalma (karar süresi 25 sn + pay); düşüp
+  10 sn içinde kalkma; düşüp yerde oturma; sandalyeye hızlı oturma (13.4,
+  `docs/ASAMA13_4_PLAN.md`)
 - kadrajı keserek koşma; kameraya doğru / kameradan uzağa koşma (17)
 - yön ihlali (13.5)
 - yanlış pozitif sınaması: hızlı oturma, eğilme, yere bir şey bırakma

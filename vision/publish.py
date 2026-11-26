@@ -16,8 +16,10 @@ import json
 from confluent_kafka import Producer
 
 from vision.rules.engine import Candidate
+from vision.rules.postfall import FallOutcome
 
 CANDIDATE_TOPIC = "anomaly-candidates"
+OUTCOME_TOPIC = "fall-outcomes"
 EOS_TYPE = "_EOS"
 TICK_TYPE = "_TICK"      # nabiz: aday yokken de Spark su isaretini ilerletir
 EOS_LEAD_SEC = 15.0      # akis sonu isaretcisi bu kadar ileri damgalanir (SS5.5)
@@ -63,6 +65,21 @@ def candidate_to_dict(cand: Candidate, camera_id: str, epoch_base: float) -> dic
     }
 
 
+def outcome_to_dict(o: FallOutcome, camera_id: str) -> dict:
+    """FallOutcome -> fall-outcomes JSON govdesi (ASAMA13_4_PLAN.md SS3.2)."""
+    return {
+        "schema": SCHEMA_VERSION,
+        "camera_id": camera_id,
+        "track_id": int(o.track_id),
+        "fall_time": None if o.fall_time is None else float(o.fall_time),
+        "fall_ts": float(o.fall_ts),
+        "outcome": o.outcome,
+        "decided_ts": float(o.decided_ts),
+        "adopted": [int(t) for t in o.adopted],
+        "metrics": {k: float(v) for k, v in o.metrics.items()},
+    }
+
+
 class CandidatePublisher:
     """Aday olaylari Kafka'ya basar. Bloklamaz, hata firlatmaz."""
 
@@ -76,6 +93,7 @@ class CandidatePublisher:
         self.queued = 0        # produce() cagrisi kabul edilen mesaj
         self.failed = 0        # teslim edilemeyen + kuyruga alinamayan
         self.last_error = ""
+        self.outcomes_skipped = 0   # fall_time'siz sonuc (eslesme imkansiz)
         self._last_event_time = epoch_base
         # acks=1: tek broker'li yerel kumede acks=all'in getirisi yok, sadece
         # gecikme ekler. linger.ms=50 + lz4: adaylar hacimli ve kisa omurlu;
@@ -95,12 +113,13 @@ class CandidatePublisher:
         else:
             self.published += 1
 
-    def _produce(self, body: dict) -> None:
+    def _produce(self, body: dict, topic: str | None = None, key: str | None = None) -> None:
         # Anahtar mesajin KENDI camera_id/track_key'inden kurulur (self.camera_id
         # degil) -- _EOS'un camera_id'si "_eos"tur ve kendi partition setine gider.
-        key = f"{body['camera_id']}:{body['track_key']}"
+        if key is None:
+            key = f"{body['camera_id']}:{body['track_key']}"
         try:
-            self._producer.produce(self.topic, key=key.encode("utf-8"),
+            self._producer.produce(topic or self.topic, key=key.encode("utf-8"),
                                     value=json.dumps(body).encode("utf-8"),
                                     callback=self._delivery)
             self.queued += 1
@@ -115,6 +134,14 @@ class CandidatePublisher:
             body = candidate_to_dict(cand, self.camera_id, self.epoch_base)
             self._last_event_time = max(self._last_event_time, body["event_time"])
             self._produce(body)
+
+    def outcome(self, o: FallOutcome) -> None:
+        """Dusme sonucu. fall_time yoksa olayla eslesemez: basilmaz, sayilir."""
+        if o.fall_time is None:
+            self.outcomes_skipped += 1
+            return
+        self._produce(outcome_to_dict(o, self.camera_id), OUTCOME_TOPIC,
+                      f"{self.camera_id}:{o.track_id}")
 
     def tick(self, event_time: float) -> None:
         """Nabiz: aday olmasa da bu kameranin duvar saatini Spark'a iletir.

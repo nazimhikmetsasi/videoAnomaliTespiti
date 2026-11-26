@@ -106,7 +106,9 @@ function _fillEventRow(row, ev) {
 
     // Anomali tipi ikonu sablona ait, degismiyor -- yalnizca etiket metni.
     const typeBadge = tds[4].querySelector("span");
-    typeBadge.childNodes[typeBadge.childNodes.length - 1].textContent = " " + (TIP_ADI[ev.anomaly_type] || ev.anomaly_type);
+    const typeText = TIP_ADI[ev.anomaly_type] || ev.anomaly_type;
+    typeBadge.childNodes[typeBadge.childNodes.length - 1].textContent =
+        " " + (ev.fall_outcome ? typeText + " · " + (DUSME_SONUCU[ev.fall_outcome] || ev.fall_outcome) : typeText);
 
     const sevStyle = SEVERITY_STYLE[ev.severity] || SEVERITY_STYLE.low;
     const sevSpan = tds[5].querySelector("span");

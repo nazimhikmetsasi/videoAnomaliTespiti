@@ -44,6 +44,21 @@ MIGRATIONS: list[tuple[str, str]] = [
         "ALTER TABLE notifications ADD CONSTRAINT notifications_status_check "
         "CHECK (status IN ('sent', 'failed', 'skipped'))",
     ),
+    (
+        # Asama 13.4: dusme sonrasi izleme sonucu. NULL = FALL degil ya da
+        # sonuc henuz yok.
+        "events.fall_outcome",
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS fall_outcome VARCHAR(10)",
+    ),
+    (
+        "events.fall_outcome CHECK",
+        "ALTER TABLE events DROP CONSTRAINT IF EXISTS events_fall_outcome_check",
+    ),
+    (
+        "events.fall_outcome CHECK (yeni)",
+        "ALTER TABLE events ADD CONSTRAINT events_fall_outcome_check "
+        "CHECK (fall_outcome IN ('down', 'recovered', 'unknown'))",
+    ),
 ]
 
 

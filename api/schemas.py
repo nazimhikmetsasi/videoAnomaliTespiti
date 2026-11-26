@@ -264,6 +264,7 @@ class EventOut(BaseModel):
     clip_path: str | None
     llm_report_tr: str | None
     mongo_ref: str | None
+    fall_outcome: str | None
     status: str
     acked_by: int | None
     acked_at: datetime.datetime | None

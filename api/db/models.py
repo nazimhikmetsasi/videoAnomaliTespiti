@@ -115,6 +115,7 @@ class Event(Base):
     clip_path: Mapped[str | None] = mapped_column(Text)
     llm_report_tr: Mapped[str | None] = mapped_column(Text)
     mongo_ref: Mapped[str | None] = mapped_column(String(24))
+    fall_outcome: Mapped[str | None] = mapped_column(String(10))   # down / recovered / unknown (13.4)
     status: Mapped[str] = mapped_column(String(20), default="new")
     acked_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     acked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))

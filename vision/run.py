@@ -84,6 +84,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="TCN hakemini kapat, yalniz kural (Asama 9 ablation)")
     parser.add_argument("--tcn-min-conf", type=float, default=0.60,
                         help="model guveni bunun altindaysa karar kurala duser")
+    parser.add_argument("--postfall-sec", type=float, default=25.0,
+                        help="dusme sonrasi izleme karar suresi (sn); kisa kosu ve duman testi icin")
     parser.add_argument("--zones", default="",
                         help="bolge tanimi json'u (eval/zones.json)")
     parser.add_argument("--kafka", nargs="?", const="localhost:9092", default="",
@@ -183,6 +185,19 @@ def print_report(pipe: CameraPipeline, args, prefix: str = "") -> None:
     print(f"  izleyici tamponu     : {pipe.tracker.max_frames_lost} kare")
     if hasattr(pipe.rule_engine, "model_runs"):
         print(f"  TCN kosusu           : {pipe.rule_engine.model_runs}")
+    if args.rules and pipe.postfall is not None:
+        counts = {k: sum(1 for o in pipe.all_outcomes if o.outcome == k)
+                  for k in ("down", "recovered", "unknown")}
+        pend = pipe.postfall.pending()
+        print(f"  dusme sonrasi        : down {counts['down']} / recovered "
+              f"{counts['recovered']} / unknown {counts['unknown']}, bekleyen {len(pend)}")
+        for o in pipe.all_outcomes:
+            m = o.metrics
+            print(f"    iz {o.track_id:>3}  {o.outcome:<9} karar {m['decided_after_sec']:.1f} sn  "
+                  f"son gorulme {m['last_seen_ago_sec']:.1f} sn once  devralinan {o.adopted}  "
+                  f"max boy orani {m['max_height_ratio']:.2f}")
+        for tid, secs in pend:
+            print(f"    iz {tid:>3}  bekliyor  izlenen {secs:.1f} sn (klip bitti, karar yok)")
 
     if args.rules:
         print("\n  aday olay ozeti (--rules):")

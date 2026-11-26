@@ -92,6 +92,9 @@ const TIP_ADI = {
     WRONG_DIRECTION: "Ters Yön",
 };
 
+// events.fall_outcome (13.4): dusme sonrasi izleme sonucu
+const DUSME_SONUCU = { down: "kalkamadı", recovered: "kalktı", unknown: "belirsiz" };
+
 const SEVERITY_ADI = { low: "Düşük", medium: "Orta", high: "Yüksek", critical: "Kritik" };
 
 // infra/postgres/init.sql events.status CHECK: new/acknowledged/false_positive/resolved

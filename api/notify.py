@@ -14,6 +14,7 @@ icin bu dosyanin gecikmesi operatorun ekranini hicbir kosulda geciktirmez.
 
 from __future__ import annotations
 
+import datetime
 import queue
 import threading
 import time
@@ -28,7 +29,8 @@ from api.db.postgres import SessionLocal
 from api.llm import generate_report
 from api.storage_paths import storage_path
 
-_queue: queue.Queue[int | None] = queue.Queue(maxsize=200)
+# oge: (tur, event_id, ek); tur "event" | "outcome". None = durdurma isareti.
+_queue: queue.Queue[tuple | None] = queue.Queue(maxsize=200)
 _thread: threading.Thread | None = None
 
 # testler MockTransport ile degistirir (SS8); None -- gercek agda varsayilan
@@ -43,14 +45,17 @@ _CAPTION_LIMIT = 1000
 _counters = {"sent": 0, "failed": 0, "dropped": 0, "llm": 0, "template": 0,
              "skipped": 0}
 
+# vision.stages.features.STALE_SEC'in aynasi (API imajinda vision yok):
+# bundan uzun suredir gorulmeyen izin "hala yerde" demek dogru olmaz.
+STALE_SEC = 3.6
 
-def enqueue(event_id: int) -> None:
-    """consumer.py'nin cagirdigi TEK fonksiyon (SS4.5). Kuyruk dolarsa EN
-    ESKI oge dusurulur: kirmizi alarm zaten WebSocket'ten operatore gitti,
-    burada kaybolan yalnizca telefon bildirimidir ve eski bir bildirim
-    yenisinden degersizdir."""
+
+def _put(item: tuple) -> None:
+    """Kuyruk dolarsa EN ESKI oge dusurulur: kirmizi alarm zaten WebSocket'ten
+    operatore gitti, burada kaybolan yalnizca telefon bildirimidir ve eski
+    bir bildirim yenisinden degersizdir."""
     try:
-        _queue.put_nowait(event_id)
+        _queue.put_nowait(item)
     except queue.Full:
         try:
             _queue.get_nowait()
@@ -58,9 +63,19 @@ def enqueue(event_id: int) -> None:
         except queue.Empty:
             pass
         try:
-            _queue.put_nowait(event_id)
+            _queue.put_nowait(item)
         except queue.Full:
             pass
+
+
+def enqueue(event_id: int) -> None:
+    """consumer.py'nin olay icin cagirdigi fonksiyon (SS4.5)."""
+    _put(("event", event_id, None))
+
+
+def enqueue_outcome(event_id: int, outcome: str, metrics: dict) -> None:
+    """Dusme sonucu (13.4): alarmdan sonra, ayni tek isciden gider."""
+    _put(("outcome", event_id, {"outcome": outcome, "metrics": metrics or {}}))
 
 
 def _truncate_caption(text_: str) -> str:
@@ -229,6 +244,89 @@ def _process_event(event_id: int) -> None:
         db.commit()
 
 
+def _fmt_saat(started_at: object) -> str:
+    # api/llm.py::_format_zaman ile ayni yerel saat donusumu
+    if isinstance(started_at, datetime.datetime):
+        return started_at.astimezone().strftime("%H:%M:%S")
+    return "bilinmiyor"
+
+
+def _sn(metrics: dict, key: str) -> int:
+    try:
+        return round(float(metrics.get(key)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def outcome_text(outcome: str, camera_name: str, started_at: object, metrics: dict) -> str | None:
+    """Dusme sonucu sablonlari (plan 13.4 SS4.4). LLM yok; unknown -> None."""
+    metrics = metrics or {}
+    saat = _fmt_saat(started_at)
+    if outcome == "down":
+        try:
+            stale = float(metrics.get("last_seen_ago_sec", 0.0)) > STALE_SEC
+        except (TypeError, ValueError):
+            stale = False
+        if stale:
+            body = (f"{saat}'teki düşmeden sonra kişinin kalktığı görülmedi. "
+                    f"Son {_sn(metrics, 'last_seen_ago_sec')} sn'dir kamerada görünmüyor; "
+                    f"son görüldüğünde yerdeydi.")
+        else:
+            body = (f"{saat}'teki düşmeden {_sn(metrics, 'decided_after_sec')} sn sonra "
+                    f"kişi hâlâ yerde.")
+        return f"⚠️ KALKAMADI — {camera_name}\n{body}"
+    if outcome == "recovered":
+        return (f"✅ KALKTI — {camera_name}\n{saat}'teki düşmeden "
+                f"{_sn(metrics, 'recovered_after_sec')} sn sonra kişi ayağa kalktı. "
+                f"Önem yüksek'e indirildi.")
+    return None
+
+
+def _recipients(db) -> list[str]:
+    recipients = [r[0] for r in db.execute(text(
+        "SELECT telegram_chat_id FROM users WHERE is_active AND "
+        "telegram_chat_id IS NOT NULL AND telegram_chat_id <> ''")).all()]
+    if not recipients and TELEGRAM_CHAT_ID:
+        recipients = [TELEGRAM_CHAT_ID]   # SS4.1: tez demosu icin tek alici yedegi
+    return recipients
+
+
+def _process_outcome(event_id: int, outcome: str, metrics: dict) -> None:
+    """LLM yok, sabit sablon: kota harcanmaz, gecikme yok."""
+    with SessionLocal() as db:
+        row = db.execute(
+            text("""
+                SELECT e.camera_id, e.started_at, c.name AS camera_name
+                FROM events e JOIN cameras c ON c.id = e.camera_id
+                WHERE e.id = :id
+            """), {"id": event_id},
+        ).mappings().first()
+        if row is None:
+            return
+        body = outcome_text(outcome, row["camera_name"], row["started_at"], metrics)
+        if body is None:
+            return
+        if not _is_armed(db, row["camera_id"]):
+            _counters["skipped"] += 1
+            db.add(Notification(event_id=event_id, channel="telegram", target="-",
+                                 status="skipped", error="evde modu"))
+            db.commit()
+            return
+        recipients = _recipients(db)
+        if not recipients:
+            print(f"  bildirim kanali yapilandirilmamis, olay {event_id} sonucu atlandi")
+            return
+        if not TELEGRAM_BOT_TOKEN:
+            print(f"  TELEGRAM_BOT_TOKEN bos, olay {event_id} sonucu icin gonderim atlandi")
+            return
+        for chat_id in recipients:
+            status_, error = _send_with_retry(chat_id, body, None)
+            _counters[status_] += 1
+            db.add(Notification(event_id=event_id, channel="telegram", target=chat_id,
+                                 status=status_, error=(error or None)))
+        db.commit()
+
+
 def _worker_loop() -> None:
     """Kuyruktan bir olay ISLER; govde ASLA olmez (SS4.5) -- genis except
     bilincli: bu iplik olurse bildirimler sessizce keser. ponytail: hiz siniri
@@ -237,14 +335,18 @@ def _worker_loop() -> None:
     yeterli; coklu alici gerekirse gonderim basina tasin."""
     last_sent = 0.0
     while True:
-        event_id = _queue.get()
-        if event_id is None:
+        item = _queue.get()
+        if item is None:
             break
+        kind, event_id, extra = item
         wait = NOTIFY_MIN_INTERVAL_SEC - (time.monotonic() - last_sent)
         if wait > 0:
             _sleep(wait)
         try:
-            _process_event(event_id)
+            if kind == "outcome":
+                _process_outcome(event_id, extra["outcome"], extra["metrics"])
+            else:
+                _process_event(event_id)
         except Exception as exc:  # noqa: BLE001 -- SS4.5: iplik asla olmemeli
             print(f"  bildirim isleme hatasi (event {event_id}): {exc}")
         last_sent = time.monotonic()

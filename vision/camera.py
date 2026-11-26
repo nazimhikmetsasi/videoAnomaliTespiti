@@ -28,6 +28,7 @@ from vision.evidence import EvidenceWriter, default_mongo_url
 from vision.health_client import HealthClient
 from vision.publish import CandidatePublisher, tick_due
 from vision.rules.engine import Candidate, RuleEngine, Zone
+from vision.rules.postfall import DECIDE_SEC, FallOutcome, PostFallMonitor
 from vision.settings_client import SettingsClient
 from vision.source import Frame, VideoSource
 from vision.stages.features import FeatureEngine
@@ -177,6 +178,8 @@ class CameraPipeline:
         self.health_client: HealthClient | None = None
 
         self.all_candidates: list[Candidate] = []
+        self.postfall: PostFallMonitor | None = None
+        self.all_outcomes: list[FallOutcome] = []
         self.pre_ms: list[float] = []
         self.infer_ms: list[float] = []
         self.track_ms: list[float] = []
@@ -218,6 +221,7 @@ class CameraPipeline:
         if args.rules:
             zones = load_zones(args.zones, self.zones_stem) if args.zones else []
             self.rule_engine = build_engine(args, zones)
+            self.postfall = PostFallMonitor(getattr(args, "postfall_sec", DECIDE_SEC))
         if args.kafka and args.rules:
             self.publisher = CandidatePublisher(args.kafka, self.camera_id,
                                                 epoch_base=self.epoch_base)
@@ -323,6 +327,12 @@ class CameraPipeline:
             for cand in candidates:
                 cand.event_time = now
             self.candidates_total += len(candidates)
+            outcomes = self.postfall.update(windows, candidates, ts,
+                                            self.rule_engine.thresholds)
+            self.all_outcomes.extend(outcomes)
+            if self.publisher is not None:
+                for o in outcomes:
+                    self.publisher.outcome(o)
             t6 = time.perf_counter()
             self.smooth_ms.append((t5 - t4) * 1000)
             self.rules_ms.append((t6 - t5) * 1000)

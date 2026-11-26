@@ -202,7 +202,7 @@ def test_enqueue_drops_oldest_when_queue_full() -> None:
             remaining.append(notify._queue.get_nowait())
     finally:
         notify._queue = old_queue
-    assert remaining == [2, 3]
+    assert remaining == [("event", 2, None), ("event", 3, None)]
     assert notify._counters["dropped"] == old_dropped + 1
 
 
@@ -217,8 +217,8 @@ def test_worker_loop_survives_exception_in_one_event() -> None:
 
     old_queue = notify._queue
     notify._queue = queue_mod.Queue(maxsize=200)
-    notify._queue.put(1)
-    notify._queue.put(2)
+    notify._queue.put(("event", 1, None))
+    notify._queue.put(("event", 2, None))
     notify._queue.put(None)   # sentinel: dongu bitsin
 
     old = _patch(_process_event=fake_process, NOTIFY_MIN_INTERVAL_SEC=0.0, _sleep=lambda s: None)

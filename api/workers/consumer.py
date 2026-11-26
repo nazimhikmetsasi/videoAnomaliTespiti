@@ -15,6 +15,7 @@ import datetime
 import json
 import signal
 import threading
+import time
 
 from confluent_kafka import Consumer
 from pymongo.errors import PyMongoError
@@ -74,6 +75,161 @@ def event_to_row(msg: dict, camera_id: int, zone_id: int | None) -> dict | None:
         "llm_report_tr": None, "mongo_ref": None,
         "status": "new",
     }
+
+
+OUTCOME_TOPIC = "fall-outcomes"
+PENDING_SEC = 60.0   # sonuc, Spark'in olayindan once gelebilir (~7.6 sn); sinir bol tutuldu
+_OUTCOMES = ("down", "recovered", "unknown")
+
+
+def outcome_to_update(msg: dict) -> dict | None:
+    """fall-outcomes govdesi -> guncelleme istegi. Saf; zorunlu alan eksik ya
+    da bozuksa None (mesaj atlanir)."""
+    try:
+        camera_id = msg["camera_id"]
+        if camera_id is None or camera_id == "":
+            return None
+        track_id = msg["track_id"]
+        if isinstance(track_id, bool) or not isinstance(track_id, int):
+            return None
+        fall_time = datetime.datetime.fromtimestamp(float(msg["fall_time"]), tz=datetime.timezone.utc)
+        outcome = msg["outcome"]
+    except (KeyError, TypeError, ValueError, OverflowError, OSError):
+        return None
+    if outcome not in _OUTCOMES:
+        return None
+    metrics = msg.get("metrics")
+    return {
+        "camera_id": camera_id, "track_id": track_id, "fall_time": fall_time,
+        "outcome": outcome, "metrics": metrics if isinstance(metrics, dict) else {},
+        "body": msg,
+    }
+
+
+# recovered: yalniz critical -> high (bir kademe). fall_outcome IS NULL: tekrar
+# teslimde ikinci guncelleme olmaz. CAST: :o iki yerde kullaniliyor, psycopg
+# sunucu tarafi baglamada tipini iki farkli cikariyordu (AmbiguousParameter).
+_APPLY_SQL = text("""
+    UPDATE events SET fall_outcome = CAST(:o AS VARCHAR(10)),
+           severity = CASE WHEN CAST(:o AS VARCHAR(10)) = 'recovered' AND severity = 'critical'
+                           THEN 'high' ELSE severity END
+    WHERE id = (SELECT id FROM events
+                WHERE camera_id = :cam AND anomaly_type = 'FALL'
+                  AND fall_outcome IS NULL
+                  AND track_ids && ARRAY[CAST(:tid AS INT)]
+                  AND started_at BETWEEN :t - make_interval(secs => :tol)
+                                     AND :t + make_interval(secs => :tol)
+                ORDER BY abs(extract(epoch FROM started_at - :t)) LIMIT 1)
+    RETURNING id, status
+""")
+
+
+def _apply_outcome(db: Session, camera_id: int, upd: dict) -> tuple[int, str] | None:
+    """Sonucu eslesen FALL olayina yazar; (event_id, status) ya da None."""
+    row = db.execute(_APPLY_SQL, {
+        "o": upd["outcome"], "cam": camera_id, "tid": upd["track_id"],
+        "t": upd["fall_time"], "tol": tolerance().total_seconds(),
+    }).first()
+    return (row[0], row[1]) if row is not None else None
+
+
+class PendingOutcomes:
+    """Olaydan once gelen (henuz eslesmeyen) sonuclar, kamera basina. Bellekte:
+    tuketici yeniden baslarsa kaybolur, kayip yalniz ikinci mesajdir."""
+
+    def __init__(self, ttl: float = PENDING_SEC, clock=time.monotonic) -> None:
+        self._ttl, self._clock = ttl, clock
+        self._by_cam: dict[int, list[tuple[float, dict]]] = {}
+
+    def __len__(self) -> int:
+        return sum(len(v) for v in self._by_cam.values())
+
+    def add(self, camera_id: int, upd: dict) -> None:
+        self._by_cam.setdefault(camera_id, []).append((self._clock(), upd))
+
+    def retry(self, camera_id: int, apply) -> list[tuple[dict, tuple[int, str]]]:
+        """apply(upd) eslesme dondurenleri kaldirir ve (upd, eslesme) listesi verir."""
+        kept, done = [], []
+        for item in self._by_cam.get(camera_id, []):
+            res = apply(item[1])
+            if res is None:
+                kept.append(item)
+            else:
+                done.append((item[1], res))
+        if kept:
+            self._by_cam[camera_id] = kept
+        else:
+            self._by_cam.pop(camera_id, None)
+        return done
+
+    def expire(self) -> int:
+        """Suresi dolanlari atar, sayisini doner."""
+        cutoff, dropped = self._clock() - self._ttl, 0
+        for cam in list(self._by_cam):
+            kept = [it for it in self._by_cam[cam] if it[0] > cutoff]
+            dropped += len(self._by_cam[cam]) - len(kept)
+            if kept:
+                self._by_cam[cam] = kept
+            else:
+                del self._by_cam[cam]
+        return dropped
+
+
+def _finish_outcome(event_id: int, status: str, upd: dict, counters: dict) -> None:
+    """Eslesme sonrasi: Mongo telemetry + (down/recovered) ikinci bildirim."""
+    counters["outcome_applied"] += 1
+    try:
+        get_mongo()["telemetry"].update_one(
+            {"event_id": event_id}, {"$set": {"fall_outcome": upd["body"]}})
+    except PyMongoError as exc:
+        counters["mongo_errors"] += 1
+        print(f"  mongo sonuc yazim hatasi (event {event_id}): {exc}")
+    if upd["outcome"] in ("down", "recovered") and status != "false_positive":
+        notify.enqueue_outcome(event_id, upd["outcome"], upd["metrics"])
+
+
+def _retry_pending(pending: PendingOutcomes, camera_id: int, counters: dict) -> None:
+    if not len(pending):
+        return
+    try:
+        with SessionLocal() as db:
+            done = pending.retry(camera_id, lambda u: _apply_outcome(db, camera_id, u))
+            db.commit()
+    except SQLAlchemyError as exc:
+        print(f"  bekleyen sonuc yeniden denenemedi: {exc}")
+        return
+    for upd, (event_id, status) in done:
+        _finish_outcome(event_id, status, upd, counters)
+
+
+def _handle_outcome(body: dict, cameras: "CameraCache", pending: PendingOutcomes,
+                    counters: dict) -> None:
+    """Bir fall-outcomes mesaji; cagiran sonunda offset commit eder."""
+    upd = outcome_to_update(body)
+    if upd is None:
+        counters["malformed"] += 1
+        return
+    try:
+        with SessionLocal() as db:
+            camera_id = cameras.resolve(db, str(upd["camera_id"]))
+            if camera_id is None:
+                counters["skipped_unknown_camera"] += 1
+                print(f"  bilinmeyen camera_id, atlaniyor: {upd['camera_id']!r}")
+                return
+            res = _apply_outcome(db, camera_id, upd)
+            db.commit()
+    except SQLAlchemyError as exc:
+        # gecici DB hatasi: sonuc bekletilir, sonraki FALL olayinda yeniden denenir
+        print(f"  sonuc uygulanamadi, bekletiliyor: {exc}")
+        res, camera_id = None, cameras._map.get(str(upd["camera_id"]))
+        if camera_id is None:
+            counters["outcome_unmatched"] += 1
+            return
+    if res is None:
+        pending.add(camera_id, upd)
+        counters["outcome_pending"] += 1
+    else:
+        _finish_outcome(res[0], res[1], upd, counters)
 
 
 class CameraCache:
@@ -240,18 +396,21 @@ def run() -> None:
         "auto.offset.reset": "earliest",   # tuketici Spark'tan sonra kalkabilir
         "enable.auto.commit": False,       # SS6.4: offset DB yazimindan sonra elle
     })
-    consumer.subscribe([TOPIC])
+    consumer.subscribe([TOPIC, OUTCOME_TOPIC])
 
     cameras, zones = CameraCache(), ZoneCache()
     load_tolerance()   # kanit eslesme toleransi = spark_window_sec (api/matching.py)
     notify.start()     # LLM + Telegram worker (ASAMA7_PLAN.md SS1) -- ayri is parcacigi, bloklamaz
     counters = {"processed": 0, "duplicates": 0, "malformed": 0,
-                "skipped_unknown_camera": 0, "mongo_errors": 0, "evidence_matched": 0}
-    print(f"  tuketici basladi: {KAFKA_BOOTSTRAP} -> {TOPIC} (group={GROUP_ID}), "
+                "skipped_unknown_camera": 0, "mongo_errors": 0, "evidence_matched": 0,
+                "outcome_applied": 0, "outcome_pending": 0, "outcome_unmatched": 0}
+    pending = PendingOutcomes()
+    print(f"  tuketici basladi: {KAFKA_BOOTSTRAP} -> {TOPIC}, {OUTCOME_TOPIC} (group={GROUP_ID}), "
           f"kanit toleransi {tolerance().total_seconds():.0f} sn")
 
     try:
         while not stop.is_set():
+            counters["outcome_unmatched"] += pending.expire()
             msg = consumer.poll(1.0)
             if msg is None:
                 continue
@@ -262,6 +421,11 @@ def run() -> None:
                 body = json.loads(msg.value().decode("utf-8"))
             except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
                 counters["malformed"] += 1
+                consumer.commit(msg)
+                continue
+
+            if msg.topic() == OUTCOME_TOPIC:
+                _handle_outcome(body, cameras, pending, counters)
                 consumer.commit(msg)
                 continue
 
@@ -308,6 +472,8 @@ def run() -> None:
                 except PyMongoError as exc:
                     counters["mongo_errors"] += 1
                     print(f"  mongo yazim hatasi (event {new_id}): {exc}")
+                if row["anomaly_type"] == "FALL":
+                    _retry_pending(pending, camera_id, counters)   # sonuc olaydan once gelmis olabilir
             consumer.commit(msg)
     finally:
         consumer.close()
@@ -316,7 +482,10 @@ def run() -> None:
               f"tekrar {counters['duplicates']}  bozuk {counters['malformed']}  "
               f"bilinmeyen-kamera {counters['skipped_unknown_camera']}  "
               f"mongo-hata {counters['mongo_errors']}  "
-              f"kanit-eslesen {counters['evidence_matched']}")
+              f"kanit-eslesen {counters['evidence_matched']}  "
+              f"sonuc-uygulanan {counters['outcome_applied']}  "
+              f"sonuc-bekleyen {counters['outcome_pending']}  "
+              f"sonuc-eslesmeyen {counters['outcome_unmatched']}")
 
 
 if __name__ == "__main__":

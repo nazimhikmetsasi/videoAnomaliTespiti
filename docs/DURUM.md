@@ -5,13 +5,17 @@ dosya → `docs/YOL_HARITASI.md` (kalan işin sırası ve kabul ölçütleri) �
 başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulguları
 `docs/DURUM_ARSIV.md`'de, mimari `docs/PLAN.md`'de.
 
-**Son güncelleme:** 2026-11-24
+**Son güncelleme:** 2026-11-26
 
 ---
 
 ## Şu an neredeyiz
 
-**Aşama 13.3 tamamlandı.** (2026-11-24) Sıradaki 13.4.
+**Aşama 13.4 kodu bitti** (2026-11-26); doğrulama (duman testi, uçtan uca
+canlı koşu) bekliyor. Ayrıntı aşağıda "Aşama 13.4 — düşme sonrası izleme,
+kod".
+
+**Aşama 13.3 tamamlandı.** (2026-11-24)
 
 Hibrit holdout ham F1:
 - 10 FPS: 0,17–0,24 → 0,59–0,62
@@ -104,7 +108,7 @@ değerlendirmeyle ölçülecek.
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.3 tamam; sıradaki 13.4 |
+| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.3 tamam; 13.4 kod bitti, doğrulama bekliyor |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -767,11 +771,75 @@ uygulanmadı. Gerekçe plan §6.2'de.
 
 ---
 
+## Aşama 13.4 — düşme sonrası izleme, kod (2026-11-26)
+
+Sözleşme `docs/ASAMA13_4_PLAN.md`; plan 2026-11-26'da onaylandı.
+
+**Planın kararları:**
+- karar süresi 25 sn: gerçek düşmelerde >24,5 sn dinlenme kalkamamayı
+  öngörüyor (Schwickert 2018, AUC 0,796)
+- hareketsizlik şartı yok: kalkmayı deneyip başaramayanlar daha çok
+  hareket ediyor; karar yalnız duruşa bakar, hareket raporlanır
+- "kalktı" = kesintisiz 2 sn ayakta, kutu yüksekliği düşme öncesinin
+  ≥ 0,88'i; sandalyede oturan bilinçli olarak "kalktı" sayılmaz
+- sonuç olayı günceller (`events.fall_outcome`), yeni olay açmaz; yol
+  `fall-outcomes` konusu → tüketici; kalktıysa önem `critical` → `high`
+- Telegram'a ikinci mesaj: "kalkamadı" ve "kalktı" (şablon, LLM yok)
+
+**Ön ölçüm** (plan §0): düşen kişinin izi URFD'de 30 klibin 16'sında,
+CASIA'da 8'in 4'ünde düşmeden hemen sonra kayboluyor; bir kısmında aynı
+yerde yeni iz kimliği doğuyor. İzleyici bu yüzden izi yerinde devralıyor.
+
+**Yazılan:**
+- `vision/rules/postfall.py`: `PostFallMonitor`; `camera.py` her karede
+  çağırır, sonuç `publish.py` ile `fall-outcomes`'a gider;
+  `vision.run --postfall-sec` ve rapor satırları
+- `api/workers/consumer.py`: iki konu; `outcome_to_update`,
+  `_apply_outcome`, olaydan önce gelen sonuç için `PendingOutcomes`
+  (60 sn)
+- `api/notify.py`: kuyruk öğesi `(tür, olay, ek)`; `enqueue_outcome`,
+  şablonlu ikinci mesaj, evde modunda `skipped`
+- `events.fall_outcome` (`init.sql` + `migrate.py`), `EventOut`, Olaylar
+  listesinde "Düşme · kalkamadı" rozeti; `build_frontend` önbellek
+  etiketleri
+- `infra/kafka/topics.sh`: `fall-outcomes`
+
+**Gözden geçirmede bulunan iki hata, ikisi de düzeltildi:**
+1. **"Kalktı" görülmeyen karede de veriliyordu.** 1 sn ayakta görünüp
+   kaybolan (yeniden yere yığılıp algılanmayan) kişi 2 sn dolunca "kalktı"
+   sayılırdı. Karar artık yalnız görülen ayakta karede. Test eklendi.
+2. **Güncelleme SQL'i gerçek veritabanında patladı**
+   (`AmbiguousParameter: inconsistent types deduced for parameter $1`):
+   sonuç parametresi hem `SET` hem `CASE` içinde, psycopg sunucu tarafı
+   bağlamada iki ayrı tip çıkarıyordu. `CAST(... AS VARCHAR(10))` ile
+   düzeldi. Veritabanı testleri Docker kapalıyken atlandığı için ilk
+   koşuda görünmedi.
+
+**Testler** (worktree, Postgres ve Mongo açık): **405 geçti, 1 atlandı,
+1 başarısız.** 13.4'ün testleri 81 (izleyici 40, olay yolu 41).
+- Başarısız test 13.4 ile ilgisiz ve eski:
+  `test_asama8_6.py::test_settings_camera_id_accepts_name_against_real_db`
+  değişmemiş `main` kodunda da aynı biçimde düşüyor. Test, ilk kameranın
+  kendi ayar satırı olduğunu varsayıyor; satır yoksa uç küresel ayarı
+  (`camera_id = None`) döndürüyor. Docker kapalı koşularda hep atlandığı
+  için görülmemişti. Açık soru olarak aşağıda.
+- Atlanan: `data/tracks` worktree'de yok (holdout listesi testi).
+- Veritabanı testinin düzeneği göçü canlı veritabanında koştu:
+  `events.fall_outcome` sütunu yerel kurulumda artık var (boş). Göç
+  açılışta da koşacaktı; satırlara dokunulmadı.
+
+**Henüz yapılmadı (plan §7, ana dizinde, `main`'e alındıktan sonra):**
+çevrimdışı duman testi (CASIA p02 / p24, `fall_01`), uçtan uca canlı koşu
+(`kafka-init`, API ve tüketici yeniden derleme), sıra yarışı denemesi,
+`docs/TEZ.md` §4.6 taslağı.
+
+---
+
 ## Bir sonraki adım
 
-**Aşama 13.4 — düşme sonrası hareketsizlik** (`docs/YOL_HARITASI.md`).
-Önce uygulama planı yazılır (`docs/ASAMA13_4_PLAN.md`). Süreler saniye
-cinsinden; N, kayıtlara bakmadan önce gerekçesiyle seçilir.
+**Aşama 13.4 doğrulaması** (plan §7): kod commit'lenip `main`'e
+alındıktan sonra ana dizinde çevrimdışı duman testi ve uçtan uca canlı
+koşu; sonra `docs/TEZ.md` §4.6 taslağı ve kapanış.
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
 `docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5'in olay sayıları
@@ -918,6 +986,11 @@ Panel `http://localhost:8000`, kullanıcı `admin`, şifre `.env`'deki
 
 Her maddenin yanında kapatılacağı aşama (`docs/YOL_HARITASI.md`).
 
+- **`test_asama8_6` ayar testi canlı veritabanında düşüyor** (→ 13.7):
+  test, ilk kameranın kendi ayar satırı olduğunu varsayıyor; yoksa uç
+  küresel ayarı döndürüyor (`camera_id = None`). Davranış mı yanlış, test
+  mi, karar verilmedi. 2026-11-26'da Docker açıkken görüldü; `main`'de de
+  aynı.
 - **Kare hızı bağımlılığı** (→ 13.3): kural pencereleri, TCN girdisi ve
   izleyici tamponu kare sayısıyla tanımlı; canlı 5–10 FPS'te zaman ölçeği
   2,5–5 kat uzuyor. Çevrimdışı değerlendirme her kareyi işlediği için

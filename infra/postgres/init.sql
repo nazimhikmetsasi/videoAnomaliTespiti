@@ -120,6 +120,9 @@ CREATE TABLE events (
     clip_path     TEXT,
     llm_report_tr TEXT,
     mongo_ref     VARCHAR(24),                   -- pose_sequences ObjectId
+    -- Asama 13.4: dusme sonrasi izleme sonucu; NULL = FALL degil ya da sonuc henuz yok.
+    fall_outcome  VARCHAR(10)
+                  CHECK (fall_outcome IN ('down', 'recovered', 'unknown')),
     status        VARCHAR(20)  NOT NULL DEFAULT 'new'
                   CHECK (status IN ('new', 'acknowledged', 'false_positive', 'resolved')),
     acked_by      INT          REFERENCES users(id) ON DELETE SET NULL,
