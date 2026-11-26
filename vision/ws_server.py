@@ -24,9 +24,13 @@ uyanma kalmaz. Her baglanti KENDI Event'ini tasir -- paylasilan tek Event'te
 "kim temizleyecek" yarisi olurdu.
 
 Kimlik dogrulama: `?token=<JWT>` sorgu parametresi, api/auth.py ile AYNI
-JWT_SECRET + HS256 kullanilarak YEREL dogrulanir -- veritabanina gidilmez
-(goru hatti API'ye bagimli olmamali). JWT_SECRET yoksa `start()` sunucuyu
-ACMAZ, tek satir uyari basar -- kimliksiz yayin yok.
+JWT_SECRET + HS256 kullanilarak YEREL dogrulanir -- veritabanina dogrudan
+gidilmez. `api_url` verilirse ek olarak API'ye `GET /api/auth/me` sorulur
+(pasiflestirilen kullanicinin jetonu iptal olsun diye; sonuc 60 sn onbellekte,
+acik baglanti da ayni aralikla yeniden denetlenir). API ulasilamazsa YEREL
+sonuc gecerli sayilir (fail-open): goru hatti API'ye bagimli olmamali, iptal
+API ayaktayken isler. JWT_SECRET yoksa `start()` sunucuyu ACMAZ, tek satir
+uyari basar -- kimliksiz yayin yok.
 """
 
 from __future__ import annotations
@@ -34,13 +38,18 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import jwt
 import websockets
 from websockets.exceptions import ConnectionClosed
 
 ALGORITHM = "HS256"
+REVALIDATE_SEC = 60.0     # iptal gecikmesi tavani (ASAMA13_7_PLAN SS2)
+_CACHE_CAP = 1000
+_API_TIMEOUT = 2.0
 
 
 class _Box:
@@ -64,10 +73,15 @@ class _Box:
 
 class StreamServer:
     def __init__(self, host: str = "0.0.0.0", port: int = 8001,
-                 jwt_secret: str | None = None) -> None:
+                 jwt_secret: str | None = None, api_url: str | None = None,
+                 clock=time.monotonic) -> None:
         self.host = host
         self.port = port
         self._jwt_secret = jwt_secret
+        self._api_url = api_url.rstrip("/") if api_url else None
+        self._clock = clock
+        self._token_cache: dict[str, tuple[bool, float]] = {}
+        self.api_failures = 0
         self.opened = False
 
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -165,6 +179,48 @@ class StreamServer:
         except jwt.PyJWTError:
             return False
 
+    async def _api_status(self, token: str) -> int:
+        """API'nin jeton icin dondugu HTTP durumu; ag hatasinda istisna.
+        Ayri korutin: testler gercek ag olmadan bunu degistirir."""
+        async with httpx.AsyncClient(timeout=_API_TIMEOUT) as client:
+            r = await client.get(self._api_url + "/api/auth/me",
+                                 headers={"Authorization": "Bearer " + token})
+        return r.status_code
+
+    async def _check(self, token: str | None) -> bool:
+        if not self._valid_token(token):
+            return False
+        if not self._api_url:
+            return True
+        now = self._clock()
+        hit = self._token_cache.get(token)
+        if hit is not None and now - hit[1] < REVALIDATE_SEC:
+            return hit[0]
+        try:
+            status = await self._api_status(token)
+        except Exception as exc:   # ag hatasi: canli goru kesilmesin
+            status = 0
+            err = exc
+        if status in (401, 403):
+            ok = False
+        elif status == 200:
+            ok = True
+        else:
+            # ag hatasi / 5xx: yerel sonuc (True); onbellege YAZILMAZ ki
+            # API donunce hemen yeniden denensin.
+            self.api_failures += 1
+            if self.api_failures == 1:
+                why = f"HTTP {status}" if status else repr(err)
+                print(f"  [ws_server] API jeton denetimi basarisiz ({why}) -- yerel imza kullaniliyor")
+            return True
+        if len(self._token_cache) >= _CACHE_CAP:
+            self._token_cache = {k: v for k, v in self._token_cache.items()
+                                 if now - v[1] < REVALIDATE_SEC}
+            if len(self._token_cache) >= _CACHE_CAP:
+                self._token_cache.clear()
+        self._token_cache[token] = (ok, now)
+        return ok
+
     async def _handler(self, connection) -> None:
         parsed = urlparse(connection.request.path)
         parts = [p for p in parsed.path.split("/") if p]
@@ -173,7 +229,7 @@ class StreamServer:
             return
         kind, camera_id = parts[1], parts[2]
         token = parse_qs(parsed.query).get("token", [None])[0]
-        if not self._valid_token(token):
+        if not await self._check(token):
             await connection.close(1008, "jeton gecersiz veya eksik")
             return
 
@@ -181,12 +237,14 @@ class StreamServer:
             self._counts[(kind, camera_id)] = self._counts.get((kind, camera_id), 0) + 1
         try:
             boxes = self._frames if kind == "live" else self._meta
-            await self._stream(connection, boxes, camera_id)
+            await self._stream(connection, boxes, camera_id, token)
         finally:
             with self._lock:
                 self._counts[(kind, camera_id)] -= 1
 
-    async def _stream(self, connection, boxes: dict[str, _Box], camera_id: str) -> None:
+    async def _stream(self, connection, boxes: dict[str, _Box], camera_id: str,
+                      token: str | None = None) -> None:
+        checked_at = self._clock()
         event = asyncio.Event()
         with self._lock:
             box = boxes.setdefault(camera_id, _Box())
@@ -201,6 +259,11 @@ class StreamServer:
                     data, seq = box.data, box.seq
                 if data is not None and seq != last_seq:
                     last_seq = seq
+                    if token is not None and self._clock() - checked_at >= REVALIDATE_SEC:
+                        checked_at = self._clock()
+                        if not await self._check(token):
+                            await connection.close(1008, "oturum gecersiz")
+                            return
                     await connection.send(data)
                     continue   # gonderirken yeni kare gelmis olabilir, hemen bak
                 await event.wait()

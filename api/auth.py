@@ -71,6 +71,24 @@ def decode_token(token: str | None) -> dict[str, Any] | None:
         return None
 
 
+def active_user_for_token(db: Session, token: str | None) -> dict[str, Any] | None:
+    """current_user'in denetimi, istisnasiz: imza + satir var + is_active.
+    WebSocket jetonunun iptali icin (jeton suresi dolmadan pasiflestirme)."""
+    payload = decode_token(token)
+    if payload is None:
+        return None
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    row = db.execute(
+        text(f"SELECT {_USER_COLUMNS} FROM users WHERE id = :id"), {"id": user_id},
+    ).mappings().first()
+    if row is None or not row["is_active"]:
+        return None
+    return dict(row)
+
+
 def current_user(token: str = Depends(_oauth2_scheme), db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])

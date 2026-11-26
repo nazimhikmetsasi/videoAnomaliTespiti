@@ -268,7 +268,8 @@ def main(argv: list[str] | None = None) -> int:
         # TEK sunucu, TEK port: kameralar ayri surec olmadigi icin 8.6'nin
         # port-basina-kamera cozumu artik gerekmiyor, `ws_port` sagliga
         # yazilmaya devam eder (hepsi ayni portu bildirir).
-        stream_server = StreamServer(port=args.ws_port, jwt_secret=os.getenv("JWT_SECRET"))
+        stream_server = StreamServer(port=args.ws_port, jwt_secret=os.getenv("JWT_SECRET"),
+                                     api_url=args.settings_url or None)
         stream_server.start()
 
     # Kamera adlari kaynaklarla ayni sirada verilir; sayi tutmuyorsa ad

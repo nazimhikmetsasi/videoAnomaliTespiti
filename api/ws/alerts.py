@@ -18,9 +18,10 @@ import threading
 
 from confluent_kafka import Consumer
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import text
 
-from api.auth import decode_token
+from api.auth import active_user_for_token
 from api.config import KAFKA_BOOTSTRAP
 from api.db.postgres import SessionLocal
 from api.ws.manager import ConnectionManager
@@ -31,6 +32,13 @@ manager = ConnectionManager()
 TOPIC = "anomaly-events"
 OUTCOME_TOPIC = "fall-outcomes"   # ayni deger api/workers/consumer.py'de; o modulu import etmemek icin tekrar
 GROUP_ID = "anomaly-ws-alerts"
+REVALIDATE_SEC = 60   # pasiflestirilen kullanicinin acik baglantisi en gec bu surede kapanir
+
+
+def _token_active(token: str | None) -> bool:
+    # ayri oturum: WS suresince istek bagimli get_db oturumu tutulmaz
+    with SessionLocal() as db:
+        return active_user_for_token(db, token) is not None
 
 
 @router.websocket("/ws/alerts")
@@ -38,7 +46,7 @@ async def alerts_ws(ws: WebSocket, token: str | None = None) -> None:
     """Jeton `?token=<JWT>` ile gelir -- WebSocket el sikismasinda Authorization
     basligi yoktur. Kimliksiz yayin kabul edilmez: alarm govdesi kamera adini
     ve olay ayrintisini tasir (SS3'un gorü akisi icin koydugu ayni olcut)."""
-    if decode_token(token) is None:
+    if not await run_in_threadpool(_token_active, token):
         # 1008'in istemciye ulasmasi icin once accept gerekir; Starlette
         # accept'siz close'u HTTP reddine cevirir ve kod kaybolur. Veri
         # gonderilmeden kapatildigi icin acilis zararsizdir.
@@ -48,7 +56,13 @@ async def alerts_ws(ws: WebSocket, token: str | None = None) -> None:
     await manager.connect(ws)
     try:
         while True:
-            await ws.receive_text()   # istemciden veri beklenmez, kopmayi yakalamak icin bekler
+            try:
+                # istemciden veri beklenmez; kopmayi yakalar, zaman asimi yeniden denetim tetikler
+                await asyncio.wait_for(ws.receive_text(), REVALIDATE_SEC)
+            except asyncio.TimeoutError:
+                if not await run_in_threadpool(_token_active, token):
+                    await ws.close(code=1008, reason="oturum gecersiz")
+                    return
     except WebSocketDisconnect:
         pass
     finally:

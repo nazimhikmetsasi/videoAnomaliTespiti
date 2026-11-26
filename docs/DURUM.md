@@ -11,6 +11,11 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
+**Aşama 13 tamamlandı; son adım 13.7** (2026-11-26): giriş deneme sınırı,
+WS jeton iptali (≤ 60 sn), olayların CSV dışa aktarımı; eski
+`test_asama8_6` hatası kapandı. Tam paket hatasız. Sıradaki 14 (saha
+kayıtları kullanıcıda). Ayrıntı: "Aşama 13.7".
+
 **Aşama 13.6 tamamlandı** (2026-11-26). Kırmızı alarmda ses, alarm
 penceresinden tek tıkla onay, kalkamadı alarmı panelde, sistem sağlığında
 "aday var, olay yok" göstergesi; tarayıcıda uçtan uca doğrulandı.
@@ -119,7 +124,7 @@ değerlendirmeyle ölçülecek.
 | 10 | Ölçek ve tez çıktıları | **tamam** — 10.5 dahil: 8.0 saat, 4 kamera, kesintisiz |
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
-| 13 | Bütünsel inceleme ve düzeltmeler | 13.0–13.6 tamam; sıradaki 13.7 |
+| 13 | Bütünsel inceleme ve düzeltmeler | Tamamlandı (13.0–13.7) |
 | 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
@@ -1046,13 +1051,62 @@ alarm akış kartlarında onay düğmesi (yalnız toast'ta).
 
 ---
 
+## Aşama 13.7 — kalan küçükler (2026-11-26)
+
+Sözleşme `docs/ASAMA13_7_PLAN.md`. 13.6'nın API imajı aşamanın başında
+yeniden derlendi.
+
+**Yazılan:**
+- **B3 giriş deneme sınırı:** `LoginLimiter`, hesap başına 10, IP başına
+  30 başarısız deneme / 15 dk (kayan pencere). Dolunca 429 +
+  `Retry-After`; kilitliyken parola denetlenmez. Başarılı giriş hesap
+  sayacını sıfırlar. Bellek içi, tek süreç (`ponytail:` notu). Gerekçe:
+  NIST SP 800-63B §5.2.2'nin 100 tavanının çok altında.
+- **B5 WS jeton iptali:** `active_user_for_token`. `/ws/alerts`
+  bağlanırken ve açıkken her 60 sn veritabanına bakıyor. Görünün WS
+  sunucusu `--settings-url` verilince `GET /api/auth/me` ile denetliyor
+  (60 sn önbellek, açık bağlantı da 60 sn'de bir); API'ye ulaşamazsa yerel
+  imzaya düşüyor (görü API'ye bağımlı değil).
+- **E5 CSV:** `GET /api/events/export.csv`, liste ile aynı filtreler (ortak
+  yardımcı), 50 000 satır tavanı (`X-Truncated`), Türkçe başlık, yerel
+  saat, UTF-8 BOM, formül enjeksiyonu koruması (`csv_safe`). Olaylar
+  ekranında "CSV indir" düğmesi.
+- **Eski `test_asama8_6` hatası:** uç doğru, test yanlış (ilk kameranın
+  kendi ayar satırı olduğunu varsayıyordu). Test "ad ve kimlik aynı sonucu
+  verir" diye düzeltildi.
+
+**Canlı doğrulama** (worktree API'si yerelde 8011'de; konteyner API'si
+deneme boyunca durdu, sonra başlatıldı):
+
+| deneme | sonuç |
+|---|---|
+| olmayan kullanıcıyla 12 yanlış giriş | 1–10: 401; 11 ve 12: **429, `Retry-After: 900`** |
+| `GET /api/events/export.csv?camera_id=2` | `text/csv`, `olaylar_20261126_2204.csv`, BOM `ef bb bf`, 389 satır = veritabanındaki 389; saat `+03:00` |
+| geçici test kullanıcısı `/ws/alerts` ve görünün `/ws/meta/fall_01`'ine bağlı, sonra pasifleştirildi | ikisi de `1008 "oturum gecersiz"` ile kapandı: **55,0 ve 55,5 sn** (hedef ≤ 60; önce 12 sa). Kullanıcı silindi. |
+
+Kayıt `logs/revoke_13_7.log`. Test kullanıcısının parolası rastgele
+üretildi, hiç kullanılmadı; jetonlar süreç içinde üretildi ve dosyaları
+silindi.
+
+**Yapılmadı:** "CSV indir" düğmesi tarayıcıda tıklanmadı (statik test ve
+`node --check`; uç `curl` ile doğrulandı).
+
+**Testler:** **499 geçti, 1 atlandı, 0 başarısız** (veritabanı açık).
+Bilinen eski hata kapandı. 13.7'nin testleri 25 (API 15, görü WS 7,
+panel 3).
+
+**Aşama 13 tamamlandı** (13.0–13.7).
+
+---
+
 ## Bir sonraki adım
 
-**Aşama 13.7 — kalan küçükler** (`docs/YOL_HARITASI.md`): giriş deneme
-sınırı, WS jetonunun veritabanından doğrulanması, olayların CSV dışa
-aktarımı. Eski `test_asama8_6` hatası da burada karara bağlanır. `main`'e
-alındıktan sonra `docker compose up -d --build api` gerekir (13.6 API
-değişiklikleri).
+**Aşama 14 — saha çekim oturumu + TCN ince ayarı**
+(`docs/YOL_HARITASI.md` §14). Kayıtları kullanıcı çeker: listesi
+yol haritasında (13.4 için düşüp en az 35 sn yerde kalma, düşüp hızla
+kalkma, yerde oturma, sandalyeye oturma; 13.5 için yön ihlali). Kayıtlar
+gelmeden 14'ün ince ayar kısmı başlayamaz. `main`'e alındıktan sonra
+`docker compose up -d --build api` gerekir (13.7 API değişiklikleri).
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
 `docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5'in olay sayıları
@@ -1199,11 +1253,8 @@ Panel `http://localhost:8000`, kullanıcı `admin`, şifre `.env`'deki
 
 Her maddenin yanında kapatılacağı aşama (`docs/YOL_HARITASI.md`).
 
-- **`test_asama8_6` ayar testi canlı veritabanında düşüyor** (→ 13.7):
-  test, ilk kameranın kendi ayar satırı olduğunu varsayıyor; yoksa uç
-  küresel ayarı döndürüyor (`camera_id = None`). Davranış mı yanlış, test
-  mi, karar verilmedi. 2026-11-26'da Docker açıkken görüldü; `main`'de de
-  aynı.
+- ~~**`test_asama8_6` ayar testi canlı veritabanında düşüyor**~~ —
+  **kapandı (13.7):** uç doğru, test yanlıştı; düzeltildi.
 - **Kare hızı bağımlılığı** (→ 13.3): kural pencereleri, TCN girdisi ve
   izleyici tamponu kare sayısıyla tanımlı; canlı 5–10 FPS'te zaman ölçeği
   2,5–5 kat uzuyor. Çevrimdışı değerlendirme her kareyi işlediği için

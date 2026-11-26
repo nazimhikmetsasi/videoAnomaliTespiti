@@ -193,7 +193,10 @@ def test_settings_camera_id_accepts_name_against_real_db() -> None:
             pytest.skip("veritabaninda kamera yok")
         by_name = get_camera_settings(camera_id=cam.name, db=db, _={"role": "admin"})
         by_id = get_camera_settings(camera_id=str(cam.id), db=db, _={"role": "admin"})
-        assert by_name.camera_id == by_id.camera_id == cam.id
+        # kamera satiri yoksa uc kucuk ayari (camera_id None, global) doner; amac ad == id
+        assert (by_name.camera_id, by_name.source) == (by_id.camera_id, by_id.source)
+        if by_name.source == "camera":
+            assert by_name.camera_id == cam.id
     finally:
         db.close()
 

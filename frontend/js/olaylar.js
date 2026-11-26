@@ -194,12 +194,18 @@ _bulkAckBtn.addEventListener("click", async () => {
     _load();
 });
 
-function _buildQuery() {
+// Sayfalamasiz filtreler: liste ve CSV ayni parametreleri paylasir.
+function _filterParams() {
     const params = new URLSearchParams();
     if (_cameraSelect.value) params.set("camera_id", _cameraSelect.value);
     if (_typeSelect.value) params.set("anomaly_type", _typeSelect.value);
     if (_severitySelect.value) params.set("severity", _severitySelect.value);
     if (_statusSelect.value) params.set("status", _statusSelect.value);
+    return params;
+}
+
+function _buildQuery() {
+    const params = _filterParams();
     params.set("limit", String(LIMIT));
     params.set("offset", String(_offset));
     return params.toString();
@@ -237,6 +243,38 @@ async function _load() {
 }
 
 _filterBtn.addEventListener("click", (e) => { e.preventDefault(); _offset = 0; _load(); });
+
+// CSV: sablona dokunmadan, Filtrele dugmesiyle ayni siniflarla eklenir.
+// Dosya <a download> ile iner; jeton basligi yalniz fetch ile gonderilebilir.
+const _csvBtn = document.createElement("button");
+_csvBtn.className = _filterBtn.className.replace("bg-secondary-container text-on-secondary-container", "border border-outline-variant text-on-surface").replace("hover:bg-secondary", "hover:bg-surface-variant");
+_csvBtn.textContent = "CSV indir";
+_filterBar.appendChild(_csvBtn);
+
+_csvBtn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    _csvBtn.disabled = true;
+    try {
+        const qs = _filterParams().toString();
+        const res = await fetch("/api/events/export.csv" + (qs ? "?" + qs : ""), {
+            headers: { Authorization: "Bearer " + token() },
+        });
+        if (!res.ok) throw new Error("CSV alınamadı (" + res.status + ")");
+        const m = /filename="?([^";]+)"?/.exec(res.headers.get("Content-Disposition") || "");
+        const url = URL.createObjectURL(await res.blob());
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = m ? m[1] : "olaylar.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        _showError("CSV indirilemedi: " + err.message);
+    } finally {
+        _csvBtn.disabled = false;
+    }
+});
 _prevBtn.addEventListener("click", () => { _offset = Math.max(0, _offset - LIMIT); _load(); });
 _nextBtn.addEventListener("click", () => { _offset += LIMIT; _load(); });
 
