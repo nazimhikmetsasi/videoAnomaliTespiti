@@ -11,6 +11,11 @@ başlanacak aşamanın plan dosyası. Aşama 0–12.6'nın ölçümleri ve bulgu
 
 ## Şu an neredeyiz
 
+**Aşama 14A tamamlandı** (2026-11-26): çekim protokolü, kayıt aracı
+(`scripts/record_session.py`) ve saha değerlendirme aracı
+(`eval/field_eval.py`). **Sıradaki adım kullanıcının:** çekim oturumu
+(sahne listesi `docs/ASAMA14_PLAN.md` §1.2). Ayrıntı: "Aşama 14A".
+
 **Aşama 13 tamamlandı; son adım 13.7** (2026-11-26): giriş deneme sınırı,
 WS jeton iptali (≤ 60 sn), olayların CSV dışa aktarımı; eski
 `test_asama8_6` hatası kapandı. Tam paket hatasız. Sıradaki 14 (saha
@@ -125,7 +130,8 @@ değerlendirmeyle ölçülecek.
 | 11 | ReID ölçümü ve FIGHT kök nedeni | Tamamlandı — ReID ölçüldü (F1 0.15), hatta bağlanmadı; FIGHT duyarlılığı 0.07 → 0.80 |
 | 12 | İşletim sağlamlaştırma | Tamamlandı (12.1–12.6) |
 | 13 | Bütünsel inceleme ve düzeltmeler | Tamamlandı (13.0–13.7) |
-| 14–19 | Saha verisi, olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
+| 14 | Saha kayıtları + TCN ince ayarı | 14A tamam (protokol, kayıt ve değerlendirme araçları); 14B kullanıcının kayıtlarını bekliyor |
+| 14.5–19 | Olay doğrulaması, yüz tanıma, hız, kamera geometrisi, 24 sa koşu, tez | Planlandı (`docs/YOL_HARITASI.md`) |
 
 ---
 
@@ -1099,14 +1105,53 @@ panel 3).
 
 ---
 
+## Aşama 14A — çekim protokolü ve araçlar (2026-11-26)
+
+Plan `docs/ASAMA14_PLAN.md`. Aşama 14 iki bölüme ayrıldı: 14A hazırlık
+(kayıtlardan önce), 14B etiketleme / ölçüm / ince ayar (kayıtlardan
+sonra). Kayıtları kullanıcı çeker.
+
+**Yazılan:**
+- **Çekim protokolü** (plan §1): 15 sahne, tekrar sayıları ve süreleri
+  (~35 dk kayıt, kurulumla ~1,5 sa); kamera yerleşimi (3–5 m, yer
+  görünür, kadraj sabit), güvenlik (minder), onay ve KVKK notu.
+- **`scripts/record_session.py`:** `--list` sahne tablosu; `--source
+  0|rtsp://... --scene <anahtar>` ile `data/field/<GGAAYY>/<sahne>_<NN>.mp4`
+  (üzerine yazmaz), kareler olduğu gibi; bitince
+  `eval/annotations/field/<sahne>_<NN>.json` etiket iskeleti (olay
+  saniyeleri boş, FALL'da beklenen 13.4 sonucu). RTSP'nin bozuk FPS
+  bildirimine karşı FPS ilk karelerden ölçülüyor.
+- **`eval/field_eval.py`:** her klibi canlı hatla aynı `CameraPipeline`'dan
+  geçirir (kural + hakem + RUN_ZONE + düşme sonrası izleyici); tip başına
+  puan, ham ve Spark süzgeçli; düşme sonucu tablosu (beklenen × bulunan,
+  karar süresi); JSON çıktısı. Saniyesi doldurulmamış olaylar atlanır.
+
+**Doğrulama:**
+- Pilot klipler (`--no-tcn`): FALL 1/0/0, RUN 1/5/1, ZONE_VIOLATION 1/1/0
+  (TP/FP/FN) — `pilot_eval` kural moduyla **birebir**; tek fark, 13.5
+  çevirisiyle `RUN_ZONE` olan 1 FP (`zone_01`'in bilinen sahte koşusu).
+  Spark süzgeçli toplam F1 0,60 (Aşama 4 tablosuyla aynı).
+- CASIA p02, TCN açık, geçici etiket (FALL 6,5–8,5 sn, `down`),
+  `--postfall-sec 5`: sonuç `down → down`, karar 5,0 sn. (Aynı klipteki
+  FALL yanlış pozitifleri yaklaşık çizilmiş geçici etiketin dar
+  penceresinden; ölçüm değil.)
+- Kayıt aracı gerçek kamerayla açılmadı; sahte kaynakla test edildi.
+- Testler: **514 geçti, 1 atlandı, 0 başarısız**; 14A'nın testleri 21.
+
+---
+
 ## Bir sonraki adım
 
-**Aşama 14 — saha çekim oturumu + TCN ince ayarı**
-(`docs/YOL_HARITASI.md` §14). Kayıtları kullanıcı çeker: listesi
-yol haritasında (13.4 için düşüp en az 35 sn yerde kalma, düşüp hızla
-kalkma, yerde oturma, sandalyeye oturma; 13.5 için yön ihlali). Kayıtlar
-gelmeden 14'ün ince ayar kısmı başlayamaz. `main`'e alındıktan sonra
-`docker compose up -d --build api` gerekir (13.7 API değişiklikleri).
+**Aşama 14B — kullanıcının çekim oturumu.** Sahne listesi:
+`python -m scripts.record_session --list` (ana dizinde, `venv`).
+Her sahne için:
+
+    venv\Scripts\python.exe -m scripts.record_session --source 0 --scene <anahtar>
+
+Çekimden sonra: iskeletlerdeki olay saniyeleri videoya bakarak
+doldurulur; yön ve bölge poligonları `eval/zones_field.json`'a yazılır;
+sonra `eval.field_eval` ile B0 ölçümü ve plan §4'ün geri kalanı (TCN ince
+ayarı, FIGHT iki kişi öznitelikleri, `conf_sweep`, pilot ablation).
 
 Sonraki sıra, veri bekleyen işler ve yapılamayacaklar:
 `docs/YOL_HARITASI.md`. Tez metni 19'da; **§3.5'in olay sayıları
